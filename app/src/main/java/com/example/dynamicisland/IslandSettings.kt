@@ -33,6 +33,8 @@ data class IslandSettings(
     // Renk
     val accentArgb: Int = 0xFF0A84FF.toInt(),
     val dynamicColor: Boolean = true,        // albüm kapağından renk
+    val eqDynamicColor: Boolean = true,      // ekolayzır rengi albüm kapağından gelsin (kapalıysa eqColorArgb)
+    val eqColorArgb: Int = 0xFF0A84FF.toInt(), // ekolayzırın kendi rengi
     // Albüm kapağı arka planı (müzik çalarken adanın içi)
     val artBgEnabled: Boolean = true,
     val artBgCompact: Boolean = true,        // kapalı adada da; kapalıysa yalnızca açık adada
@@ -187,7 +189,7 @@ class SettingsRepository(context: Context) {
         val CW = floatPreferencesKey("cw"); val CH = floatPreferencesKey("chh")
         val W = floatPreferencesKey("w"); val H = floatPreferencesKey("h")
         val OX = floatPreferencesKey("ox"); val OY = floatPreferencesKey("oy")
-        val COLOR = intPreferencesKey("color"); val DYN = booleanPreferencesKey("dyn")
+        val COLOR = intPreferencesKey("color"); val DYN = booleanPreferencesKey("dyn"); val EQ_DYN = booleanPreferencesKey("eq_dyn"); val EQ_COLOR = intPreferencesKey("eq_color")
         val ART_BG = booleanPreferencesKey("art_bg"); val ART_BG_C = booleanPreferencesKey("art_bg_c")
         val CB_ON = booleanPreferencesKey("cb_on"); val CB_SEP = booleanPreferencesKey("cb_sep"); val CB_DIM = floatPreferencesKey("cb_dim")
         val CB_U_BOTH = stringPreferencesKey("cb_u_both"); val CB_U_C = stringPreferencesKey("cb_u_c"); val CB_U_E = stringPreferencesKey("cb_u_e")
@@ -234,6 +236,8 @@ class SettingsRepository(context: Context) {
             offsetYDp = p[K.OY] ?: d.offsetYDp,
             accentArgb = p[K.COLOR] ?: d.accentArgb,
             dynamicColor = p[K.DYN] ?: d.dynamicColor,
+            eqDynamicColor = p[K.EQ_DYN] ?: d.eqDynamicColor,
+            eqColorArgb = p[K.EQ_COLOR] ?: d.eqColorArgb,
             artBgEnabled = p[K.ART_BG] ?: d.artBgEnabled,
             artBgCompact = p[K.ART_BG_C] ?: d.artBgCompact,
             customBgEnabled = p[K.CB_ON] ?: d.customBgEnabled,
@@ -316,7 +320,7 @@ class SettingsRepository(context: Context) {
             it[K.CW] = s.compactWidthDp; it[K.CH] = s.compactHeightDp
             it[K.W] = s.expandedWidthDp; it[K.H] = s.expandedHeightDp
             it[K.OX] = s.offsetXDp; it[K.OY] = s.offsetYDp
-            it[K.COLOR] = s.accentArgb; it[K.DYN] = s.dynamicColor
+            it[K.COLOR] = s.accentArgb; it[K.DYN] = s.dynamicColor; it[K.EQ_DYN] = s.eqDynamicColor; it[K.EQ_COLOR] = s.eqColorArgb
             it[K.ART_BG] = s.artBgEnabled; it[K.ART_BG_C] = s.artBgCompact
             it[K.CB_ON] = s.customBgEnabled; it[K.CB_SEP] = s.customBgSeparate; it[K.CB_DIM] = s.customBgDim
             it[K.CB_U_BOTH] = s.customBgBothUri; it[K.CB_U_C] = s.customBgCompactUri; it[K.CB_U_E] = s.customBgExpandedUri

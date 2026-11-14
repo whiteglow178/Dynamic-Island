@@ -590,6 +590,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
             speed = s.favoriteLaunchSpeed,
+            color = islandPanelColor(s, (ui.value.content as? IslandContent.Media)?.artColor ?: 0),
         )
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         lateinit var view: ComposeView
@@ -691,6 +692,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
             speed = s.musicExitSpeed,
+            color = islandPanelColor(s, lastMedia?.artColor ?: 0),
         )
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         lateinit var view: ComposeView

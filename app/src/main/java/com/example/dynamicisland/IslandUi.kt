@@ -217,13 +217,27 @@ private fun brightTone(c: Color): Color {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
+/** Seçilen vurgu rengiyle boyanan ada gövdesi: çok koyu seçildiyse siyah kalır. */
+private fun accentBody(c: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(c.toArgb(), hsv)
+    return if (hsv[2] < 0.15f) Color.Black else darkTone(c)
+}
+
 private fun bodyColorFor(cfg: IslandSettings, art: Color?, accent: Color): Color {
     val tint: Color? = if (cfg.dynamicColor) art else null
     return when {
         cfg.glassEnabled -> (tint ?: accent).copy(alpha = cfg.glassAlpha)
         tint != null -> darkTone(tint)
-        else -> Color.Black
+        else -> accentBody(accent)       // albüm rengi kapalı / kapak yok: ada seçilen renge boyanır
     }
+}
+
+/** Panel animasyonlarının rengi = adanın o anki gövde rengi (cam ise siyah zemin üstünde birleşmiş hali, opak). */
+fun islandPanelColor(cfg: IslandSettings, artArgb: Int): Color {
+    val art = if (artArgb != 0) Color(artArgb) else null
+    val c = bodyColorFor(cfg, art, Color(cfg.accentArgb))
+    return if (c.alpha < 1f) androidx.compose.ui.graphics.lerp(Color.Black, c.copy(alpha = 1f), c.alpha) else c
 }
 
 // ---------------------------------------------------------------- Liquid Glass katmanları
@@ -415,7 +429,11 @@ fun IslandPill(
     val media = content as? IslandContent.Media
     val artColor = if (media != null && media.artColor != 0) Color(media.artColor) else null
     val highlight = if (cfg.dynamicColor && artColor != null) artColor else accent
-    val eqColor = remember(highlight) { brightTone(highlight) }
+    // Ekolayzır: kendi ayarı. Kapak rengi açıksa (ve kapak varsa) kapaktan, değilse seçilen renkten
+    val eqFromArt = cfg.eqDynamicColor && artColor != null
+    val eqColor = remember(eqFromArt, artColor, cfg.eqColorArgb) {
+        if (eqFromArt) brightTone(artColor!!) else Color(cfg.eqColorArgb)
+    }
 
     // Galeriden seçilen özel görseller (ayar kapalıysa boş adres verilir => null). Diske kopyalanmaz.
     val bgOn = cfg.customBgEnabled
@@ -426,7 +444,9 @@ fun IslandPill(
 
     // Asistanda cam gövde en az %60 koyu kalır: renk bantları koyu zeminde okunur
     val bodyTarget = if (assistant && cfg.glassEnabled) Color.Black.copy(alpha = max(cfg.glassAlpha, 0.6f)) else bodyColorFor(cfg, artColor, accent)
-    val body = animateColorAsState(bodyTarget, tween(450), label = "body")
+    // Yutma efektinde ada rengi anında hedef renge geçer: panel animasyonuyla (aynı renk) uyumlu olsun
+    val bodyAnim = animateColorAsState(bodyTarget, if (swallow) snap() else tween(450), label = "body")
+    val body = remember(swallow, bodyTarget, bodyAnim) { derivedStateOf { if (swallow) bodyTarget else bodyAnim.value } }
     val glow = animateColorAsState(artColor ?: accent, tween(450), label = "glow")
 
     val panelVisible by remember(progress) { derivedStateOf { max(progress.w.value, progress.h.value) > 0.01f } }

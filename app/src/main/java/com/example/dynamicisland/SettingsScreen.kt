@@ -187,8 +187,17 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 SwitchRow("Albüm kapağı rengi", "Ada rengi, çalan şarkının kapağına göre değişir",
                     draft.dynamicColor) { draft = draft.copy(dynamicColor = it) }
                 SectionDivider()
-                SubHeader("Vurgu / cam rengi")
+                SubHeader("Ada rengi / cam rengi")
+                Text("Albüm kapağı rengi kapalıyken (ya da kapak yokken) ada bu renge boyanır; panel animasyonu da aynı rengi kullanır.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
                 key(version) { ColorPicker(draft.accentArgb) { draft = draft.copy(accentArgb = it) } }
+            }
+            SectionCard("Ekolayzır rengi", "Müzik çalarken adadaki ses çubukları") {
+                SwitchRow("Albüm kapağı rengi", "Ekolayzır, çalan şarkının kapağına göre renklenir",
+                    draft.eqDynamicColor) { draft = draft.copy(eqDynamicColor = it) }
+                SectionDivider()
+                SubHeader(if (draft.eqDynamicColor) "Kapak yoksa kullanılacak renk" else "Ekolayzır rengi")
+                key(version) { ColorPicker(draft.eqColorArgb) { draft = draft.copy(eqColorArgb = it) } }
             }
 
             SectionCard("Albüm arka planı", "Müzik çalarken adanın içi kapak görseliyle dolar") {

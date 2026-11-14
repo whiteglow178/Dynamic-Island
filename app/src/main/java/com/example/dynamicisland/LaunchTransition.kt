@@ -29,7 +29,7 @@ import kotlin.math.pow
  * Adanın (kapalı halde) ekran üzerindeki konumu (piksel) ve animasyon hızı.
  * speed: 1 = normal, 2 = iki kat hızlı, 0.5 = yarı hızlı (ayarlardan gelir).
  */
-class LaunchSpec(val cx: Float, val top: Float, val w: Float, val h: Float, val speed: Float = 1f)
+class LaunchSpec(val cx: Float, val top: Float, val w: Float, val h: Float, val speed: Float = 1f, val color: Color = Color.Black)
 
 // ---- Ayar noktaları
 private const val BASE_MS = 650            // hız 1x iken adanın altından çıkıp ekranı kaplama süresi
@@ -90,9 +90,9 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
 
         translate(-origin.x, -origin.y) {
             if (t >= 1f) {
-                drawRect(Color.Black, Offset(-m, -m), Size(sw, sh))
+                drawRect(spec.color, Offset(-m, -m), Size(sw, sh))
             } else {
-                drawRoundRect(Color.Black.copy(alpha = alpha), Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
+                drawRoundRect(spec.color.copy(alpha = alpha), Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
             }
         }
     }
@@ -161,7 +161,7 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         val radius = minOf(CORNER_DP * d, minOf(w, h) / 2f)
 
         translate(-origin.x, -origin.y) {
-            drawRoundRect(Color.Black, Offset(cx - w / 2f, top), Size(w, h), CornerRadius(radius))
+            drawRoundRect(spec.color, Offset(cx - w / 2f, top), Size(w, h), CornerRadius(radius))
         }
     }
 }
