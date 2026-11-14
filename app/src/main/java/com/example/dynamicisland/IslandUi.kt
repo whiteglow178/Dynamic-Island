@@ -217,27 +217,22 @@ private fun brightTone(c: Color): Color {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
-/** Seçilen vurgu rengiyle boyanan ada gövdesi: çok koyu seçildiyse siyah kalır. */
-private fun accentBody(c: Color): Color {
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(c.toArgb(), hsv)
-    return if (hsv[2] < 0.15f) Color.Black else darkTone(c)
-}
-
 private fun bodyColorFor(cfg: IslandSettings, art: Color?, accent: Color): Color {
     val tint: Color? = if (cfg.dynamicColor) art else null
+    val base = Color(cfg.islandColorArgb)   // albüm rengi kapalı / kapak yok: ada seçilen renge boyanır (varsayılan siyah)
     return when {
-        cfg.glassEnabled -> (tint ?: accent).copy(alpha = cfg.glassAlpha)
+        cfg.glassEnabled -> (tint ?: base).copy(alpha = cfg.glassAlpha)
         tint != null -> darkTone(tint)
-        else -> accentBody(accent)       // albüm rengi kapalı / kapak yok: ada seçilen renge boyanır
+        else -> base
     }
 }
 
-/** Panel animasyonlarının rengi = adanın o anki gövde rengi (cam ise siyah zemin üstünde birleşmiş hali, opak). */
-fun islandPanelColor(cfg: IslandSettings, artArgb: Int): Color {
+/** Panel animasyonlarının rengi = adanın o anki gövde rengi (cam açıksa aynı şeffaflıkla). */
+fun islandPanelColor(cfg: IslandSettings, artArgb: Int, opaque: Boolean = false): Color {
     val art = if (artArgb != 0) Color(artArgb) else null
     val c = bodyColorFor(cfg, art, Color(cfg.accentArgb))
-    return if (c.alpha < 1f) androidx.compose.ui.graphics.lerp(Color.Black, c.copy(alpha = 1f), c.alpha) else c
+    // Cam açıkken panel de adanın şeffaflığını taşır; ekranı örtmesi gereken geçişlerde (opaque) opak karşılığı kullanılır
+    return if (opaque && c.alpha < 1f) androidx.compose.ui.graphics.lerp(Color.Black, c.copy(alpha = 1f), c.alpha) else c
 }
 
 // ---------------------------------------------------------------- Liquid Glass katmanları
@@ -350,7 +345,7 @@ private fun DrawScope.drawGlassRim(cornerT: Float = -1f) {
 
 /** Renk State olarak taşınır, yalnızca çizim fazında okunur => animasyonda recomposition yok. */
 @Composable
-private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape, cornerT: Float = -1f): Modifier {
+private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape, cornerT: Float = -1f, borderTint: Color? = null): Modifier {
     val liquid = cfg.glassEnabled && cfg.liquidEnabled
     var m = this.clip(shape).drawBehind { drawRect(body.value) }
     if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular, cornerT) }
@@ -358,7 +353,7 @@ private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shap
     else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase(cornerT) }
     if (cfg.borderEnabled) {
         val rbBorder = rememberRainbowStyle(cfg)
-        m = if (rbBorder == null) m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), shape)
+        m = if (rbBorder == null) m.border(cfg.borderWidthDp.dp, borderTint ?: Color(cfg.borderColorArgb), shape)
         else m.drawWithContent {
             drawContent()
             // Şekil kırpıldığı için çizginin yalnızca iç yarısı görünür; bu yüzden 2x kalınlık
@@ -461,7 +456,7 @@ fun IslandPill(
                 layout(w, h) { placeable.place(0, 0) }
             }
             .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
-            .islandSurface(cfg, body, shape, cornerT)
+            .islandSurface(cfg, body, shape, cornerT, if (cfg.borderArtColor && artColor != null) brightTone(artColor) else null)
             .pointerInput(Unit) {
                 // Dokunma + basılı tutma. Ada küçük olduğu için hızlı dokunuşta parmak kenardan kayıp çıkabiliyordu
                 // ve standart algılayıcı bunu iptal ediyordu; burada parmak ada dışına çıksa da ~40 dp'ye kadar

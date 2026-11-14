@@ -32,11 +32,12 @@ data class IslandSettings(
     val offsetYDp: Float = 0f,
     // Renk
     val accentArgb: Int = 0xFF0A84FF.toInt(),
-    val dynamicColor: Boolean = true,        // albüm kapağından renk
+    val islandColorArgb: Int = 0xFF000000.toInt(),   // ada gövde rengi (albüm kapağı rengi kapalıyken); varsayılan siyah
+    val dynamicColor: Boolean = false,       // albüm kapağından renk
     val eqDynamicColor: Boolean = true,      // ekolayzır rengi albüm kapağından gelsin (kapalıysa eqColorArgb)
     val eqColorArgb: Int = 0xFF0A84FF.toInt(), // ekolayzırın kendi rengi
     // Albüm kapağı arka planı (müzik çalarken adanın içi)
-    val artBgEnabled: Boolean = true,
+    val artBgEnabled: Boolean = false,
     val artBgCompact: Boolean = true,        // kapalı adada da; kapalıysa yalnızca açık adada
     // Özel arka plan (galeriden): adanın içi seçilen fotoğrafla dolar
     val customBgEnabled: Boolean = false,
@@ -58,10 +59,10 @@ data class IslandSettings(
     val liquidDispersion: Float = 0.5f,      // kenarda renk ayrışması
     val liquidSpecular: Float = 0.8f,        // parlama / yansıma şiddeti
     // Parıltı
-    val glowEnabled: Boolean = true,
+    val glowEnabled: Boolean = false,
     val glowIntensity: Float = 0.6f,
     // İlerleme çubuğu parıltısı (genişletilmiş müzik paneli)
-    val progressGlowEnabled: Boolean = true,
+    val progressGlowEnabled: Boolean = false,
     val progressGlowArtColor: Boolean = true,     // renk albüm kapağından alınsın (kapak yoksa progressGlowColorArgb)
     val progressGlowColorArgb: Int = 0xFF0A84FF.toInt(),
     val progressGlowIntensity: Float = 0.7f,
@@ -73,13 +74,14 @@ data class IslandSettings(
     // Çerçeve
     val borderEnabled: Boolean = false,
     val borderColorArgb: Int = 0xFFFFFFFF.toInt(),
+    val borderArtColor: Boolean = false,     // çerçeve çizgisi albüm kapağı renginde olsun (kapak yoksa borderColorArgb)
     val borderWidthDp: Float = 1f,
     // Animasyon
     val animEnabled: Boolean = true,
     val animStyle: Int = 0,                  // 0 Yaylı, 1 Yumuşak, 2 Hızlı, 3 Zıplamalı, 4 Sıvı
 
     // Görünürlük
-    val showIdle: Boolean = false,           // müzik/bildirim yokken de ada görünsün
+    val showIdle: Boolean = true,            // müzik/bildirim yokken de ada görünsün
 
     // Favori uygulamalar (boştayken ada genişleyip seçilen uygulamaları gösterir)
     val favoritesEnabled: Boolean = false,
@@ -108,7 +110,7 @@ data class IslandSettings(
     // ---------------------------------------------------------- Şarkı sözleri
     val lyricsEnabled: Boolean = true,
     val lyricsInPanel: Boolean = true,       // genişletilmiş adanın içinde
-    val lyricsCompact: Boolean = true,       // kapalı adanın içinde (ortada)
+    val lyricsCompact: Boolean = false,       // kapalı adanın içinde (ortada)
     val lyricsOutside: Boolean = false,      // adanın dışında, adayı açmadan
     // Boyutlar
     val lyricsPanelSizeSp: Float = 17f,
@@ -127,7 +129,7 @@ data class IslandSettings(
     val lyricsFillEnabled: Boolean = true,   // söylendikçe dolsun
     val lyricsOffsetMs: Int = 0,             // + ise sözler daha erken görünür
     // Parıltı
-    val lyricsGlowEnabled: Boolean = true,
+    val lyricsGlowEnabled: Boolean = false,
     val lyricsGlowLevel: Float = 0.5f,
     // Satır geçiş animasyonu
     val lyricsAnimEnabled: Boolean = true,
@@ -201,7 +203,7 @@ class SettingsRepository(context: Context) {
         val PG_ON = booleanPreferencesKey("pg_on"); val PG_ART = booleanPreferencesKey("pg_art")
         val PG_COLOR = intPreferencesKey("pg_color"); val PG_I = floatPreferencesKey("pg_i"); val PG_TIP = booleanPreferencesKey("pg_tip"); val PG_IN = booleanPreferencesKey("pg_in")
         val LIKE_ART = booleanPreferencesKey("like_art"); val LIKE_C = intPreferencesKey("like_c")
-        val BORDER = booleanPreferencesKey("border"); val BORDER_C = intPreferencesKey("borderC"); val BORDER_W = floatPreferencesKey("borderW")
+        val BORDER = booleanPreferencesKey("border"); val BORDER_C = intPreferencesKey("borderC"); val BORDER_ART = booleanPreferencesKey("border_art"); val ISL_C = intPreferencesKey("island_c"); val BORDER_W = floatPreferencesKey("borderW")
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
 
         val IDLE = booleanPreferencesKey("idle")
@@ -267,6 +269,8 @@ class SettingsRepository(context: Context) {
             likeColorArgb = p[K.LIKE_C] ?: d.likeColorArgb,
             borderEnabled = p[K.BORDER] ?: d.borderEnabled,
             borderColorArgb = p[K.BORDER_C] ?: d.borderColorArgb,
+            borderArtColor = p[K.BORDER_ART] ?: d.borderArtColor,
+            islandColorArgb = p[K.ISL_C] ?: d.islandColorArgb,
             borderWidthDp = p[K.BORDER_W] ?: d.borderWidthDp,
             animEnabled = p[K.ANIM] ?: d.animEnabled,
             animStyle = p[K.ANIM_S] ?: d.animStyle,
@@ -333,7 +337,7 @@ class SettingsRepository(context: Context) {
             it[K.PG_COLOR] = s.progressGlowColorArgb; it[K.PG_I] = s.progressGlowIntensity; it[K.PG_TIP] = s.progressGlowTipOnly
             it[K.PG_IN] = s.progressGlowInside
             it[K.LIKE_ART] = s.likeArtColor; it[K.LIKE_C] = s.likeColorArgb
-            it[K.BORDER] = s.borderEnabled; it[K.BORDER_C] = s.borderColorArgb; it[K.BORDER_W] = s.borderWidthDp
+            it[K.BORDER] = s.borderEnabled; it[K.BORDER_C] = s.borderColorArgb; it[K.BORDER_ART] = s.borderArtColor; it[K.ISL_C] = s.islandColorArgb; it[K.BORDER_W] = s.borderWidthDp
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
 
             it[K.IDLE] = s.showIdle

@@ -92,7 +92,7 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
             if (t >= 1f) {
                 drawRect(spec.color, Offset(-m, -m), Size(sw, sh))
             } else {
-                drawRoundRect(spec.color.copy(alpha = alpha), Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
+                drawRoundRect(spec.color.copy(alpha = spec.color.alpha * alpha), Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
             }
         }
     }

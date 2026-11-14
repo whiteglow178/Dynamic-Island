@@ -188,8 +188,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                     draft.dynamicColor) { draft = draft.copy(dynamicColor = it) }
                 SectionDivider()
                 SubHeader("Ada rengi / cam rengi")
-                Text("Albüm kapağı rengi kapalıyken (ya da kapak yokken) ada bu renge boyanır; panel animasyonu da aynı rengi kullanır.",
+                Text("Albüm kapağı rengi kapalıyken (ya da kapak yokken) ada bu renge boyanır; panel animasyonu da aynı rengi kullanır. Varsayılan: siyah.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                key(version) { ColorPicker(draft.islandColorArgb) { draft = draft.copy(islandColorArgb = it) } }
+                SectionDivider()
+                SubHeader("Vurgu rengi")
                 key(version) { ColorPicker(draft.accentArgb) { draft = draft.copy(accentArgb = it) } }
             }
             SectionCard("Ekolayzır rengi", "Müzik çalarken adadaki ses çubukları") {
@@ -321,11 +324,13 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 key(version) { ColorPicker(draft.likeColorArgb) { draft = draft.copy(likeColorArgb = it) } }
             }
 
-            SectionCard("Çerçeve", "Albüm renginden bağımsız, istediğin renk") {
+            SectionCard("Çerçeve", "İstediğin renk ya da albüm kapağı rengi") {
                 SwitchRow("Çerçeve çizgisi", null, draft.borderEnabled) { draft = draft.copy(borderEnabled = it) }
                 if (draft.borderEnabled) {
                     SliderRow("Kalınlık", draft.borderWidthDp, 0.5f..3f, "${"%.1f".format(draft.borderWidthDp)} dp") { draft = draft.copy(borderWidthDp = it) }
-                    SubHeader("Çerçeve rengi")
+                    SwitchRow("Albüm kapağı rengi", "Çerçeve çizgisi, çalan şarkının kapağına göre renklenir",
+                        draft.borderArtColor) { draft = draft.copy(borderArtColor = it) }
+                    SubHeader(if (draft.borderArtColor) "Kapak yoksa kullanılacak renk" else "Çerçeve rengi")
                     key(version) { ColorPicker(draft.borderColorArgb) { draft = draft.copy(borderColorArgb = it) } }
                 }
             }
