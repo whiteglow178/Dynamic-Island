@@ -174,9 +174,10 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
 
 
 // ---- Atom ada (OriginOS tarzı): uygulama kartı eğilir, huni gibi daralıp adaya emilir
-private const val ATOM_BASE_MS = 560       // hız 1x iken toplam süre
-private const val ATOM_SPLIT = 0.36f       // 0..SPLIT: pencere → eğik kart; SPLIT..1: kart → adaya emilme
-private const val ATOM_FUNNEL = 0.7f       // üst kısım adaya alttan ne kadar önce varsın (huni/kuyruk etkisi)
+private const val ATOM_BASE_MS = 520       // hız 1x iken toplam süre
+private const val ATOM_SPLIT = 0.30f       // 0..SPLIT: pencere → eğik kart
+private const val ATOM_Q_START = 0.20f     // kartın adaya çekilmesi bu noktada başlar (kart aşamasıyla iç içe: durma olmaz)
+private const val ATOM_FUNNEL = 0.5f       // üst kısım adaya alttan ne kadar önce varsın (huni/kuyruk etkisi)
 private const val ATOM_SWALLOW_AT = 0.45f
 
 private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
@@ -239,7 +240,7 @@ fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         val p = a.value
         val x1 = min(p / ATOM_SPLIT, 1f)
         val p1 = x1 * (1.6f - 0.6f * x1)                                         // sonda hız sıfırlanmaz: duraksama olmasın
-        val q = ((p - ATOM_SPLIT) / (1f - ATOM_SPLIT)).coerceIn(0f, 1f)
+        val q = ((p - ATOM_Q_START) / (1f - ATOM_Q_START)).coerceIn(0f, 1f)
 
         // 1) Pencere → eğik kart (sol tarafa kayar, sağ kenar uzaklaşır, hafif döner)
         val left = lerpF(0.08f * w, 0.40f * w - 0.28f * w, p1)
@@ -273,7 +274,9 @@ fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         base.forEachIndexed { i, pt ->
             val v = (pt.y - yMin) / span
             val r = (q * (1f + ATOM_FUNNEL) - v * ATOM_FUNNEL).coerceIn(0f, 1f)
-            val e = r * (0.35f + 0.65f * r)                              // sıfır hızla başlamaz, adaya doğru hızlanır
+            // Her nokta (alt kısım dahil) hemen hareket eder: %35 ortak hız + %65 huni gecikmesi; yavaşlama/duraksama olmaz
+            val m = (0.35f * q + 0.65f * r).coerceIn(0f, 1f)
+            val e = m * (0.4f + 0.6f * m)                                // sıfır hızla başlamaz, adaya doğru hızlanır
             val x = pt.x + (ix - pt.x) * e
             val y = pt.y + (iy - pt.y) * e
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
