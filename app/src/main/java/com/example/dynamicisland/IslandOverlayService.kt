@@ -47,6 +47,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private const val WINDOW_HOLD_MS = 700L   // müzik adası kapandıktan sonra pencerenin küçülmeden önce ek bekleme süresi
 private const val RESIZE_HIDE_MS = 80L   // pencere küçülürken içeriğin gizli kalma süresi
 
 class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
@@ -62,6 +63,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var dialog: Dialog? = null
     private var composeView: ComposeView? = null
     private var collapseJob: Job? = null
+    private var mediaGraceJob: Job? = null     // şarkı geçişinde oynatıcı bir an "durdu" / boş bildirirse adayı hemen kapatma
+    private var lastPillToggleAt = 0L          // hızlı art arda dokunuşlarda adanın sürekli aç-kapa yapmasını önler
     private var lastMedia: IslandContent.Media? = null
     private val iconCache = LruCache<String, ImageBitmap>(8)
 
@@ -246,8 +249,23 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cur.content is IslandContent.Notif -> update { it }
             cur.content is IslandContent.Status -> update { it }
             cur.content is IslandContent.Favorites -> update { it }    // favori paneli açıkken müzik paneline geçme
-            m == null || (!m.playing && !cur.expanded) -> { collapseJob?.cancel(); rest() }
-            else -> update { it.copy(content = m) }
+            m == null || (!m.playing && !cur.expanded) -> {
+                val showing = cur.content as? IslandContent.Media
+                // Parça geçişinde oynatıcı kısa süre "durdu" / "yükleniyor" ya da boş bildirir (çoğu zaman ESKİ başlıkla):
+                // ada kapak + ekolayzırla birlikte kaybolup geri gelmesin; kısa bir süre mevcut görünümde kalır.
+                // Gerçekten durduysa / kapandıysa sonra kapanır.
+                if (showing != null) {
+                    if (m != null) update { it.copy(content = m) }
+                    mediaGraceJob?.cancel()
+                    mediaGraceJob = scope.launch {
+                        delay(1500)
+                        if (lastMedia?.playing != true && !ui.value.expanded && ui.value.content is IslandContent.Media) {
+                            collapseJob?.cancel(); rest()
+                        }
+                    }
+                } else { mediaGraceJob?.cancel(); collapseJob?.cancel(); rest() }
+            }
+            else -> { mediaGraceJob?.cancel(); update { it.copy(content = m) } }
         }
     }
 
@@ -298,6 +316,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val cur = ui.value
         when (cur.content) {
             is IslandContent.Media -> {
+                // Çok hızlı art arda dokunuşlar: animasyon bitmeden yeniden aç-kapa yapılmaz (takılmayı önler)
+                val nowT = android.os.SystemClock.elapsedRealtime()
+                if (nowT - lastPillToggleAt < 260) return
+                lastPillToggleAt = nowT
                 val s = settings.value
                 if (cur.expanded) {
                     if (s.openExpAny) openMusicApp()
@@ -1422,7 +1444,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             else -> {
                 setBlur(false, s)
-                if (curW > cw + 2 * pad || curH > ch + 2 * pad) delay(settle)
+                // Müzik adasında pencere küçülmeden önce biraz daha beklenir: hızlı aç-kapa'da pencere her seferinde
+                // yeniden boyutlanmasın (asıl takılma kaynağı). Bu sürede yeniden açılırsa bu bekleme iptal olur.
+                val hold = if (k.kind == 2 && !k.swallow) WINDOW_HOLD_MS else 0L
+                if (curW > cw + 2 * pad || curH > ch + 2 * pad) delay(settle + hold)
                 setGeometry(cw + 2 * pad, ch + 2 * pad, baseX, y)
                 if (blurOk) setBlur(true, s)
             }

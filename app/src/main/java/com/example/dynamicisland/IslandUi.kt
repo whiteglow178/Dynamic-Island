@@ -33,6 +33,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
@@ -79,7 +81,9 @@ const val MUSIC_EXTRA_DP = 100f
 // ---------------------------------------------------------------- Müzik adası: bulanık açılış / ters yönde kapanış
 /** Bulanıklığı uygular (Android 12+); desteklenmeyen cihazlarda yalnızca solma + ölçek çalışır. */
 private fun GraphicsLayerScope.setBlurPx(px: Float) {
-    renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && px > 0.5f) BlurEffect(px, px, TileMode.Decal) else null
+    // Yarıçap 3 px'lik basamaklara yuvarlanır: aynı efekt art arda karelerde yeniden üretilmez (hızlı aç-kapa'da takılmayı azaltır)
+    val q = Math.round(px / 3f) * 3f
+    renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && q > 0.5f) BlurEffect(q, q, TileMode.Decal) else null
 }
 
 /**
@@ -218,7 +222,18 @@ fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean, fast: Boolean
     return remember(pw, ph) { IslandProgress(pw, ph) }
 }
 
-private const val EXPAND_LEAD_MS = 70L
+private const val EXPAND_LEAD_MS = 24L          // pencere büyüdükten sonra ek bekleme (yaklaşık 1,5 kare)
+private const val EXPAND_WAIT_MAX_MS = 220L    // pencere büyümezse en fazla bu kadar beklenir (güvenlik)
+
+/** Servisteki syncWindow ile aynı hesap: açık haldeki ada yüksekliği (dp), pay hariç. */
+private fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float = when (c) {
+    IslandContent.Assistant -> cfg.assistantHeightDp
+    is IslandContent.Favorites -> cfg.favoritesHeightDp(c.apps.size)
+    is IslandContent.Call -> if (c.isIncoming) 74f else 88f
+    is IslandContent.Status -> if (c.kind == StatusKind.Charging) chargePillHeightDp(cfg) else cfg.expandedHeightDp
+    is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
+    else -> cfg.expandedHeightDp
+}
 
 @Composable
 fun IslandRoot(
@@ -273,8 +288,22 @@ fun IslandRoot(
     // küçük pencereye çizilip kırpılmasın ("yaylı" animasyonda açılışta takılma). Kapanış gecikmesizdir.
     val wantExpanded = s.expanded   // arama: açık/küçük durumunu servis belirler (gelen arama hep açık)
     var animExpanded by remember { mutableStateOf(wantExpanded) }
+    // Pencerenin ölçülen yüksekliği: servis pencereyi büyütünce (sistem uygulayınca) değişir
+    var winH by remember { mutableIntStateOf(0) }
+    val densityNow = androidx.compose.ui.platform.LocalDensity.current
+    val contentNow by rememberUpdatedState(content)
+    val cfgLatest by rememberUpdatedState(cfg)
     LaunchedEffect(wantExpanded) {
-        if (wantExpanded && cfg.animEnabled && !s.swallow) delay(EXPAND_LEAD_MS)
+        if (wantExpanded && cfg.animEnabled && !s.swallow) {
+            // Sabit 70 ms yerine: pencere açık boyuta ulaşana kadar bekle (en çok EXPAND_WAIT_MAX_MS).
+            // Yay animasyonunun ilk (çok hızlı) kareleri küçük pencerede kırpılırsa ada "pat diye" açılmış gibi görünür.
+            val c = cfgLatest
+            val needPx = with(densityNow) { (expandedHeightDpFor(contentNow, c) + 2f * c.windowPadDp()).dp.roundToPx() }
+            if (winH < needPx - 2) {
+                kotlinx.coroutines.withTimeoutOrNull(EXPAND_WAIT_MAX_MS) { snapshotFlow { winH }.first { it >= needPx - 2 } }
+                delay(EXPAND_LEAD_MS)       // pencere yüzeyi yeni boyutla en az bir kare çizsin
+            }
+        }
         animExpanded = wantExpanded
     }
     val progress = rememberIslandProgress(cfg, animExpanded, s.swallow)
@@ -300,7 +329,10 @@ fun IslandRoot(
     }
 
     // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
-    Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
+    Box(
+        Modifier.fillMaxSize().onSizeChanged { winH = it.height }.padding(cfg.windowPadDp().dp),
+        contentAlignment = Alignment.TopCenter,
+    ) {
         // Boştayken de göster açıksa Idle içerikte de (boş) ada çizilir; kapalıysa hiçbir şey çizilmez.
         if (content !is IslandContent.Idle || cfg.showIdle) {
             val music = content is IslandContent.Media
@@ -584,6 +616,10 @@ fun IslandPill(
     val glow = animateColorAsState(artColor ?: accent, tween(450), label = "glow")
 
     val panelVisible by remember(progress) { derivedStateOf { max(progress.w.value, progress.h.value) > 0.01f } }
+    // Panel önceden hazırlama: parmak adaya değince müzik paneli görünmeden kompoze edilir; açılış animasyonunun
+    // ilk karelerinde ağır kompozisyon (takılma) olmaz. 1,5 sn içinde açılmazsa bırakılır.
+    var warm by remember { mutableStateOf(false) }
+    LaunchedEffect(warm) { if (warm) { delay(1_500); warm = false } }
     val compactVisible by remember(progress) { derivedStateOf { progress.mean < 0.5f } }
 
     Box(
@@ -602,6 +638,7 @@ fun IslandPill(
                 // dokunuş sayılır. Daha fazla sürüklenirse iptal edilir.
                 awaitEachGesture {
                     val down = awaitFirstDown()
+                    if (isMediaNow) warm = true
                     val slop = 40.dp.toPx()
                     val swipeMin = 18.dp.toPx()
                     var outcome = 0      // 0 = basılı tutma, 1 = dokunma, 2 = iptal, 3 = dikey kaydırma
@@ -667,12 +704,13 @@ fun IslandPill(
 
         val musicBlur = cfg.animEnabled && cfg.musicBlurAnim && content is IslandContent.Media
         val artSpin: () -> Float = { artFlip?.spin?.value ?: 0f }
-        if (panelVisible && !swallow) {
+        if ((panelVisible || (warm && content is IslandContent.Media)) && !swallow) {
             Box(
                 Modifier
                     .requiredSize(geo.ew, geo.eh)
                     .graphicsLayer {
-                        if (musicBlur) musicReveal(progress.mean)
+                        if (!panelVisible) alpha = 0f      // yalnızca hazırlık: çizilmez
+                        else if (musicBlur) musicReveal(progress.mean)
                         else alpha = ((progress.mean - 0.45f) / 0.55f).coerceIn(0f, 1f)
                     }
             ) {
