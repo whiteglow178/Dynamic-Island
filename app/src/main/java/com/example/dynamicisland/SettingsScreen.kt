@@ -485,6 +485,14 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
             SliderRow("Hız", draft.musicExitSpeed, 0.5f..3f, "%.1fx".format(draft.musicExitSpeed)) { set(draft.copy(musicExitSpeed = it)) }
             SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa ada büyümez",
                 draft.musicExitSwallow) { set(draft.copy(musicExitSwallow = it)) }
+            SectionDivider()
+            SubHeader("Panel animasyonu")
+            SwitchRow("Klasik panel", "Uzun panel küçülerek adaya girer",
+                draft.musicExitClassic) { set(draft.copy(musicExitClassic = it, musicExitAtomic = if (!it) true else draft.musicExitAtomic)) }
+            SwitchRow("Atom ada", "Uygulama kartı eğilip huni gibi adaya çekilir (OriginOS tarzı)",
+                draft.musicExitAtomic) { set(draft.copy(musicExitAtomic = it, musicExitClassic = if (!it) true else draft.musicExitClassic)) }
+            Text("İkisi de açıksa her çıkışta rastgele biri oynar.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
     }
     if (!draft.lyricsEnabled) return

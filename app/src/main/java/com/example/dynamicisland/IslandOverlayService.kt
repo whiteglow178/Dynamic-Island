@@ -695,22 +695,23 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             color = islandPanelColor(s, lastMedia?.artColor ?: 0),
         )
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        // Panel animasyonu seçimi: yalnızca atom açıksa atom; ikisi de açıksa her çıkışta rastgele
+        val useAtomic = s.musicExitAtomic && (!s.musicExitClassic || kotlin.random.Random.nextBoolean())
         lateinit var view: ComposeView
         view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
             setContent {
-                ShrinkToIsland(
-                    spec,
-                    onSwallow = { runCatching { swallowIsland() } },
-                    onFinished = {
-                        handler.post {
-                            if (swallowView === view) removeSwallowView()
-                            // Panel tamamen silindi: ada bir an daha büyük kalıp küçülür (arkası görünmesin)
-                            if (ui.value.swallow && ui.value.expanded) scheduleCollapse(SWALLOW_HOLD_MS)
-                        }
-                    },
-                )
+                val onDone = {
+                    handler.post {
+                        if (swallowView === view) removeSwallowView()
+                        // Panel tamamen silindi: ada bir an daha büyük kalıp küçülür (arkası görünmesin)
+                        if (ui.value.swallow && ui.value.expanded) scheduleCollapse(SWALLOW_HOLD_MS)
+                    }
+                    Unit
+                }
+                if (useAtomic) AtomicToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone)
+                else ShrinkToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone)
             }
         }
         fun params(type: Int) = WindowManager.LayoutParams(

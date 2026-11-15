@@ -2,6 +2,7 @@ package com.example.dynamicisland
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,13 +18,18 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.sin
 
 /**
  * Adanın (kapalı halde) ekran üzerindeki konumu (piksel) ve animasyon hızı.
@@ -162,6 +168,119 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
 
         translate(-origin.x, -origin.y) {
             drawRoundRect(spec.color, Offset(cx - w / 2f, top), Size(w, h), CornerRadius(radius))
+        }
+    }
+}
+
+
+// ---- Atom ada (OriginOS tarzı): uygulama kartı eğilir, huni gibi daralıp adaya emilir
+private const val ATOM_BASE_MS = 560       // hız 1x iken toplam süre
+private const val ATOM_SPLIT = 0.36f       // 0..SPLIT: pencere → eğik kart; SPLIT..1: kart → adaya emilme
+private const val ATOM_FUNNEL = 0.7f       // üst kısım adaya alttan ne kadar önce varsın (huni/kuyruk etkisi)
+private const val ATOM_SWALLOW_AT = 0.45f
+
+private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
+
+/** Köşeleri yuvarlak dikdörtgenin çevresini (saat yönünde) nokta dizisi olarak verir. */
+private fun roundedRectPoints(l: Float, t: Float, r: Float, b: Float, rad: Float): List<Offset> {
+    val rr = min(rad, min(r - l, b - t) / 2f).coerceAtLeast(0f)
+    val out = ArrayList<Offset>(96)
+    fun arc(cx: Float, cy: Float, a0: Double) {
+        for (i in 0..8) {
+            val a = a0 + (PI / 2.0) * i / 8.0
+            out.add(Offset(cx + rr * cos(a).toFloat(), cy + rr * sin(a).toFloat()))
+        }
+    }
+    fun edge(x0: Float, y0: Float, x1: Float, y1: Float) {
+        for (i in 1 until 10) { val f = i / 10f; out.add(Offset(lerpF(x0, x1, f), lerpF(y0, y1, f))) }
+    }
+    arc(l + rr, t + rr, PI);            edge(l + rr, t, r - rr, t)
+    arc(r - rr, t + rr, 1.5 * PI);      edge(r, t + rr, r, b - rr)
+    arc(r - rr, b - rr, 0.0);           edge(r - rr, b, l + rr, b)
+    arc(l + rr, b - rr, 0.5 * PI);      edge(l, b - rr, l, t + rr)
+    return out
+}
+
+/**
+ * Atom ada paneli: uygulama penceresi önce sola kayan, perspektifle eğilen bir karta dönüşür;
+ * sonra kartın üst kısmı adaya, alt kısmı gecikmeyle çekilerek huni gibi daralır ve ada tarafından yutulur.
+ * (Pencere içeriği yerine adanın rengi kullanılır.)
+ */
+@Composable
+fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Unit) {
+    val swallow by rememberUpdatedState(onSwallow)
+    val finished by rememberUpdatedState(onFinished)
+    val a = remember { Animatable(0f) }
+    val appear = remember { Animatable(0f) }
+    val fade = remember { Animatable(1f) }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val ms = (ATOM_BASE_MS / spec.speed.coerceIn(0.25f, 4f)).toInt()
+
+    LaunchedEffect(Unit) {
+        delay((PANEL_DELAY_MS / spec.speed.coerceIn(0.25f, 4f)).toLong())
+        launch { appear.animateTo(1f, tween(90)) }
+        var fired = false
+        a.animateTo(1f, tween(ms, easing = LinearEasing)) {
+            if (!fired && value >= ATOM_SWALLOW_AT) { fired = true; swallow() }
+        }
+        if (!fired) swallow()
+        fade.animateTo(0f, tween(SHRINK_FADE_MS))
+        finished()
+    }
+
+    Canvas(
+        Modifier.fillMaxSize()
+            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .graphicsLayer { alpha = appear.value * fade.value }
+    ) {
+        val d = density
+        val w = size.width
+        val h = size.height
+        val p = a.value
+        val p1 = 1f - (1f - min(p / ATOM_SPLIT, 1f)).pow(3)                     // yumuşak oturan kart geçişi
+        val q = ((p - ATOM_SPLIT) / (1f - ATOM_SPLIT)).coerceIn(0f, 1f)
+
+        // 1) Pencere → eğik kart (sol tarafa kayar, sağ kenar uzaklaşır, hafif döner)
+        val left = lerpF(0.08f * w, 0.40f * w - 0.28f * w, p1)
+        val right = lerpF(0.92f * w, 0.40f * w + 0.28f * w, p1)
+        val top = lerpF(0.06f * h, 0.17f * h, p1)
+        val bottom = lerpF(0.94f * h, 0.67f * h, p1)
+        val radius = lerpF(44f * d, 38f * d, p1)
+        val tilt = (-7.0 * PI / 180.0 * p1).toFloat()
+        val persp = 0.14f * p1
+        val cxm = (left + right) / 2f
+        val cym = (top + bottom) / 2f
+        val cardW = right - left
+        val cosT = cos(tilt)
+        val sinT = sin(tilt)
+
+        val base = roundedRectPoints(left, top, right, bottom, radius).map { pt ->
+            val u = (pt.x - left) / cardW
+            val y1 = cym + (pt.y - cym) * (1f - persp * u)          // sağ taraf daha kısa: derinlik hissi
+            val dx = pt.x - cxm
+            val dy = y1 - cym
+            Offset(cxm + dx * cosT - dy * sinT, cym + dx * sinT + dy * cosT)
+        }
+
+        // 2) Huni: üst noktalar adaya önce varır, alt noktalar gecikmeyle çekilir
+        val ix = spec.cx
+        val iy = spec.top + spec.h / 2f
+        val yMin = base.minOf { it.y }
+        val yMax = base.maxOf { it.y }
+        val span = (yMax - yMin).coerceAtLeast(1f)
+        val path = Path()
+        base.forEachIndexed { i, pt ->
+            val v = (pt.y - yMin) / span
+            val r = (q * (1f + ATOM_FUNNEL) - v * ATOM_FUNNEL).coerceIn(0f, 1f)
+            val e = r * r * (3f - 2f * r)
+            val x = pt.x + (ix - pt.x) * e
+            val y = pt.y + (iy - pt.y) * e
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+
+        translate(-origin.x, -origin.y) {
+            drawPath(path, spec.color)
         }
     }
 }
