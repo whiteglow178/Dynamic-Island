@@ -49,6 +49,7 @@ import kotlin.math.roundToInt
 
 private const val WINDOW_HOLD_MS = 700L   // müzik adası kapandıktan sonra pencerenin küçülmeden önce ek bekleme süresi
 private const val RESIZE_HIDE_MS = 80L   // pencere küçülürken içeriğin gizli kalma süresi
+private const val MEDIA_BG_GRACE_MS = 1_400L   // müzik "durdu" bildirse de yan baloncuğun kalma süresi (parça geçişi)
 
 class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
@@ -95,7 +96,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val showAgain = Runnable { composeView?.animate()?.alpha(1f)?.setDuration(120)?.start() }
     private var resizeListener: View.OnLayoutChangeListener? = null
 
-    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false)
+    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0)
+
+    // ---- Çoklu olay: en yeni olay ortada, öncekiler sağ / sol baloncukta
+    private enum class Bg { Media, Rec, Call }
+    private val bgOrder = ArrayList<Bg>()      // başlama sırası: en eski başta, en yeni sonda
+    private var winSide = 0                    // pencerenin şu an yan baloncuklar için ayırdığı pay (px)
+    private var mediaBgUntil = 0L              // parça geçişinde "durdu" bildirimi gelse de baloncuk kısa süre kalır
+    private var mediaBgJob: Job? = null
 
     override fun onCreate() {
         savedStateController.performAttach()
@@ -140,7 +148,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
-            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow) }
+            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow, u.side.size) }
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
         }
@@ -219,7 +227,51 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val s = settings.value
         val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
             lastMedia?.playing == true && n.content is IslandContent.Media
-        ui.value = n.copy(compactLyrics = want && !n.swallow)
+        ui.value = n.copy(compactLyrics = want && !n.swallow, side = sideFor(n))
+    }
+
+    // ---------------------------------------------------------------- Çoklu olay (ortada en yeni, yanlarda öncekiler)
+    private fun mediaBgActive(): Boolean {
+        val m = lastMedia ?: return false
+        return m.playing || android.os.SystemClock.elapsedRealtime() < mediaBgUntil
+    }
+
+    private fun bgActive(b: Bg): Boolean = when (b) {
+        Bg.Media -> mediaBgActive() && !hidingMedia()
+        Bg.Rec -> recPhase.let { it == RecPhase.Countdown || it == RecPhase.Recording || it == RecPhase.Processing }
+        Bg.Call -> callKey != null && !callIncoming
+    }
+
+    /** Biten olayları listeden çıkarır, yeni başlayanı sona (= en yeni) ekler. */
+    private fun syncBgOrder() {
+        bgOrder.removeAll { !bgActive(it) }
+        for (b in Bg.values()) if (b !in bgOrder && bgActive(b)) bgOrder.add(b)
+    }
+
+    private fun bgContent(b: Bg): IslandContent? = when (b) {
+        Bg.Media -> lastMedia
+        Bg.Rec -> recContent()
+        Bg.Call -> if (callKey == null) null else IslandContent.Call(
+            callName, callIncoming,
+            if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince),
+            callAvatar, callSpeaker,
+        )
+    }
+
+    /** Ortadaki içerik hangi arka plan olayına ait? (bildirim, durum, favoriler vb. için null) */
+    private fun centerBg(c: IslandContent): Bg? = when (c) {
+        is IslandContent.Media -> Bg.Media
+        is IslandContent.ScreenRec -> if (c.phase != RecPhase.Saved) Bg.Rec else null
+        is IslandContent.Call -> if (!c.isIncoming) Bg.Call else null
+        else -> null
+    }
+
+    /** Yan baloncuklar: yalnızca kapalı adada; en yeni ortada, sondan ikinci sağda, sondan üçüncü solda. */
+    private fun sideFor(n: IslandUiState): List<IslandContent> {
+        syncBgOrder()
+        if (n.expanded || n.swallow) return emptyList()
+        val center = centerBg(n.content) ?: return emptyList()
+        return bgOrder.asReversed().filter { it != center }.take(2).mapNotNull { bgContent(it) }
     }
 
     private var assistantActive = false
@@ -241,18 +293,34 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun onMedia(m: IslandContent.Media?) {
         if (m == lastMedia) return
+        val wasActive = bgActive(Bg.Media)
         lastMedia = m
         mediaState.value = m
+        // Parça geçişinde oynatıcı kısa süre "durdu" bildirse de yan baloncuk birleşip tekrar ayrılmasın
+        val nowMs = android.os.SystemClock.elapsedRealtime()
+        if (m?.playing == true) mediaBgUntil = nowMs + MEDIA_BG_GRACE_MS
+        mediaBgJob?.cancel()
+        if (m != null && !m.playing && mediaBgUntil > nowMs) {
+            mediaBgJob = scope.launch { delay(mediaBgUntil - nowMs + 60); update { it } }
+        }
         updateInMusicApp()
         ensureLyrics()
         val cur = ui.value
+        val cc = cur.content
+        val nowActive = bgActive(Bg.Media)
         when {
-            cur.content is IslandContent.Call -> update { it }          // arama sürerken müzik paneline geçme
-            cur.content is IslandContent.ScreenRec -> update { it }     // ekran kaydı sürerken müzik adasına geçme
-            cur.content is IslandContent.Assistant -> update { it }
-            cur.content is IslandContent.Notif -> update { it }
-            cur.content is IslandContent.Status -> update { it }
-            cur.content is IslandContent.Favorites -> update { it }    // favori paneli açıkken müzik paneline geçme
+            cc is IslandContent.Call && cc.isIncoming -> update { it }  // gelen arama ortayı hep tutar
+            cc is IslandContent.Assistant -> update { it }
+            cc is IslandContent.Notif -> update { it }
+            cc is IslandContent.Status -> update { it }
+            cc is IslandContent.Favorites -> update { it }              // favori paneli açıkken müzik paneline geçme
+            cc is IslandContent.ScreenRec && cc.phase == RecPhase.Saved -> update { it }   // "kaydedildi" görünümü bozulmasın
+            // Müzik yeni başladı: en yeni olay olarak ortaya geçer, önceki ortadaki olay yan baloncuğa ayrılır
+            nowActive && !wasActive && m != null && cc !is IslandContent.Media -> {
+                mediaGraceJob?.cancel(); collapseJob?.cancel()
+                update { IslandUiState(m, false) }
+            }
+            cc is IslandContent.Call || cc is IslandContent.ScreenRec -> update { it }   // müzik zaten yan baloncukta (ya da yok)
             m == null || (!m.playing && !cur.expanded) -> {
                 val showing = cur.content as? IslandContent.Media
                 // Parça geçişinde oynatıcı kısa süre "durdu" / "yükleniyor" ya da boş bildirir (çoğu zaman ESKİ başlıkla):
@@ -312,13 +380,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun rest() {
-        // Ekran kaydı sürerken (kayıt / işleniyor / geri sayım) ada bu hale döner
-        val rp = recPhase
-        if (rp != null && rp != RecPhase.Saved && !assistantActive && callKey == null) {
-            recContent()?.let { c -> update { IslandUiState(c, false) }; return }
+        syncBgOrder()
+        if (callKey != null && callIncoming) { publishCall(); return }     // gelen arama hep ortada
+        // Ortaya en yeni etkin olay gelir; öncekiler update() içinde yan baloncuk olur.
+        // Duraklatılmış müzik (yalnızca baloncuk tutma süresi içinde) ortayı almaz.
+        val top = bgOrder.lastOrNull { it != Bg.Media || lastMedia?.playing == true }
+        val c = top?.let { bgContent(it) }
+        when {
+            c == null -> update { IslandUiState() }
+            top == Bg.Call -> update { IslandUiState(c, expanded = callExpanded) }
+            else -> update { IslandUiState(c, false) }
         }
-        val m = lastMedia
-        update { if (m != null && m.playing) IslandUiState(m, false) else IslandUiState() }
     }
 
     private fun onPillTap() {
@@ -401,7 +473,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun publishRec(expanded: Boolean) {
         val c = recContent() ?: return
-        if (assistantActive || callKey != null) return
+        if (assistantActive || (callKey != null && callIncoming)) return
+        syncBgOrder()
+        // Kayıt, daha yeni bir olayın (müzik / arama) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
+        if (!expanded && c.phase != RecPhase.Saved && bgOrder.lastOrNull().let { it != null && it != Bg.Rec }) {
+            update { it }
+            return
+        }
         collapseJob?.cancel()
         update { IslandUiState(c, expanded = expanded) }
     }
@@ -422,6 +500,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         recThumb = null; recStop = null; recOpen = null; recViaA11y = false
         if (ui.value.content is IslandContent.ScreenRec) {
             collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+        } else {
+            update { it }      // kayıt yan baloncuktaydı: baloncuk adaya geri birleşir
         }
     }
 
@@ -599,6 +679,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun publishCall() {
+        syncBgOrder()
+        // Aktif arama, daha yeni bir olayın (müzik / ekran kaydı) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
+        if (!callIncoming && bgOrder.lastOrNull().let { it != null && it != Bg.Call }) { update { it }; return }
         val dur = if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince)
         update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = callExpanded) }
     }
@@ -621,7 +704,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             setSpeaker(false)
             callExpanded = true; callCollapseJob?.cancel()
             syncSideButtons()
-            if (ui.value.content is IslandContent.Call) collapseAndRest()
+            if (ui.value.content is IslandContent.Call) collapseAndRest() else update { it }
         }
     }
 
@@ -1209,7 +1292,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { attachEdgeGlow() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow)) }
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, ui.value.side.size)) }
     }
 
     // ---------------------------------------------------------------- Durum çubuğu örtüsü
@@ -1611,7 +1694,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val maxShift = ((screenW - ew - 2 * pad) / 2).coerceAtLeast(0)
         val xExp = baseX.coerceIn(-maxShift, maxShift)
         val settle = s.settleMs()
-        val blurOk = pad == 0        // pay varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
+        // Yan baloncuklar varsa pencere iki yanda (simetrik) baloncuk payı kadar genişler; ada pencerenin ortasında kalır
+        val sideExtra = if (k.side > 0 && !k.expanded && k.kind != 0) dp(sideExtraDp(s)) else 0
+        val blurOk = pad == 0 && sideExtra == 0   // pay / yan baloncuk varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
         setTouchable((k.kind != 0 && !assistant) || (k.kind == 0 && s.favoritesReady()))
@@ -1646,12 +1731,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 setBlur(false, s)
                 // Müzik adasında pencere küçülmeden önce biraz daha beklenir: hızlı aç-kapa'da pencere her seferinde
                 // yeniden boyutlanmasın (asıl takılma kaynağı). Bu sürede yeniden açılırsa bu bekleme iptal olur.
-                val hold = if (k.kind == 2 && !k.swallow) WINDOW_HOLD_MS else 0L
-                if (curW > cw + 2 * pad || curH > ch + 2 * pad) delay(settle + hold)
-                setGeometry(cw + 2 * pad, ch + 2 * pad, baseX, y)
+                // Yan baloncuklar birleşirken (sıvı animasyonu) pencere de aynı şekilde geç küçülür
+                val hold = if ((k.kind == 2 && !k.swallow) || winSide > 0) WINDOW_HOLD_MS else 0L
+                val wantW = cw + 2 * pad + 2 * sideExtra
+                if (curW > wantW || curH > ch + 2 * pad) delay(settle + hold)
+                setGeometry(wantW, ch + 2 * pad, baseX, y)
+                winSide = sideExtra
                 if (blurOk) setBlur(true, s)
             }
         }
+        if (k.expanded || k.kind == 0) winSide = 0
     }
 
     private fun startAsForeground() {
@@ -1764,7 +1853,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun bringIslandToFront() {
         runCatching { detachOverlay() }
         safeAttachOverlay()
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow)) }
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, ui.value.side.size)) }
     }
 
     /** Sistem pencereyi istediğimizden farklı bir yere koyduysa (durum çubuğu payı vb.) farkı kadar geri çeker. */

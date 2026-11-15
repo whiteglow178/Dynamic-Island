@@ -66,6 +66,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -74,8 +75,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.abs
+import kotlin.math.acos
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 const val MUSIC_EXTRA_DP = 100f
 
@@ -110,6 +116,141 @@ private fun GraphicsLayerScope.musicCompactBlur(c: Float) {
 
 /** Aktif aramada küçültülmüş adanın genişliği (telefon simgesi + süre + ses dalgası sığsın). */
 const val CALL_COMPACT_W_DP = 160f
+
+// ---------------------------------------------------------------- Yan baloncuklar (iki / üç olay)
+/** Ada ile yan baloncuk arasındaki son boşluk (dp). */
+const val SIDE_GAP_DP = 8f
+
+/** Yan baloncuklar için pencerenin her iki yanda ayıracağı pay (dp): boşluk + baloncuk çapı + yay taşması. Servis kullanır. */
+fun sideExtraDp(cfg: IslandSettings): Float = SIDE_GAP_DP + cfg.compactHeightDp + 6f
+
+private class SideHold { var c: IslandContent? = null }
+
+/**
+ * İki daireyi sıvı gibi birleştiren köprü yolu (metaball). Daireler [maxDist]'ten uzaksa ya da biri
+ * ötekinin içindeyse null döner: köprü kopmuş / henüz oluşmamış demektir.
+ */
+private fun metaballPath(c1: Offset, r1: Float, c2: Offset, r2: Float, maxDist: Float): Path? {
+    val dx = c2.x - c1.x
+    val dy = c2.y - c1.y
+    val d = sqrt(dx * dx + dy * dy)
+    if (r1 <= 0f || r2 <= 0f || d <= abs(r1 - r2) || d >= maxDist) return null
+    val v = 0.5f
+    val handle = 2.4f
+    val pi = Math.PI.toFloat()
+    val u1: Float
+    val u2: Float
+    if (d < r1 + r2) {
+        u1 = acos(((r1 * r1 + d * d - r2 * r2) / (2f * r1 * d)).coerceIn(-1f, 1f))
+        u2 = acos(((r2 * r2 + d * d - r1 * r1) / (2f * r2 * d)).coerceIn(-1f, 1f))
+    } else { u1 = 0f; u2 = 0f }
+    val ang = atan2(dy, dx)
+    val maxSpread = acos(((r1 - r2) / d).coerceIn(-1f, 1f))
+    val a1 = ang + u1 + (maxSpread - u1) * v
+    val a2 = ang - u1 - (maxSpread - u1) * v
+    val a3 = ang + pi - u2 - (pi - u2 - maxSpread) * v
+    val a4 = ang - pi + u2 + (pi - u2 - maxSpread) * v
+    fun pt(c: Offset, r: Float, a: Float, len: Float = r) = Offset(c.x + len * cos(a), c.y + len * sin(a))
+    val p1a = pt(c1, r1, a1); val p1b = pt(c1, r1, a2)
+    val p2a = pt(c2, r2, a3); val p2b = pt(c2, r2, a4)
+    val half = pi / 2f
+    val total = r1 + r2
+    val gapAB = sqrt((p1a.x - p2a.x) * (p1a.x - p2a.x) + (p1a.y - p2a.y) * (p1a.y - p2a.y))
+    val d2 = min(v * handle, gapAB / total) * min(1f, d * 2f / total)
+    val h1 = r1 * d2
+    val h2 = r2 * d2
+    return Path().apply {
+        moveTo(p1a.x, p1a.y)
+        val k1 = pt(p1a, 0f, a1 - half, h1); val k2 = pt(p2a, 0f, a3 + half, h2)
+        cubicTo(k1.x, k1.y, k2.x, k2.y, p2a.x, p2a.y)
+        lineTo(p2b.x, p2b.y)
+        val k3 = pt(p2b, 0f, a4 - half, h2); val k4 = pt(p1b, 0f, a2 + half, h1)
+        cubicTo(k3.x, k3.y, k4.x, k4.y, p1b.x, p1b.y)
+        close()
+    }
+}
+
+/** Baloncuk merkezinin pencere ortasına göre yatay konumu: sep = 0 adanın ucunun içinde, sep = 1 son konumunda. */
+private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, sep: Float): Float {
+    val ch = geo.ch.toPx()
+    val r = min(36.dp.toPx(), ch / 2f)
+    val pillW = lerp(geo.cw, geo.ew, progress.w.value).toPx()
+    val capX = pillW / 2f - r
+    return dir * (capX + (2f * r + SIDE_GAP_DP.dp.toPx()) * sep.coerceAtLeast(0f))
+}
+
+/** Ortadaki adanın yanındaki baloncuklar: [0] sağda, [1] solda. Her biri adadan sıvı gibi bölünüp ayrılır, birleşirken geri girer. */
+@Composable
+private fun IslandSides(sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>) {
+    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color)
+    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color)
+}
+
+@Composable
+private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>) {
+    val hold = remember { SideHold() }
+    if (target != null) hold.c = target          // birleşme animasyonu sürerken son içerik çizilmeye devam eder
+    val spec: AnimationSpec<Float> = if (cfg.animEnabled) spring(dampingRatio = 0.72f, stiffness = 150f) else snap()
+    val sep = animateFloatAsState(if (target != null) 1f else 0f, spec, label = "sideSep")
+    val present = target != null
+    val alive by remember(present) { derivedStateOf { present || sep.value > 0.004f } }
+    if (!alive) { hold.c = null; return }
+    val shown = hold.c ?: return
+
+    Box(Modifier.fillMaxSize()) {
+        // Köprü + baloncuk gövdesi (ada ile aynı renk)
+        Canvas(Modifier.fillMaxSize()) {
+            val k = (1f - progress.mean * 2f).coerceIn(0f, 1f)     // ada genişlerken baloncuk kaybolur
+            if (k <= 0f) return@Canvas
+            val ch = geo.ch.toPx()
+            val r = min(36.dp.toPx(), ch / 2f)
+            val cx = size.width / 2f
+            val cy = ch / 2f
+            val a = Offset(cx + sideCenterX(dir, geo, progress, 0f), cy)            // adanın bu yandaki ucu (yuvarlak kısım)
+            val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value), cy)     // baloncuk
+            val col = color.value.let { it.copy(alpha = it.alpha * k) }
+            drawCircle(col, r, b)
+            // Neck: daireler birbirinden uzaklaştıkça incelir, belli bir noktada kopar
+            metaballPath(a, r, b, r, 2f * r + SIDE_GAP_DP.dp.toPx() * 0.55f)?.let { drawPath(it, col) }
+            if (cfg.borderEnabled) {
+                val bw = cfg.borderWidthDp.dp.toPx()
+                drawCircle(Color(cfg.borderColorArgb).copy(alpha = k), r - bw / 2f, b, style = Stroke(bw))
+            }
+        }
+        // İçerik: baloncuk ayrıldıkça görünür (albüm kapağı / kırmızı nokta / telefon simgesi)
+        Box(
+            Modifier.align(Alignment.TopCenter).requiredSize(geo.ch)
+                .graphicsLayer {
+                    val s = sep.value
+                    translationX = sideCenterX(dir, geo, progress, s)
+                    alpha = ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (1f - progress.mean * 2f).coerceIn(0f, 1f)
+                },
+            contentAlignment = Alignment.Center,
+        ) { SideGlyph(shown, geo.ch) }
+    }
+}
+
+@Composable
+private fun SideGlyph(c: IslandContent, ch: Dp) {
+    when (c) {
+        is IslandContent.Media -> {
+            val side = ch * 0.64f
+            val art = c.art
+            if (art != null) {
+                Image(
+                    bitmap = art, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium,
+                    modifier = Modifier.size(side).clip(RoundedCornerShape(side * 0.28f)),
+                )
+            } else {
+                Text("♪", color = Color.White.copy(alpha = 0.8f), fontSize = 16.sp)
+            }
+        }
+        is IslandContent.ScreenRec ->
+            if (c.phase == RecPhase.Processing) RecSpinner(14.dp) else RecDot(true, 10.dp)
+        is IslandContent.Call -> PhoneIcon(0f, Modifier.size(14.dp), CallGreen)
+        else -> Unit
+    }
+}
 
 // ---------------------------------------------------------------- Albüm kapağı dönme (Y ekseninde)
 /** Kapak dönme durumu: şarkı değişiminde yarım tur (180°), yön sonraki / önceki şarkıya göre değişir. */
@@ -330,6 +471,10 @@ fun IslandRoot(
         active = lyricsOn && lyrics is LyricsState.Ready, fine = cfg.lyricsFillEnabled,
     )
 
+    // Yan baloncukların rengi: ortadaki adanın gövde rengiyle aynı (kapak rengi açıksa ve müzik ortadaysa kapaktan)
+    val sideArtColor = media?.artColor?.takeIf { it != 0 }?.let { Color(it) }
+    val sideBody = animateColorAsState(bodyColorFor(cfg, sideArtColor, Color(cfg.accentArgb)), tween(450), label = "sideBody")
+
     // Tam genişlik asistan: ada kutusu yok, pencere ekran genişliğinde; animasyon doğrudan çizilir
     if (content is IslandContent.Assistant && cfg.assistantFullWidth) {
         var shown by remember { mutableStateOf(false) }
@@ -373,6 +518,8 @@ fun IslandRoot(
                 val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value)
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
+            // Yan baloncuklar adanın ARKASINA çizilir (ada üstte kalır); köprü adanın ucundan uzanır
+            IslandSides(s.side, geo, progress, cfg, sideBody)
             IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop)
         }
     }
