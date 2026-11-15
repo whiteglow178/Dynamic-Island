@@ -63,6 +63,7 @@ class IslandAccessibilityService : AccessibilityService() {
         runCatching {
             serviceInfo?.let { info ->
                 info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                info.notificationTimeout = 0      // XML'de bir bekleme tanımlıysa olaylar gecikmeli gelir; çıkış animasyonu hemen başlasın
                 serviceInfo = info
             }
         }
@@ -121,13 +122,15 @@ class IslandAccessibilityService : AccessibilityService() {
     }.getOrDefault(emptySet())
 
     private var fgRetries = 0
+    private val FG_RETRY_MS = 35L     // eskiden 90 ms: ön plan değişimini daha sık kontrol et
+    private val FG_RETRIES = 16       // toplam ~0,55 sn boyunca denenir
     private val fgCheck = object : Runnable {
         override fun run() {
             val changed = runCatching { checkForeground() }.getOrDefault(true)
             // Hızlı geçişte aktif pencere henüz güncellenmemiş olabilir: değişiklik görülmediyse kısa aralıkla tekrar bak
             if (!changed && fgRetries > 0) {
                 fgRetries--
-                handler.postDelayed(this, 90)
+                handler.postDelayed(this, FG_RETRY_MS)
             }
         }
     }
@@ -138,8 +141,8 @@ class IslandAccessibilityService : AccessibilityService() {
      */
     private fun trackForeground() {
         handler.removeCallbacks(fgCheck)
-        fgRetries = 5
-        handler.postDelayed(fgCheck, 15)
+        fgRetries = FG_RETRIES
+        handler.postDelayed(fgCheck, 8)
     }
 
     private fun activePkg(): String? {
@@ -219,6 +222,8 @@ class IslandAccessibilityService : AccessibilityService() {
                             eventSaysOn = isBarClass(e.className?.toString())
                         } else if (pkg != packageName && pkg !in IGNORED_PKGS) eventSaysOn = false
                     }
+                    // Pencere listesi değişince (uygulamadan çıkarken ilk haber genelde bu olay) ön plan kontrolü zaten bekliyorsa dokunma, yoksa hemen başlat
+                    if (e.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED && !handler.hasCallbacks(fgCheck)) trackForeground()
                     // Olay yağmurunu tek kontrole indir
                     handler.removeCallbacks(check)
                     handler.postDelayed(check, 120)
