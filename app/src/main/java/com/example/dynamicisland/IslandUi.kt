@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.abs
 import kotlin.math.acos
@@ -471,6 +472,8 @@ fun IslandRoot(
     val progress = rememberIslandProgress(cfg, animExpanded, s.swallow)
     val prevCw = remember { mutableFloatStateOf(cfg.compactWidthDp) }
     val popIn = remember { Animatable(1f) }
+    val popLatch = remember { mutableStateOf(false) }
+    val popScope = rememberCoroutineScope()
     val fromKind = remember { arrayOfNulls<Any>(1) }
     // Genişletilmiş kapak dönüşü zamana bağlı (yavaş): açılırken 0 -> 360, küçülürken ters yönde 360 -> 0
     LaunchedEffect(animExpanded, flipOn) {
@@ -540,13 +543,28 @@ fun IslandRoot(
             }
             IslandSides(s.side, geo, progress, cfg, sideBody, s.fromSide, onSideTap)
             // Baloncuğa küçülüp yerine oturduktan sonra ortadaki ada (önceki olay) yumuşakça belirir
-            val returning = fromKind[0] != null && s.fromSide == 0 && !s.expanded && fromKind[0] != content::class
+            val trigger = fromKind[0] != null && s.fromSide == 0 && !s.expanded && fromKind[0] != content::class
             if (s.fromSide != 0) fromKind[0] = content::class
-            else if (!returning && (s.expanded || fromKind[0] == content::class)) fromKind[0] = null
-            LaunchedEffect(returning) {
-                if (returning) { popIn.snapTo(0f); fromKind[0] = null; popIn.animateTo(1f, tween(240)) }
+            else if (!trigger && (s.expanded || fromKind[0] == content::class)) fromKind[0] = null
+            // Ada, tetikten animasyon başlayana kadar gizli kalır (bir kare görünüp yanıp sönmesin)
+            val hidden = trigger || popLatch.value
+            LaunchedEffect(trigger) {
+                if (trigger) {
+                    popLatch.value = true
+                    fromKind[0] = null
+                    // Animasyon kendi scope'unda çalışır: anahtar değişince iptal olup adayı şeffaf bırakmaz
+                    popScope.launch {
+                        try {
+                            popIn.snapTo(0f)
+                            popLatch.value = false
+                            popIn.animateTo(1f, tween(240))
+                        } finally { popLatch.value = false }
+                    }
+                }
             }
-            Box(Modifier.graphicsLayer { alpha = if (returning) 0f else popIn.value }) {
+            // Ada açılınca (ya da başka olay gelince) her zaman tam görünür
+            LaunchedEffect(s.expanded) { if (s.expanded) popIn.snapTo(1f) }
+            Box(Modifier.graphicsLayer { alpha = if (hidden) 0f else popIn.value }) {
             IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX)
             }
         }
