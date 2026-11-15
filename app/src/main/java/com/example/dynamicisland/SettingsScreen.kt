@@ -474,6 +474,28 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
                 color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
     }
+    SectionCard("Müzik uygulamasını aç", "Ada üzerinden çalan müziğin uygulamasına geç") {
+        SubHeader("Ada genişletilmişken")
+        SwitchRow("Albüm kapağına basınca", null, draft.openExpArt) { set(draft.copy(openExpArt = it)) }
+        SwitchRow("Şarkı ismine basınca", null, draft.openExpTitle) { set(draft.copy(openExpTitle = it)) }
+        SwitchRow("Adanın herhangi bir yerine basınca", "Düğmeler hariç; açıkken ada küçülmez, müzik uygulaması açılır", draft.openExpAny) { set(draft.copy(openExpAny = it)) }
+        SectionDivider()
+        SubHeader("Ada küçültülmüşken")
+        SwitchRow("Albüm kapağına basınca", null, draft.openCompArt) { set(draft.copy(openCompArt = it)) }
+        SwitchRow("Adaya basınca", "Açıksa adayı genişletmek için aşağıdaki seçenekleri kullan", draft.openCompTap) { set(draft.copy(openCompTap = it)) }
+        SwitchRow("Adaya basılı tutunca", null, draft.openCompLong) { set(draft.copy(openCompLong = it)) }
+        if (draft.openCompTap && !draft.openCompLong) {
+            SwitchRow("Basılı tutunca ada genişlesin", "Adaya basınca müzik uygulaması açıldığı için", draft.expandOnLong) { set(draft.copy(expandOnLong = it)) }
+        }
+        SectionDivider()
+        SliderRow("Basılı tutma süresi", draft.longPressMs.toFloat(), 250f..1500f, "${draft.longPressMs} ms") {
+            set(draft.copy(longPressMs = (it / 50f).toInt() * 50))
+        }
+    }
+    SectionCard("Kaydırma hareketleri", "Müzik adada görünürken") {
+        SwitchRow("Aşağı kaydırınca genişlesin", "Küçük adayı aşağı çekince açılır", draft.swipeDownExpand) { set(draft.copy(swipeDownExpand = it)) }
+        SwitchRow("Yukarı kaydırınca küçülsün", "Açık adayı yukarı kaydırınca küçülür", draft.swipeUpCollapse) { set(draft.copy(swipeUpCollapse = it)) }
+    }
     SectionCard("Müzik uygulamasındayken", "Çalan müziğin uygulamasını açıkken adada şarkı gösterilmesin") {
         SwitchRow("Müzik uygulamasında adayı gizle", "Çalan müziğin uygulamasındayken ada müziği göstermez. \"Müzikten çıkış animasyonu\" da açıksa çıkınca önce panel adaya girip yutulur, sonra şarkı görünür",
             draft.hideInMusicApp) { set(draft.copy(hideInMusicApp = it)) }

@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -138,6 +139,8 @@ fun IslandRoot(
     onAnswer: () -> Unit = {},
     onDecline: () -> Unit = {},
     onSpeaker: () -> Unit = {},
+    onOpenMusic: () -> Unit = {},
+    onSwipe: (Int) -> Unit = {},     // +1 = aşağı, -1 = yukarı
 ) {
     val s by state.collectAsState()
     val cfg by settingsFlow.collectAsState()
@@ -188,7 +191,7 @@ fun IslandRoot(
                 val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value)
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe)
         }
     }
 }
@@ -410,14 +413,20 @@ fun IslandPill(
     onDecline: () -> Unit = {},
     onSpeaker: () -> Unit = {},
     swallow: Boolean = false,      // yutma efekti: ada büyür ama içerik çizilmez
+    onOpenMusic: () -> Unit = {},
+    onSwipe: (Int) -> Unit = {},
 ) {
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
     val longPressNow by rememberUpdatedState(onLongPress)
+    val openMusicNow by rememberUpdatedState(onOpenMusic)
+    val swipeNow by rememberUpdatedState(onSwipe)
     // Asistan modunda: kendi şekli; cam ve sıvı cam ayarları uygulanır. Çerçeve / dış parıltı kapalı (şekle uymaz).
     val assistant = content is IslandContent.Assistant
     val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false) else cfg
     val cornerT = if (assistant) progress.mean else -1f
+    val cfgNow by rememberUpdatedState(cfg)
+    val isMediaNow by rememberUpdatedState(content is IslandContent.Media)
     val shape: Shape = if (assistant) AssistantShape(cornerT) else PillShape
     val accent = remember(cfg.accentArgb) { Color(cfg.accentArgb) }
     val rb = rememberRainbowStyle(cfg)
@@ -464,13 +473,19 @@ fun IslandPill(
                 awaitEachGesture {
                     val down = awaitFirstDown()
                     val slop = 40.dp.toPx()
-                    var outcome = 0      // 0 = basılı tutma, 1 = dokunma, 2 = iptal
-                    withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                    val swipeMin = 18.dp.toPx()
+                    var outcome = 0      // 0 = basılı tutma, 1 = dokunma, 2 = iptal, 3 = dikey kaydırma
+                    var swipeDir = 0
+                    withTimeoutOrNull(cfgNow.longPressMs.toLong()) {
                         while (true) {
                             val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
                             if (change == null || change.isConsumed) { outcome = 2; break }
                             if (!change.pressed) { outcome = 1; break }
-                            if ((change.position - down.position).getDistance() > slop) { outcome = 2; break }
+                            val delta = change.position - down.position
+                            if (abs(delta.y) > swipeMin && abs(delta.y) > abs(delta.x) * 1.2f) {
+                                outcome = 3; swipeDir = if (delta.y > 0f) 1 else -1; break
+                            }
+                            if (delta.getDistance() > slop) { outcome = 2; break }
                         }
                     }
                     when (outcome) {
@@ -480,7 +495,20 @@ fun IslandPill(
                                 val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
                             } while (c != null && c.pressed)
                         }
-                        1 -> tapNow()
+                        1 -> {
+                            val c = cfgNow
+                            val compact = progress.mean < 0.5f
+                            val x = down.position.x
+                            val artZone = min(size.height * 1.15f, size.width * 0.4f)
+                            // Küçük adada albüm kapağı bölgesi; açık adada kapak / şarkı adı panelin kendi dokunuşunu işler
+                            if (isMediaNow && compact && c.openCompArt && x <= artZone) openMusicNow() else tapNow()
+                        }
+                        3 -> {
+                            swipeNow(swipeDir)
+                            do {
+                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            } while (c != null && c.pressed)
+                        }
                     }
                 }
             },
@@ -507,7 +535,7 @@ fun IslandPill(
                     is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline, onSpeaker)
                     is IslandContent.Status ->
                         if (content.kind == StatusKind.Charging) ChargeContent(content, rb) else StatusContent(content, rb)
-                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
+                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     IslandContent.Idle -> Unit

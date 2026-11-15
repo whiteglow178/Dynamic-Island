@@ -130,9 +130,11 @@ fun MusicPanel(
     onCommand: (MediaCommand) -> Unit,
     onOutput: () -> Unit,
     customArt: ImageBitmap? = null,   // galeriden seçilen kapak; doluysa albüm kapağı yerine gösterilir
+    onOpenMusic: () -> Unit = {},     // kapağa / şarkı adına basınca çalan müzik uygulamasını aç (ayarlardan)
 ) {
     val ctx = LocalContext.current
     val rb = rememberRainbowStyle(cfg)
+    val noRipple = remember { MutableInteractionSource() }
     val favKey = remember(m.title, m.artist) { "${m.title}|${m.artist}" }
     var fav by remember(favKey) { mutableStateOf(FavoriteStore.isFav(ctx, favKey)) }
     var lastTap by remember { mutableLongStateOf(0L) }
@@ -157,9 +159,14 @@ fun MusicPanel(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            AlbumArt(customArt ?: m.art, 60.dp)                                   // sol köşe
+            Box(if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier) {
+                AlbumArt(customArt ?: m.art, 60.dp)                               // sol köşe
+            }
             // Kapak yüksekliğinde alan: şarkı adı ortada, sanatçı adı kapağın alt kenarıyla hizalı
-            Box(Modifier.weight(1f).height(60.dp)) {
+            Box(
+                Modifier.weight(1f).height(60.dp)
+                    .then(if (cfg.openExpTitle) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier)
+            ) {
                 MarqueeText(
                     m.title.ifBlank { "Bilinmeyen parça" },
                     Modifier.align(Alignment.CenterStart).fillMaxWidth().rainbowFill(rb),

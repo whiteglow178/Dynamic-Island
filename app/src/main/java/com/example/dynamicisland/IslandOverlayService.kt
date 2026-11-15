@@ -296,13 +296,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun onPillTap() {
         val cur = ui.value
         when (cur.content) {
-            is IslandContent.Media ->
+            is IslandContent.Media -> {
+                val s = settings.value
                 if (cur.expanded) {
-                    collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+                    if (s.openExpAny) openMusicApp()
+                    else { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
                 } else {
-                    update { it.copy(expanded = true) }
-                    scheduleCollapse(8_000)
+                    if (s.openCompTap) openMusicApp()
+                    else { update { it.copy(expanded = true) }; scheduleCollapse(8_000) }
                 }
+            }
             is IslandContent.Notif -> {
                 val n = cur.content as IslandContent.Notif
                 if (settings.value.notifTapOpens) openNotification(n)
@@ -490,10 +493,47 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */
     private fun onPillLongPress() {
         val cur = ui.value
+        val s = settings.value
         if (cur.content is IslandContent.Idle) {
-            if (settings.value.favoritesReady()) openFavorites()
+            if (s.favoritesReady()) openFavorites()
+        } else if (cur.content is IslandContent.Media && !cur.expanded) {
+            // Küçük müzik adası: basılı tutunca müzik uygulaması açılır ya da ada genişler
+            if (s.openCompLong) openMusicApp()
+            else if (s.expandOnLong || !s.openCompTap) { update { it.copy(expanded = true) }; scheduleCollapse(8_000) }
         } else {
             onPillTap()
+        }
+    }
+
+    /** Çalan müziğin uygulamasını açar (oturumun kendi açılış hedefi, yoksa uygulamanın ana ekranı). */
+    private fun openMusicApp() {
+        collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+        val ctrl = runCatching {
+            val msm = getSystemService(android.media.session.MediaSessionManager::class.java)
+            val list = msm.getActiveSessions(android.content.ComponentName(this, IslandNotificationListener::class.java))
+            list.firstOrNull { it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING } ?: list.firstOrNull()
+        }.getOrNull() ?: return
+        val pi = ctrl.sessionActivity
+        val sent = pi != null && runCatching {
+            val opts = if (Build.VERSION.SDK_INT >= 34) {
+                android.app.ActivityOptions.makeBasic()
+                    .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                    .toBundle()
+            } else null
+            pi.send(this, 0, null, null, null, null, opts)
+        }.isSuccess
+        if (!sent) launchApp(ctrl.packageName)
+    }
+
+    /** Adayı dikey kaydırma: aşağı (+1) genişletir, yukarı (-1) küçültür. */
+    private fun onPillSwipe(dir: Int) {
+        val cur = ui.value
+        val s = settings.value
+        if (cur.content !is IslandContent.Media || cur.swallow) return
+        if (dir > 0 && !cur.expanded && s.swipeDownExpand) {
+            update { it.copy(expanded = true) }; scheduleCollapse(8_000)
+        } else if (dir < 0 && cur.expanded && s.swipeUpCollapse) {
+            collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
         }
     }
 
@@ -1046,6 +1086,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     state = ui, settingsFlow = settings, lyricsFlow = lyrics,
                     onTap = ::onPillTap, onCommand = ::onCommand, onOutput = ::openOutputPanel,
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
+                    onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
                     onAnswer = ::onCallAnswer, onDecline = ::onCallDecline, onSpeaker = ::onCallSpeaker,
                 )
             }
