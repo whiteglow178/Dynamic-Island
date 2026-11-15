@@ -99,12 +99,6 @@ data class IslandUiState(
     val side: List<IslandContent> = emptyList(),
     /** Yan baloncuğa dokunulunca ada o baloncuktan büyüyerek açılır: +1 = sağdaki, -1 = soldaki, 0 = normal. Kapanınca sıfırlanır. */
     val fromSide: Int = 0,
-    /**
-     * Geri dönüş animasyonu (ortadaki olay ile baloncuktaki olay yer değiştirir): sayaç ve baloncuğun yönü (+1 sağ, -1 sol).
-     * Sayaç değişince arayüz animasyonu başlatır; servis kısa süre her yayında aynı değeri taşır. 0 = animasyon yok.
-     */
-    val swapSeq: Long = 0L,
-    val swapDir: Int = 0,
 )
 
 // ---------------------------------------------------------------- Şarkı sözü modeli

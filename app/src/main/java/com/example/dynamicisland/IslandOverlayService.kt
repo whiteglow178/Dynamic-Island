@@ -227,12 +227,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val s = settings.value
         val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
             lastMedia?.playing == true && n.content is IslandContent.Media
-        // Geri dönüş animasyonu jetonu: animasyon süresince yayınlanan her duruma eklenir (sayaç sıfırlanıp animasyon kesilmesin)
-        val swapOn = android.os.SystemClock.elapsedRealtime() < swapUntil
-        ui.value = n.copy(
-            compactLyrics = want && !n.swallow, side = sideFor(n),
-            swapSeq = if (swapOn) swapSeqV else 0L, swapDir = if (swapOn) swapDirV else 0,
-        )
+        ui.value = n.copy(compactLyrics = want && !n.swallow, side = sideFor(n))
         syncRevert(ui.value)
     }
 
@@ -287,9 +282,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
      * böylece baloncuklar birbirinin yerine atlamaz. Geri dönüşte / yeniden dinlenmede sıfırlanır.
      */
     private var sideLayout: List<Bg>? = null
-    private var swapSeqV = 0L
-    private var swapDirV = 0
-    private var swapUntil = 0L
+    private var sidesHidden = false     // geri dönüşte baloncuklar kısa süre ortadaki adaya karışır (mevcut birleşme animasyonu)
 
     private fun defaultSides(center: Bg): List<Bg> = bgOrder.asReversed().filter { it != center }.take(2)
 
@@ -306,7 +299,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
      */
     private fun sideFor(n: IslandUiState): List<IslandContent> {
         syncBgOrder()
-        if (n.swallow) return emptyList()
+        if (n.swallow || sidesHidden) return emptyList()
         val center = centerBg(n.content) ?: return emptyList()
         if (n.expanded) {
             // Dar ekranda panel + baloncuklar sığmıyorsa genişlemişken baloncuk gösterilmez
@@ -912,7 +905,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // (önceki ortadaki olay ortaya döner, dokunulan olay yine baloncuk olur).
         val permanent = settings.value.sideTapPromote
         revertJob?.cancel(); revertJob = null
-        swapUntil = 0L
+        sidesHidden = false
+        preGrowJob?.cancel(); preGrowJob = null
         if (permanent) revertOrder = null
         else if (revertOrder == null) revertOrder = bgOrder.toList()    // art arda dokunmada ilk (asıl) sıra korunur
         bgOrder.remove(b); bgOrder.add(b)
@@ -945,24 +939,49 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun doRevert() {
         val saved = revertOrder ?: return
-        revertOrder = null; revertJob = null
+        revertOrder = null
         syncBgOrder()
-        val n = ui.value
         sideLayout = null
+        val n = ui.value
         // Başka bir olay araya girdiyse (bildirim, yeni olay...) sıraya dokunulmaz
-        if (n.expanded || centerBg(n.content) != bgOrder.lastOrNull()) return
-        val cur = bgOrder.toList()
-        val restored = saved.filter { it in cur } + cur.filter { it !in saved }
-        bgOrder.clear(); bgOrder.addAll(restored)
-        // Ortaya dönecek olay şu an hangi baloncukta? (animasyonun çıkış yönü; ortadaki ada da o baloncuğa küçülür)
-        val top = bgOrder.lastOrNull { it != Bg.Media || lastMedia?.playing == true }
-        val idx = ui.value.side.indexOfFirst { centerBg(it) == top }
-        if (top != null && top != centerBg(n.content) && idx >= 0) {
-            swapDirV = if (idx == 0) 1 else -1
-            swapSeqV = android.os.SystemClock.elapsedRealtime()      // her geri dönüşte farklı değer
-            swapUntil = swapSeqV + 700L
+        if (n.expanded || centerBg(n.content) != bgOrder.lastOrNull()) { revertJob = null; return }
+        // Mevcut baloncuk animasyonları: 1) yandaki baloncuk adaya geri karışır, 2) sıra geri gelir; bu olay adadan ayrılıp baloncuk olur
+        revertJob = scope.launch {
+            try {
+                sidesHidden = true; update { it }
+                delay(380)
+            } finally { sidesHidden = false }
+            val n2 = ui.value
+            if (!n2.expanded && centerBg(n2.content) == bgOrder.lastOrNull()) {
+                val cur = bgOrder.toList()
+                val restored = saved.filter { it in cur } + cur.filter { it !in saved }
+                bgOrder.clear(); bgOrder.addAll(restored)
+                rest()
+            } else update { it }
         }
-        rest()
+    }
+
+    /**
+     * Yan baloncuğa parmak değdiği anda pencereyi açık boyuta önceden büyütür: dokunma tamamlanınca ada pencereyi beklemeden açılır
+     * (ortadaki olayın kısa süre kaybolması azalır). Dokunma gelmezse 1,5 sn sonra pencere eski haline döner.
+     */
+    private var preGrowJob: Job? = null
+    private fun onSidePress(index: Int) {
+        val cur = ui.value
+        if (cur.expanded) return          // pencere zaten açık boyutta
+        val c = cur.side.getOrNull(index) ?: return
+        val screenWDp = wm.currentWindowMetrics.bounds.width() / density
+        val fits = sideFitsWhenExpanded(c, settings.value, screenWDp)
+        val key = WinKey(kindOf(c), true, false, settings.value, false, if (fits) 1 else 0)
+        preGrowJob?.cancel()
+        preGrowJob = scope.launch {
+            syncWindow(key)
+            delay(1_500)
+            if (!ui.value.expanded) {
+                val u = ui.value
+                syncWindow(WinKey(kindOf(u.content), u.expanded, u.compactLyrics, settings.value, u.swallow, sideKey(u)))
+            }
+        }
     }
 
     /** Çalan müziğin uygulamasını açar (oturumun kendi açılış hedefi, yoksa uygulamanın ana ekranı). */
@@ -1674,7 +1693,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
                     onAnswer = ::onCallAnswer, onDecline = ::onCallDecline, onSpeaker = ::onCallSpeaker,
                     onRecStop = ::onRecStop,
-                    onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap,
+                    onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap, onSidePress = ::onSidePress,
                 )
             }
         }
