@@ -454,6 +454,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (recPhase != RecPhase.Processing) { recPhase = RecPhase.Processing; publishRec(false); armRecTimeout() }
             }
             RecPhase.Saved -> {
+                galLog("kaydedildi bildirimi: faz=$recPhase bildirimdeResim=${e.thumb != null} galeriIzni=${canReadGallery()} izin=${recPreviewPermission()} sdk=${android.os.Build.VERSION.SDK_INT}")
                 // Kayıt başlamadan gelen "kaydedildi" bildirimini (eski kayıt vb.) yok say
                 val already = recPhase == RecPhase.Saved
                 if (!already && recPhase != RecPhase.Recording && recPhase != RecPhase.Processing) return
@@ -506,6 +507,26 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
+    // ---- GEÇİCİ TANI KAYDI: galeriden önizleme alma adımları İndirilenler/ada_galeri_log_*.txt dosyasına yazılır (izin gerekmez)
+    private val galLogBuf = StringBuilder()
+    private var galLogUri: android.net.Uri? = null
+    private fun galLog(msg: String) {
+        runCatching {
+            galLogBuf.append(java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())).append(' ').append(msg).append('\n')
+            if (galLogBuf.length > 20_000) galLogBuf.delete(0, galLogBuf.length - 20_000)
+            val uri = galLogUri ?: contentResolver.insert(
+                android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME,
+                        "ada_galeri_log_" + java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date()) + ".txt")
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                },
+            )?.also { galLogUri = it }
+            if (uri != null) contentResolver.openOutputStream(uri, "wt")?.use { it.write(galLogBuf.toString().toByteArray()) }
+        }
+    }
+
     private fun queryLatestRecThumb(sinceSec: Long): android.graphics.Bitmap? {
         val col = android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         var found: Long? = null
@@ -514,26 +535,29 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 android.provider.MediaStore.Video.Media._ID,
                 android.provider.MediaStore.Video.Media.DISPLAY_NAME,
                 android.provider.MediaStore.Video.Media.RELATIVE_PATH,
+                android.provider.MediaStore.Video.Media.DATE_ADDED,
             )
             contentResolver.query(
                 col, proj, "${android.provider.MediaStore.Video.Media.DATE_ADDED} >= ?", arrayOf(sinceSec.toString()),
                 "${android.provider.MediaStore.Video.Media.DATE_ADDED} DESC",
             )?.use { c ->
+                galLog("sorgu: since=$sinceSec satır=${c.count}")
                 var newest: Long? = null
                 var rec: Long? = null
                 while (rec == null && c.moveToNext()) {
                     val id = c.getLong(0)
                     val txt = (c.getString(1).orEmpty() + " " + c.getString(2).orEmpty()).lowercase()
+                    galLog("  aday id=$id ad=${c.getString(1)} yol=${c.getString(2)} eklenme=${c.getLong(3)}")
                     if (listOf("record", "screen", "ekran").any { txt.contains(it) }) rec = id
                     if (newest == null) newest = id
                 }
                 found = rec ?: newest
-            }
-        }
+            } ?: galLog("sorgu: cursor null")
+        }.onFailure { galLog("sorgu HATASI: $it") }
         val id = found ?: return null
         return runCatching {
             contentResolver.loadThumbnail(android.content.ContentUris.withAppendedId(col, id), android.util.Size(256, 256), null)
-        }.getOrNull()
+        }.onFailure { galLog("küçük resim HATASI id=$id: $it") }.getOrNull()
     }
 
     private fun onScreenRecGone(e: IslandEvent.ScreenRecGone) {
