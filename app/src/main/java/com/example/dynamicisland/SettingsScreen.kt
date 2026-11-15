@@ -533,6 +533,10 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
                 draft.musicExitClassic) { set(draft.copy(musicExitClassic = it, musicExitAtomic = if (!it) true else draft.musicExitAtomic)) }
             SwitchRow("Atom ada", "Uygulama kartı eğilip huni gibi adaya çekilir (OriginOS tarzı)",
                 draft.musicExitAtomic) { set(draft.copy(musicExitAtomic = it, musicExitClassic = if (!it) true else draft.musicExitClassic)) }
+            if (draft.musicExitAtomic) {
+                SwitchRow("Atom ada: tam ekran başlangıç", "Müzik uygulamasından çıkarken önce siyah panel tüm ekranı kaplar, sonra atom ada animasyonuyla küçülüp adaya girer",
+                    draft.musicExitAtomicFull) { set(draft.copy(musicExitAtomicFull = it)) }
+            }
             Text("İkisi de açıksa her çıkışta rastgele biri oynar.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }

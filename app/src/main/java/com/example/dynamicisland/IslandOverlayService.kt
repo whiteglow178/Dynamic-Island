@@ -778,6 +778,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun startSwallowTransition() {
         val s = settings.value
+        // Panel animasyonu seçimi: yalnızca atom açıksa atom; ikisi de açıksa her çıkışta rastgele
+        val useAtomic = s.musicExitAtomic && (!s.musicExitClassic || kotlin.random.Random.nextBoolean())
+        val fullStart = useAtomic && s.musicExitAtomicFull
         val sw = wm.currentWindowMetrics.bounds.width()
         val chPx = dp(s.compactHeightDp)
         val spec = LaunchSpec(
@@ -786,11 +789,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
             speed = s.musicExitSpeed,
-            color = islandPanelColor(s, lastMedia?.artColor ?: 0),
+            color = islandPanelColor(s, lastMedia?.artColor ?: 0, opaque = fullStart),   // tam ekranda panel opak (ekranı örtmeli)
         )
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        // Panel animasyonu seçimi: yalnızca atom açıksa atom; ikisi de açıksa her çıkışta rastgele
-        val useAtomic = s.musicExitAtomic && (!s.musicExitClassic || kotlin.random.Random.nextBoolean())
         lateinit var view: ComposeView
         view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
@@ -804,7 +805,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     }
                     Unit
                 }
-                if (useAtomic) AtomicToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone)
+                if (useAtomic) AtomicToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone, fullStart = fullStart)
                 else ShrinkToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone)
             }
         }

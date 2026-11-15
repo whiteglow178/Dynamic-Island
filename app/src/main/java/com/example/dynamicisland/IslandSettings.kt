@@ -102,6 +102,7 @@ data class IslandSettings(
     val assistantHeightDp: Float = 112f,
     val musicExitClassic: Boolean = true,     // panel animasyonu: klasik küçülen panel
     val musicExitAtomic: Boolean = false,     // panel animasyonu: atom ada (eğilen kart adaya emilir); ikisi açıksa rastgele
+    val musicExitAtomicFull: Boolean = false, // atom ada: panel önce tüm ekranı kaplar, sonra küçülüp adaya girer
     val musicExitSwallow: Boolean = true,     // panel adaya varınca ada büyüyüp onu yutar
     val musicExitSpeed: Float = 1f,           // müzikten çıkış animasyonu hızı (1 = normal)
     val musicExitStretch: Boolean = false,    // yeni yutma: ada aşağı doğru uzun bir kapsüle uzanıp yumuşakça eski haline döner (iOS tarzı)
@@ -231,7 +232,7 @@ class SettingsRepository(context: Context) {
 
         val IDLE = booleanPreferencesKey("idle")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
-        val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app")
+        val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full")
@@ -323,6 +324,7 @@ class SettingsRepository(context: Context) {
             swipeUpCollapse = p[K.SW_UP] ?: d.swipeUpCollapse, longPressMs = p[K.LP_MS] ?: d.longPressMs,
             musicExitClassic = p[K.MX_CLASSIC] ?: d.musicExitClassic,
             musicExitAtomic = p[K.MX_ATOMIC] ?: d.musicExitAtomic,
+            musicExitAtomicFull = p[K.MX_ATOMIC_FULL] ?: d.musicExitAtomicFull,
             hideInMusicApp = p[K.HIDE_MUSIC] ?: d.hideInMusicApp,
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
             assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
@@ -383,7 +385,7 @@ class SettingsRepository(context: Context) {
             it[K.OP_EA] = s.openExpArt; it[K.OP_ET] = s.openExpTitle; it[K.OP_EX] = s.openExpAny
             it[K.OP_CA] = s.openCompArt; it[K.OP_CL] = s.openCompLong; it[K.OP_CT] = s.openCompTap
             it[K.EXP_LONG] = s.expandOnLong; it[K.SW_DN] = s.swipeDownExpand; it[K.SW_UP] = s.swipeUpCollapse; it[K.LP_MS] = s.longPressMs
-            it[K.MX_CLASSIC] = s.musicExitClassic; it[K.MX_ATOMIC] = s.musicExitAtomic; it[K.HIDE_MUSIC] = s.hideInMusicApp
+            it[K.MX_CLASSIC] = s.musicExitClassic; it[K.MX_ATOMIC] = s.musicExitAtomic; it[K.MX_ATOMIC_FULL] = s.musicExitAtomicFull; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp

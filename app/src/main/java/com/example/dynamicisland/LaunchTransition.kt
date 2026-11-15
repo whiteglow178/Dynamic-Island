@@ -179,6 +179,7 @@ private const val ATOM_SPLIT = 0.30f       // 0..SPLIT: pencere → eğik kart
 private const val ATOM_Q_START = 0.20f     // kartın adaya çekilmesi bu noktada başlar (kart aşamasıyla iç içe: durma olmaz)
 private const val ATOM_FUNNEL = 0.5f       // üst kısım adaya alttan ne kadar önce varsın (huni/kuyruk etkisi)
 private const val ATOM_SWALLOW_AT = 0.45f
+private const val FULL_HOLD_MS = 120L      // tam ekran başlangıçta ekranın kaplı kaldığı süre (hız 1x)
 
 private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
 
@@ -208,7 +209,7 @@ private fun roundedRectPoints(l: Float, t: Float, r: Float, b: Float, rad: Float
  * (Pencere içeriği yerine adanın rengi kullanılır.)
  */
 @Composable
-fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Unit) {
+fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Unit, fullStart: Boolean = false) {
     val swallow by rememberUpdatedState(onSwallow)
     val finished by rememberUpdatedState(onFinished)
     val a = remember { Animatable(0f) }
@@ -220,6 +221,8 @@ fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
     LaunchedEffect(Unit) {
         delay((PANEL_DELAY_MS / spec.speed.coerceIn(0.25f, 4f)).toLong())
         launch { appear.animateTo(1f, tween(40)) }
+        // Tam ekran başlangıç: siyah panel ekranı kaplı kalır, kısa bir an beklenip sonra küçülmeye başlar
+        if (fullStart) delay((FULL_HOLD_MS / spec.speed.coerceIn(0.25f, 4f)).toLong())
         var fired = false
         a.animateTo(1f, tween(ms, easing = LinearEasing)) {
             if (!fired && value >= ATOM_SWALLOW_AT) { fired = true; swallow() }
@@ -243,10 +246,12 @@ fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         val q = ((p - ATOM_Q_START) / (1f - ATOM_Q_START)).coerceIn(0f, 1f)
 
         // 1) Pencere → eğik kart (sol tarafa kayar, sağ kenar uzaklaşır, hafif döner)
-        val left = lerpF(0.08f * w, 0.40f * w - 0.28f * w, p1)
-        val right = lerpF(0.92f * w, 0.40f * w + 0.28f * w, p1)
-        val top = lerpF(0.06f * h, 0.17f * h, p1)
-        val bottom = lerpF(0.94f * h, 0.67f * h, p1)
+        // fullStart: başlangıç dikdörtgeni ekranı (köşeler dahil, taşma payıyla) tamamen kaplar
+        val mg0 = if (fullStart) MARGIN_DP * d else 0f
+        val left = lerpF(if (fullStart) -mg0 else 0.08f * w, 0.40f * w - 0.28f * w, p1)
+        val right = lerpF(if (fullStart) w + mg0 else 0.92f * w, 0.40f * w + 0.28f * w, p1)
+        val top = lerpF(if (fullStart) -mg0 else 0.06f * h, 0.17f * h, p1)
+        val bottom = lerpF(if (fullStart) h + mg0 else 0.94f * h, 0.67f * h, p1)
         val radius = lerpF(44f * d, 38f * d, p1)
         val tilt = (-7.0 * PI / 180.0 * p1).toFloat()
         val persp = 0.14f * p1
