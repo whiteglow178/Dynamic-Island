@@ -190,7 +190,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.Status -> if (!assistantActive && callKey == null) showTemporarily(e.content, e.holdMs)
             is IslandEvent.Notification -> if (!assistantActive && callKey == null) scope.launch {
                 val icon = iconFor(e.pkg)
-                showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent), holdMs = 4_000)
+                showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key), holdMs = 4_000)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
         }
@@ -413,8 +413,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandContent.Notif -> {
                 val n = cur.content as IslandContent.Notif
-                if (settings.value.notifTapOpens) openNotification(n)
-                else { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+                val s = settings.value
+                when {
+                    s.notifTapOpens -> openNotification(n)
+                    s.notifCollapseTap -> collapseNow()
+                    else -> Unit
+                }
             }
             is IslandContent.Favorites -> {
                 val now = android.os.SystemClock.elapsedRealtime()
@@ -476,7 +480,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (assistantActive || (callKey != null && callIncoming)) return
         syncBgOrder()
         // Kayıt, daha yeni bir olayın (müzik / arama) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
-        if (!expanded && c.phase != RecPhase.Saved && bgOrder.lastOrNull().let { it != null && it != Bg.Rec }) {
+        if (!expanded && c.phase != RecPhase.Saved && ui.value.content !is IslandContent.ScreenRec &&
+            bgOrder.lastOrNull().let { it != null && it != Bg.Rec }) {
             update { it }
             return
         }
@@ -681,7 +686,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun publishCall() {
         syncBgOrder()
         // Aktif arama, daha yeni bir olayın (müzik / ekran kaydı) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
-        if (!callIncoming && bgOrder.lastOrNull().let { it != null && it != Bg.Call }) { update { it }; return }
+        if (!callIncoming && ui.value.content !is IslandContent.Call &&
+            bgOrder.lastOrNull().let { it != null && it != Bg.Call }) { update { it }; return }
         val dur = if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince)
         update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = callExpanded) }
     }
@@ -802,8 +808,51 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             // Küçük müzik adası: basılı tutunca müzik uygulaması açılır ya da ada genişler
             if (s.openCompLong) openMusicApp()
             else if (s.expandOnLong || !s.openCompTap) { update { it.copy(expanded = true) }; scheduleCollapse(8_000) }
+        } else if (cur.content is IslandContent.Notif) {
+            // Bildirim: basılı tutunca ayara göre uygulamayı aç ya da küçült (ayar yoksa bir şey yapmaz)
+            when {
+                s.notifOpenLong -> openNotification(cur.content)
+                s.notifCollapseLong -> collapseNow()
+                else -> Unit
+            }
         } else {
             onPillTap()
+        }
+    }
+
+    private fun collapseNow() { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+
+    /** Bildirimi sistemden de siler ve adayı kapatır. */
+    private fun dismissNotif(n: IslandContent.Notif) {
+        IslandNotificationListener.dismiss(n.key)
+        collapseNow()
+    }
+
+    /** Bildirim üstünde sağa / sola kaydırma. */
+    private fun onNotifSwipeSide() {
+        val c = ui.value.content as? IslandContent.Notif ?: return
+        if (settings.value.notifDeleteSwipeSide) dismissNotif(c)
+    }
+
+    /** Yan baloncuğa dokunma: o olayın paneli açılır. Ayar açıksa olay kalıcı olarak ortaya geçer. */
+    private fun onSideTap(index: Int) {
+        val cur = ui.value
+        val c = cur.side.getOrNull(index) ?: return
+        val b = when (c) {
+            is IslandContent.Media -> Bg.Media
+            is IslandContent.ScreenRec -> Bg.Rec
+            is IslandContent.Call -> Bg.Call
+            else -> return
+        }
+        val promote = settings.value.sideTapPromote
+        if (promote) { bgOrder.remove(b); bgOrder.add(b) }
+        collapseJob?.cancel()
+        when (b) {
+            Bg.Media -> { update { IslandUiState(c, expanded = true) }; scheduleCollapse(8_000) }
+            Bg.Rec -> { update { IslandUiState(c, expanded = true) }; scheduleCollapse(6_000) }
+            Bg.Call ->
+                if (promote) { callExpanded = true; publishCall(); scheduleCallCollapse() }
+                else { update { IslandUiState(c, expanded = true) }; scheduleCollapse(CALL_AUTO_COLLAPSE_MS) }
         }
     }
 
@@ -834,11 +883,27 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun onPillSwipe(dir: Int) {
         val cur = ui.value
         val s = settings.value
-        if (cur.content !is IslandContent.Media || cur.swallow) return
-        if (dir > 0 && !cur.expanded && s.swipeDownExpand) {
-            update { it.copy(expanded = true) }; scheduleCollapse(8_000)
-        } else if (dir < 0 && cur.expanded && s.swipeUpCollapse) {
-            collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+        if (cur.swallow) return
+        when (val c = cur.content) {
+            is IslandContent.Media -> {
+                if (dir > 0 && !cur.expanded && s.swipeDownExpand) {
+                    update { it.copy(expanded = true) }; scheduleCollapse(8_000)
+                } else if (dir < 0 && cur.expanded && s.swipeUpCollapse) {
+                    collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+                }
+            }
+            is IslandContent.Notif -> {
+                if (dir > 0) { if (s.notifOpenSwipeDown) openNotification(c) }
+                else if (s.notifDeleteSwipeUp) dismissNotif(c)           // çakışırsa silme önceliklidir
+                else if (s.notifCollapseSwipeUp) collapseNow()
+            }
+            is IslandContent.ScreenRec -> when {
+                // "Kaydedildi" görünümü: herhangi bir dikey kaydırma kapatır (önceden hareketle küçültülemiyordu)
+                c.phase == RecPhase.Saved -> endRec()
+                c.phase == RecPhase.Recording && dir > 0 && !cur.expanded -> { update { it.copy(expanded = true) }; scheduleCollapse(6_000) }
+                c.phase == RecPhase.Recording && dir < 0 && cur.expanded -> collapseNow()
+            }
+            else -> Unit
         }
     }
 
@@ -1500,6 +1565,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
                     onAnswer = ::onCallAnswer, onDecline = ::onCallDecline, onSpeaker = ::onCallSpeaker,
                     onRecStop = ::onRecStop,
+                    onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap,
                 )
             }
         }

@@ -181,13 +181,13 @@ private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, se
 
 /** Ortadaki adanın yanındaki baloncuklar: [0] sağda, [1] solda. Her biri adadan sıvı gibi bölünüp ayrılır, birleşirken geri girer. */
 @Composable
-private fun IslandSides(sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>) {
-    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color)
-    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color)
+private fun IslandSides(sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, onTap: (Int) -> Unit) {
+    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color) { onTap(0) }
+    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color) { onTap(1) }
 }
 
 @Composable
-private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>) {
+private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, onTap: () -> Unit) {
     val hold = remember { SideHold() }
     if (target != null) hold.c = target          // birleşme animasyonu sürerken son içerik çizilmeye devam eder
     val spec: AnimationSpec<Float> = if (cfg.animEnabled) spring(dampingRatio = 0.72f, stiffness = 150f) else snap()
@@ -224,7 +224,8 @@ private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: Islan
                     val s = sep.value
                     translationX = sideCenterX(dir, geo, progress, s)
                     alpha = ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (1f - progress.mean * 2f).coerceIn(0f, 1f)
-                },
+                }
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (present) onTap() },
             contentAlignment = Alignment.Center,
         ) { SideGlyph(shown, geo.ch) }
     }
@@ -395,6 +396,8 @@ fun IslandRoot(
     onOpenMusic: () -> Unit = {},
     onSwipe: (Int) -> Unit = {},     // +1 = aşağı, -1 = yukarı
     onRecStop: () -> Unit = {},
+    onNotifSwipeSide: () -> Unit = {},   // bildirim üstünde sağa / sola kaydırma
+    onSideTap: (Int) -> Unit = {},       // yan baloncuğa dokunma: 0 = sağ, 1 = sol
 ) {
     val s by state.collectAsState()
     val cfg by settingsFlow.collectAsState()
@@ -519,8 +522,8 @@ fun IslandRoot(
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
             // Yan baloncuklar adanın ARKASINA çizilir (ada üstte kalır); köprü adanın ucundan uzanır
-            IslandSides(s.side, geo, progress, cfg, sideBody)
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop)
+            IslandSides(s.side, geo, progress, cfg, sideBody, onSideTap)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onNotifSwipeSide = onNotifSwipeSide)
         }
     }
 }
@@ -746,6 +749,7 @@ fun IslandPill(
     onSwipe: (Int) -> Unit = {},
     artFlip: ArtFlip? = null,
     onRecStop: () -> Unit = {},
+    onNotifSwipeSide: () -> Unit = {},
 ) {
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
@@ -759,6 +763,8 @@ fun IslandPill(
     val cornerT = if (assistant) progress.mean else -1f
     val cfgNow by rememberUpdatedState(cfg)
     val isMediaNow by rememberUpdatedState(content is IslandContent.Media)
+    val isNotifNow by rememberUpdatedState(content is IslandContent.Notif)
+    val notifSideNow by rememberUpdatedState(onNotifSwipeSide)
     val shape: Shape = if (assistant) AssistantShape(cornerT) else PillShape
     val accent = remember(cfg.accentArgb) { Color(cfg.accentArgb) }
     val rb = rememberRainbowStyle(cfg)
@@ -826,6 +832,9 @@ fun IslandPill(
                             if (isMediaNow && cfgNow.swipeTrackChange && abs(delta.x) > swipeMin && abs(delta.x) > abs(delta.y) * 1.2f) {
                                 outcome = 4; swipeDirX = if (delta.x > 0f) 1 else -1; break
                             }
+                            if (isNotifNow && abs(delta.x) > swipeMin && abs(delta.x) > abs(delta.y) * 1.2f) {
+                                outcome = 5; break      // bildirim: sağa / sola kaydırma
+                            }
                             if (delta.getDistance() > slop) { outcome = 2; break }
                         }
                     }
@@ -847,6 +856,12 @@ fun IslandPill(
                         4 -> {
                             // Sağdan sola = sonraki şarkı, soldan sağa = önceki şarkı
                             commandNow(if (swipeDirX < 0) MediaCommand.Next else MediaCommand.Previous)
+                            do {
+                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            } while (c != null && c.pressed)
+                        }
+                        5 -> {
+                            notifSideNow()
                             do {
                                 val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
                             } while (c != null && c.pressed)

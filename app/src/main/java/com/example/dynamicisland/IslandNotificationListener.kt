@@ -46,6 +46,12 @@ class IslandNotificationListener : NotificationListenerService() {
     companion object {
         @Volatile private var instance: IslandNotificationListener? = null
 
+        /** Adadaki bildirimi sistemden de siler (bildirim panelinden de kalkar). Anahtar boşsa ya da dinleyici bağlı değilse bir şey yapmaz. */
+        fun dismiss(key: String) {
+            if (key.isBlank()) return
+            runCatching { instance?.cancelNotification(key) }
+        }
+
         /**
          * Ada servisi (yeniden) başlayınca çağrılır: o an çalan müziği tekrar yayınlar.
          * Dinleyici hiç bağlı değilse sistemden yeniden bağlanmasını ister.
@@ -462,6 +468,6 @@ class IslandNotificationListener : NotificationListenerService() {
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
         if (title.isBlank() && text.isBlank()) return
-        IslandBus.post(IslandEvent.Notification(sbn.packageName, title, text, n.contentIntent))
+        IslandBus.post(IslandEvent.Notification(sbn.packageName, title, text, n.contentIntent, sbn.key))
     }
 }

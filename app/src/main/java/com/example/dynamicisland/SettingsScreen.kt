@@ -150,13 +150,39 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
             FavoritesSection(draft) { draft = it }
 
-            SectionCard("Bildirimler", "Adada görünen bildirime dokununca") {
-                SwitchRow("Dokununca uygulamayı aç", "Bildirimin geldiği uygulama açılır (mümkünse ilgili sohbet / ekran)",
-                    draft.notifTapOpens) { draft = draft.copy(notifTapOpens = it) }
-                if (draft.notifTapOpens) {
+            SectionCard("Bildirimler", "Adada görünen bildirim için hareketler") {
+                Text("Aynı hareket hem açmaya / küçültmeye hem silmeye atanırsa, en son açtığın seçenek kalır; çakışan diğeri otomatik kapanır.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                SubHeader("Uygulamayı aç")
+                SwitchRow("Dokununca", "Bildirimin geldiği uygulama açılır (mümkünse ilgili sohbet / ekran)",
+                    draft.notifTapOpens) { on -> draft = draft.copy(notifTapOpens = on, notifCollapseTap = if (on) false else draft.notifCollapseTap) }
+                SwitchRow("Basılı tutunca", null,
+                    draft.notifOpenLong) { on -> draft = draft.copy(notifOpenLong = on, notifCollapseLong = if (on) false else draft.notifCollapseLong) }
+                SwitchRow("Aşağı kaydırınca", null,
+                    draft.notifOpenSwipeDown) { draft = draft.copy(notifOpenSwipeDown = it) }
+                if (draft.notifTapOpens || draft.notifOpenLong || draft.notifOpenSwipeDown) {
                     SwitchRow("Açılış animasyonu", "Adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır. Hız ve stil: Hareket bölümü",
                         draft.notifLaunchAnim) { draft = draft.copy(notifLaunchAnim = it) }
                 }
+                SectionDivider()
+                SubHeader("Bildirimi küçült")
+                SwitchRow("Dokununca", "Bildirim açılmadan adaya küçülür",
+                    draft.notifCollapseTap) { on -> draft = draft.copy(notifCollapseTap = on, notifTapOpens = if (on) false else draft.notifTapOpens) }
+                SwitchRow("Basılı tutunca", null,
+                    draft.notifCollapseLong) { on -> draft = draft.copy(notifCollapseLong = on, notifOpenLong = if (on) false else draft.notifOpenLong) }
+                SwitchRow("Yukarı kaydırınca", null,
+                    draft.notifCollapseSwipeUp) { on -> draft = draft.copy(notifCollapseSwipeUp = on, notifDeleteSwipeUp = if (on) false else draft.notifDeleteSwipeUp) }
+                SectionDivider()
+                SubHeader("Bildirimi sil")
+                SwitchRow("Sağa veya sola kaydırınca", "Bildirim hem adadan hem bildirim panelinden silinir (bildirim erişimi açık olmalı)",
+                    draft.notifDeleteSwipeSide) { draft = draft.copy(notifDeleteSwipeSide = it) }
+                SwitchRow("Yukarı kaydırınca", null,
+                    draft.notifDeleteSwipeUp) { on -> draft = draft.copy(notifDeleteSwipeUp = on, notifCollapseSwipeUp = if (on) false else draft.notifCollapseSwipeUp) }
+            }
+
+            SectionCard("Yan baloncuklar", "Adanın yanında ayrılan baloncuklar (müzik, ekran kaydı, arama)") {
+                SwitchRow("Dokununca olay ortaya geçsin", "Kapalıyken baloncuğa dokununca o uygulamanın paneli genişler ama olay ortaya geçmez; panel kapanınca eski düzen döner. Açıkken olay kalıcı olarak ortaya geçer",
+                    draft.sideTapPromote) { draft = draft.copy(sideTapPromote = it) }
             }
 
             SectionCard("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)") {

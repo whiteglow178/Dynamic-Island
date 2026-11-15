@@ -30,6 +30,7 @@ sealed interface IslandContent {
         val pkg: String, val title: String, val text: String,
         val icon: ImageBitmap? = null,
         val intent: android.app.PendingIntent? = null,   // bildirimin kendi hedefi (ilgili sohbet / ekran)
+        val key: String = "",                            // sistem bildirim anahtarı (adadan silmek için)
     ) : IslandContent
 
     /** Telefon araması: gelen (Cevapla / Reddet) ya da aktif (süre + Kapat). */
@@ -114,6 +115,7 @@ sealed interface IslandEvent {
     data class Notification(
         val pkg: String, val title: String, val text: String,
         val intent: android.app.PendingIntent? = null,
+        val key: String = "",
     ) : IslandEvent
     /** Arama bildirimi (gelen ya da aktif). Cevapla / Reddet-Kapat düğmeleri bildirimin kendi PendingIntent'leridir. */
     data class Call(
