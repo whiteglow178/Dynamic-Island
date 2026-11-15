@@ -79,6 +79,7 @@ data class IslandSettings(
     // Animasyon
     val animEnabled: Boolean = true,
     val animStyle: Int = 0,                  // 0 Yaylı, 1 Yumuşak, 2 Hızlı, 3 Zıplamalı, 4 Sıvı
+    val musicBlurAnim: Boolean = true,       // müzik adası: içerik bulanıktan netleşerek açılır, tersi yönde küçülür (iOS tarzı)
 
     // Görünürlük
     val showIdle: Boolean = true,            // müzik/bildirim yokken de ada görünsün
@@ -224,7 +225,7 @@ class SettingsRepository(context: Context) {
         val PG_COLOR = intPreferencesKey("pg_color"); val PG_I = floatPreferencesKey("pg_i"); val PG_TIP = booleanPreferencesKey("pg_tip"); val PG_IN = booleanPreferencesKey("pg_in")
         val LIKE_ART = booleanPreferencesKey("like_art"); val LIKE_C = intPreferencesKey("like_c")
         val BORDER = booleanPreferencesKey("border"); val BORDER_C = intPreferencesKey("borderC"); val BORDER_ART = booleanPreferencesKey("border_art"); val ISL_C = intPreferencesKey("island_c"); val BORDER_W = floatPreferencesKey("borderW")
-        val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
+        val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle"); val MX_BLUR = booleanPreferencesKey("mx_blur")
 
         val IDLE = booleanPreferencesKey("idle")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
@@ -294,6 +295,7 @@ class SettingsRepository(context: Context) {
             borderWidthDp = p[K.BORDER_W] ?: d.borderWidthDp,
             animEnabled = p[K.ANIM] ?: d.animEnabled,
             animStyle = p[K.ANIM_S] ?: d.animStyle,
+            musicBlurAnim = p[K.MX_BLUR] ?: d.musicBlurAnim,
             showIdle = p[K.IDLE] ?: d.showIdle,
             favoritesEnabled = p[K.FAV_ON] ?: d.favoritesEnabled,
             favoritesTrigger = p[K.FAV_TRIG] ?: d.favoritesTrigger,
@@ -369,7 +371,7 @@ class SettingsRepository(context: Context) {
             it[K.PG_IN] = s.progressGlowInside
             it[K.LIKE_ART] = s.likeArtColor; it[K.LIKE_C] = s.likeColorArgb
             it[K.BORDER] = s.borderEnabled; it[K.BORDER_C] = s.borderColorArgb; it[K.BORDER_ART] = s.borderArtColor; it[K.ISL_C] = s.islandColorArgb; it[K.BORDER_W] = s.borderWidthDp
-            it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
+            it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle; it[K.MX_BLUR] = s.musicBlurAnim
 
             it[K.IDLE] = s.showIdle
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed

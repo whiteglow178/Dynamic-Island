@@ -40,6 +40,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -69,6 +73,33 @@ import kotlin.math.max
 import kotlin.math.min
 
 const val MUSIC_EXTRA_DP = 100f
+
+// ---------------------------------------------------------------- Müzik adası: bulanık açılış / ters yönde kapanış
+/** Bulanıklığı uygular (Android 12+); desteklenmeyen cihazlarda yalnızca solma + ölçek çalışır. */
+private fun GraphicsLayerScope.setBlurPx(px: Float) {
+    renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && px > 0.5f) BlurEffect(px, px, TileMode.Decal) else null
+}
+
+/**
+ * Genişletilmiş müzik panelinin içeriği: ada büyüdükçe küçük ve bulanık halden netleşip yerine oturur.
+ * [t] ada ilerlemesidir (0 = kapalı, 1 = açık). Küçülürken t azaldığı için aynı eğri tam tersi oynar.
+ */
+private fun GraphicsLayerScope.musicReveal(t: Float) {
+    val r = ((t - 0.45f) / 0.55f).coerceIn(0f, 1f)
+    alpha = (r * 1.2f).coerceAtMost(1f)
+    val sc = 0.60f + 0.40f * r * r * r
+    scaleX = sc; scaleY = sc
+    transformOrigin = TransformOrigin(0.5f, 0.2f)
+    setBlurPx((1f - r) * 32.dp.toPx())
+}
+
+/** Kapalı adadaki içerik (kapak, equalizer, sözler): ada açılırken hafifçe bulanıp küçülerek kaybolur, küçülürken geri gelir. */
+private fun GraphicsLayerScope.musicCompactBlur(c: Float) {
+    val k = 1f - c
+    val sc = 1f - 0.25f * k
+    scaleX = sc; scaleY = sc
+    setBlurPx(k * 10.dp.toPx())
+}
 
 /** Aktif aramada küçültülmüş adanın genişliği (telefon simgesi + süre + ses dalgası sığsın). */
 const val CALL_COMPACT_W_DP = 160f
@@ -524,11 +555,15 @@ fun IslandPill(
             CustomBackdrop(bgBoth, bgCompact, bgExpanded, cfg.customBgDim, geo, progress)
         }
 
+        val musicBlur = cfg.animEnabled && cfg.musicBlurAnim && content is IslandContent.Media
         if (panelVisible && !swallow) {
             Box(
                 Modifier
                     .requiredSize(geo.ew, geo.eh)
-                    .graphicsLayer { alpha = ((progress.mean - 0.45f) / 0.55f).coerceIn(0f, 1f) }
+                    .graphicsLayer {
+                        if (musicBlur) musicReveal(progress.mean)
+                        else alpha = ((progress.mean - 0.45f) / 0.55f).coerceIn(0f, 1f)
+                    }
             ) {
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
@@ -572,7 +607,11 @@ fun IslandPill(
         if (content is IslandContent.Media && compactVisible && !swallow) {
             // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
-                val fade = Modifier.graphicsLayer { alpha = if (swallow) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f) * swallowAlpha.value }
+                val fade = Modifier.graphicsLayer {
+                    val c = (1f - progress.mean * 2f).coerceIn(0f, 1f)
+                    alpha = if (swallow) 0f else c * swallowAlpha.value
+                    if (musicBlur) musicCompactBlur(c)
+                }
                 val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
                 val shownArt = customArt ?: content.art
                 shownArt?.let { art ->

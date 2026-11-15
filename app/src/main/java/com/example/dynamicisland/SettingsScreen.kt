@@ -350,6 +350,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             SectionCard("Animasyon", "Açılma ve küçülme geçişi") {
                 SwitchRow("Animasyonlar", "Kapatırsan ada anında açılır/kapanır", draft.animEnabled) { draft = draft.copy(animEnabled = it) }
                 if (draft.animEnabled) {
+                    SwitchRow("Müzik adası animasyonu", "Müzik çalarken ada genişlerken içerik bulanıktan netleşerek belirir; küçülürken bunun tersi olur (iOS tarzı)",
+                        draft.musicBlurAnim) { draft = draft.copy(musicBlurAnim = it) }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         ANIM_STYLES.forEachIndexed { i, (name, desc) ->
                             RadioRow(name, desc, draft.animStyle == i) { draft = draft.copy(animStyle = i) }
