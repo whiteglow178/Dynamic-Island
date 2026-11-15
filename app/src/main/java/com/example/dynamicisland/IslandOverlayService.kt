@@ -393,6 +393,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var recOpen: android.app.PendingIntent? = null
     private var recTimeoutJob: Job? = null
     private var recSavedJob: Job? = null
+    private var recThumbJob: Job? = null
     private var recViaA11y = false     // kayıt yüzen çubuktaki süre yazısından algılandı (bildirimdeki "bitti" sinyallerini yok say)
 
     private fun recContent(): IslandContent.ScreenRec? =
@@ -416,7 +417,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun endRec() {
-        recTimeoutJob?.cancel(); recSavedJob?.cancel()
+        recTimeoutJob?.cancel(); recSavedJob?.cancel(); recThumbJob?.cancel()
         recPhase = null; recSince = 0L; recFrozenMs = 0L; recCount = 0
         recThumb = null; recStop = null; recOpen = null; recViaA11y = false
         if (ui.value.content is IslandContent.ScreenRec) {
@@ -457,12 +458,82 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val already = recPhase == RecPhase.Saved
                 if (!already && recPhase != RecPhase.Recording && recPhase != RecPhase.Processing) return
                 freezeRec()
-                // Sistem önizlemeyi çoğu zaman bildirimi güncelleyerek sonradan ekler: ikinci gelen bildirimden de alınır
-                recPhase = RecPhase.Saved; recThumb = e.thumb ?: recThumb; recOpen = e.open ?: recOpen
-                publishRec(true)                  // genişler: süre sabit, "Kayıt galeriye kaydedildi", sağda küçük resim
-                recSavedJob = scope.launch { delay(5_000); endRec() }
+                recOpen = e.open ?: recOpen
+                // Galeriden önizleme beklenirken ikinci bir bildirim gelirse bekleme yeniden başlatılmaz
+                if (recThumbJob?.isActive == true && e.thumb == null) return
+                val thumb = e.thumb ?: recThumb
+                if (thumb == null && !already && canReadGallery()) {
+                    // Bildirimde resim yok, galeri izni var: önce işleniyor animasyonu sürer, önizleme bulununca ada genişler
+                    if (recPhase != RecPhase.Processing) { recPhase = RecPhase.Processing; publishRec(false) }
+                    loadRecThumbFromGallery()
+                    return
+                }
+                recThumbJob?.cancel()
+                finishSaved(thumb)
             }
         }
+    }
+
+    /** Bildirimde önizleme yoksa: izin verilmişse galerideki son ekran kaydının ilk karesi alınır (isteğe bağlı özellik). */
+    private fun canReadGallery() =
+        androidx.core.content.ContextCompat.checkSelfPermission(this, recPreviewPermission()) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Kaydedildi görünümü: ada genişler (süre sabit, "Kayıt galeriye kaydedildi", sağda önizleme) ve 5 sn sonra kapanır. */
+    private fun finishSaved(thumb: ImageBitmap?) {
+        recPhase = RecPhase.Saved
+        if (thumb != null) recThumb = thumb
+        publishRec(true)
+        recSavedJob?.cancel()
+        recSavedJob = scope.launch { delay(5_000); endRec() }
+    }
+
+    private fun loadRecThumbFromGallery() {
+        recThumbJob?.cancel()
+        val startMs = if (recSince > 0L) recSince else System.currentTimeMillis() - 60_000L
+        val sinceSec = (startMs / 1000 - 10).coerceAtLeast(0L)
+        recThumbJob = scope.launch {
+            // Dosya galeriye biraz geç düşebilir: kısa aralıklarla birkaç kez denenir
+            repeat(10) {
+                val bmp = withContext(Dispatchers.IO) { queryLatestRecThumb(sinceSec) }
+                if (bmp != null) {
+                    if (recPhase == RecPhase.Processing) finishSaved(bmp.asImageBitmap())
+                    return@launch
+                }
+                delay(400)
+            }
+            // Bulunamadıysa (yaklaşık 4 sn) yine de kaydedildi görünümüne geç, önizleme yerine gri kutu kalır
+            if (recPhase == RecPhase.Processing) finishSaved(null)
+        }
+    }
+
+    private fun queryLatestRecThumb(sinceSec: Long): android.graphics.Bitmap? {
+        val col = android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        var found: Long? = null
+        runCatching {
+            val proj = arrayOf(
+                android.provider.MediaStore.Video.Media._ID,
+                android.provider.MediaStore.Video.Media.DISPLAY_NAME,
+                android.provider.MediaStore.Video.Media.RELATIVE_PATH,
+            )
+            contentResolver.query(
+                col, proj, "${android.provider.MediaStore.Video.Media.DATE_ADDED} >= ?", arrayOf(sinceSec.toString()),
+                "${android.provider.MediaStore.Video.Media.DATE_ADDED} DESC",
+            )?.use { c ->
+                var newest: Long? = null
+                var rec: Long? = null
+                while (rec == null && c.moveToNext()) {
+                    val id = c.getLong(0)
+                    val txt = (c.getString(1).orEmpty() + " " + c.getString(2).orEmpty()).lowercase()
+                    if (listOf("record", "screen", "ekran").any { txt.contains(it) }) rec = id
+                    if (newest == null) newest = id
+                }
+                found = rec ?: newest
+            }
+        }
+        val id = found ?: return null
+        return runCatching {
+            contentResolver.loadThumbnail(android.content.ContentUris.withAppendedId(col, id), android.util.Size(256, 256), null)
+        }.getOrNull()
     }
 
     private fun onScreenRecGone(e: IslandEvent.ScreenRecGone) {

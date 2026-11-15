@@ -168,6 +168,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                     }
                     Text("Tam genişlikte ada durum çubuğunun sağ ve soluna kadar uzanır, köşelere değmez. Kayda dokununca ve kayıt bitince bu boyut kullanılır.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                    RecPreviewPermissionRow()
                 }
             }
 
@@ -692,5 +693,30 @@ private fun HueBar(hue: Float, onHue: (Float) -> Unit) {
                 }
                 .size(24.dp).border(2.5.dp, Color.White, CircleShape).background(Color.hsv(hue, 1f, 1f), CircleShape)
         )
+    }
+}
+
+/** İsteğe bağlı: kayıt bitince önizleme resmi için galeriden video okuma izni. */
+@Composable
+private fun RecPreviewPermissionRow() {
+    val ctx = LocalContext.current
+    val perm = recPreviewPermission()
+    var granted by remember {
+        mutableStateOf(androidx.core.content.ContextCompat.checkSelfPermission(ctx, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+    }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        granted = ok
+        if (!ok) Toast.makeText(ctx, "İzin verilmedi. İstersen uygulama ayarlarından açabilirsin", Toast.LENGTH_LONG).show()
+    }
+    SubHeader("Kayıt önizlemesi (isteğe bağlı)")
+    Text(
+        "Bazı telefonlar ekran kaydı bitince bildirime önizleme resmi koymaz. Bu izin verilirse önizleme, kaydedilen videonun ilk karesinden alınır. " +
+            "İzin vermezsen her şey çalışır, sadece önizleme yerine gri kutu görünür. Yalnızca en son ekran kaydına bakılır, hiçbir şey saklanmaz veya paylaşılmaz.",
+        color = Color(0xFFFFC107), fontSize = 12.sp, lineHeight = 17.sp,
+    )
+    if (granted) {
+        Text("İzin verildi", color = Color(0xFF34C759), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    } else {
+        Button(onClick = { launcher.launch(perm) }, modifier = Modifier.fillMaxWidth()) { Text("Galeri iznini ver") }
     }
 }

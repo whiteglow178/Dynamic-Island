@@ -410,3 +410,8 @@ class SettingsRepository(context: Context) {
         }
     }
 }
+
+/** Ekran kaydı önizlemesi için (isteğe bağlı) galeri video okuma izni. */
+fun recPreviewPermission(): String =
+    if (android.os.Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_VIDEO
+    else android.Manifest.permission.READ_EXTERNAL_STORAGE
