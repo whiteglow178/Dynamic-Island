@@ -206,6 +206,8 @@ private fun SideSlot(
     animExpanded: Boolean, onPress: () -> Unit, onTap: () -> Unit,
 ) {
     val hold = remember { SideHold() }
+    val gone = remember { BooleanArray(1) }       // kaldırılan baloncuk ada genişlemesiyle bir kez tamamen solduysa, ada küçülürken geri belirmez
+    if (target != null) gone[0] = false
     if (target != null) hold.c = target          // birleşme animasyonu sürerken son içerik çizilmeye devam eder
     val present = target != null
     // Dokunulup açılan baloncuk küçülüp kendi yerine (daire olarak) döndü: yeniden adadan ayrılmaz, anında yerine oturur
@@ -225,7 +227,8 @@ private fun SideSlot(
         // Köprü + baloncuk gövdesi (ada ile aynı renk)
         Canvas(Modifier.fillMaxSize()) {
             // Baloncuk hâlâ aktifse (genişleyen panelin yanında kalıyorsa) tam görünür; yalnızca kaldırılırken ada genişlemesiyle solar
-            val k = if (present) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f)
+            val k = if (present) 1f else if (gone[0]) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f)
+            if (!present && k <= 0f) gone[0] = true
             if (k <= 0f) return@Canvas
             val ch = geo.ch.toPx()
             val r = min(36.dp.toPx(), ch / 2f)
@@ -250,7 +253,7 @@ private fun SideSlot(
                     translationX = sideCenterX(dir, geo, progress, s)
                     // Dokunulan baloncuğun yerinde, ada genişlemeye başlayana kadar yeni (genişleyen) adanın dairesi durur: altındaki simge görünmesin
                     val hide = tappedOpen && !animExpanded
-                    alpha = if (hide) 0f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
+                    alpha = if (hide) 0f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present) 1f else if (gone[0]) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
                 }
                 // Parmak değdiği anda haber verilir (dokunuşu tüketmez): servis pencereyi önceden büyütür
                 .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); onPress() } }
@@ -570,7 +573,10 @@ fun IslandRoot(
             if (s.fromSide == 0 && !s.expanded) ghostHold.c = content
             val ghostFade = remember { Animatable(0f) }
             LaunchedEffect(ghostWanted) { if (ghostWanted) ghostFade.snapTo(1f) else ghostFade.animateTo(0f, tween(180)) }
-            IslandSides(s.side, geo, progress, cfg, sideBody, s.fromSide, animExpanded, onSidePress, onSideTap)
+            // Baloncuktan açılırken yeni içeriğin kapalı genişliği (cw) animasyonla değişir; baloncuklar buna değil,
+            // baloncuğun çıkış noktasını belirleyen sabit genişliğe bağlanır: yerlerinde kayıp oynamazlar.
+            val sideGeo = if (s.fromSide != 0) geo.copy(cw = prevCw.value.dp) else geo
+            IslandSides(s.side, sideGeo, progress, cfg, sideBody, s.fromSide, animExpanded, onSidePress, onSideTap)
             val ghostC = ghostHold.c
             if (ghostC != null && (ghostWanted || ghostFade.value > 0.01f)) {
                 val ghostGeo = islandGeo(cfg, ghostC is IslandContent.Media).copy(cw = prevCw.value.dp)
