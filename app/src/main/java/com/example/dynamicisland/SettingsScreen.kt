@@ -520,7 +520,7 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
             SliderRow("Hız", draft.musicExitSpeed, 0.5f..3f, "%.1fx".format(draft.musicExitSpeed)) { set(draft.copy(musicExitSpeed = it)) }
             SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa (ve Uzayan ada da kapalıysa) ada büyümez",
                 draft.musicExitSwallow) { set(draft.copy(musicExitSwallow = it)) }
-            SwitchRow("Uzayan ada (iOS tarzı)", "Ada aşağı doğru uzun bir kapsüle uzanır, sonra yumuşakça normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır",
+            SwitchRow("Uzayan ada (iOS tarzı)", "Ada yukarı doğru (ekran kenarına kadar) yumuşakça büyür, sonra normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır",
                 draft.musicExitStretch) { set(draft.copy(musicExitStretch = it)) }
             SectionDivider()
             SubHeader("Panel animasyonu")

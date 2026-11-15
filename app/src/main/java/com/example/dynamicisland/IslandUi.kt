@@ -54,6 +54,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -91,12 +95,12 @@ fun islandGeo(cfg: IslandSettings, music: Boolean, compactLyrics: Boolean = fals
  * açık ada boyutunu aşmaz. Hem arayüz hem pencere boyutu aynı formülü kullanır.
  */
 fun swallowSizeDp(cw: Float, ch: Float, ew: Float, eh: Float, stretch: Boolean = false): Pair<Float, Float> =
-    if (stretch) (cw * STRETCH_W_MUL) to (cw * STRETCH_H_MUL).coerceAtLeast(ch)   // uzayan ada: ince, uzun kapsül (açık ada boyutuna bağlı değil)
+    if (stretch) (cw * STRETCH_W_MUL) to (ch * STRETCH_H_MUL)   // uzayan ada: kapalı adadan biraz geniş ve yüksek (açık ada boyutuna bağlı değil)
     else minOf(ew, cw * 1.15f).coerceAtLeast(cw) to minOf(eh, ch * 2.1f).coerceAtLeast(ch)
 
-// "Uzayan ada" yutma efekti (iOS tarzı): ada kendi genişliğinin ~1.8 katı kadar aşağı uzar
-private const val STRETCH_W_MUL = 1.08f    // kapsül genişliği = kapalı ada genişliği x bu değer
-private const val STRETCH_H_MUL = 1.8f     // kapsül yüksekliği = kapalı ada genişliği x bu değer
+// "Uzayan ada" yutma efekti (iOS tarzı): ada yukarı doğru (ekran kenarına kadar, kalan kısmı aşağı) biraz büyür
+const val STRETCH_W_MUL = 1.12f            // büyük genişlik = kapalı ada genişliği x bu değer
+const val STRETCH_H_MUL = 1.5f             // büyük yükseklik = kapalı ada yüksekliği x bu değer
 private const val STRETCH_OPEN_MS = 320    // hız 1x iken uzama süresi
 private const val STRETCH_CLOSE_MS = 380   // hız 1x iken eski boyuta dönme süresi
 
@@ -185,7 +189,14 @@ fun IslandRoot(
     }
 
     // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
-    Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
+    // Uzayan ada: pencere yukarı kaydırılsa bile ada, ekrandaki doğru yerinde kalsın diye pencerenin ekran konumu ölçülür
+    var rootY by remember { mutableStateOf(0f) }
+    var rootMeasured by remember { mutableStateOf(false) }
+    val stretchPin = s.swallow && cfg.musicExitStretch && s.stretchTopPx > 0f
+    Box(
+        Modifier.fillMaxSize().onGloballyPositioned { rootY = it.positionOnScreen().y; rootMeasured = true }.padding(cfg.windowPadDp().dp),
+        contentAlignment = Alignment.TopCenter,
+    ) {
         // Boştayken de göster açıksa Idle içerikte de (boş) ada çizilir; kapalıysa hiçbir şey çizilmez.
         if (content !is IslandContent.Idle || cfg.showIdle) {
             val music = content is IslandContent.Media
@@ -204,7 +215,17 @@ fun IslandRoot(
                 val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value, cfg.musicExitStretch)
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe)
+            Box(Modifier.offset {
+                if (!stretchPin || !rootMeasured) IntOffset.Zero
+                else {
+                    // Üst kenar ekran kenarına doğru yükselir (progress 0 = normal yer, 1 = en yukarı), alt kenar aşağı iner
+                    val t = progress.h.value.coerceIn(0f, 1f)
+                    val natural = rootY + cfg.windowPadDp().dp.toPx()
+                    IntOffset(0, (s.stretchTopPx - s.stretchUpPx * t - natural).roundToInt())
+                }
+            }) {
+                IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe)
+            }
         }
     }
 }

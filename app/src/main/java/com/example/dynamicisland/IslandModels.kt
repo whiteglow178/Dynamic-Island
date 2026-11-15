@@ -77,6 +77,9 @@ data class IslandUiState(
     val compactLyrics: Boolean = false,
     /** Müzikten çıkış "yutma" efekti: ada kısa süre büyüyüp (içeriksiz) eski haline döner. */
     val swallow: Boolean = false,
+    /** "Uzayan ada" yutması: adanın ekrandaki üst kenarı (px) ve yukarı doğru uzayacağı miktar (px). Servis hesaplar. */
+    val stretchTopPx: Float = 0f,
+    val stretchUpPx: Float = 0f,
 )
 
 // ---------------------------------------------------------------- Şarkı sözü modeli

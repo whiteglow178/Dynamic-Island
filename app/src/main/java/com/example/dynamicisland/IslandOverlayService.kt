@@ -729,7 +729,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (!m.playing || (c !is IslandContent.Media && c !is IslandContent.Idle)) return
         if (ui.value.swallow && ui.value.expanded) return   // zaten yutma halinde: pencereyi yeniden kurma (kayma olmasın)
         collapseJob?.cancel()
-        update { IslandUiState(m, expanded = true, swallow = true) }
+        // Uzayan ada: adanın ekrandaki üst kenarı ve yukarı uzayabileceği miktar (ekranın üstüne kadar; kalanı aşağı büyür)
+        val chPx = dp(sw.compactHeightDp)
+        val topPx = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(sw.offsetYDp)).toFloat().coerceAtLeast(0f)
+        val upPx = if (sw.musicExitStretch) minOf(chPx * (STRETCH_H_MUL - 1f), topPx) else 0f
+        update { IslandUiState(m, expanded = true, swallow = true, stretchTopPx = if (sw.musicExitStretch) topPx else 0f, stretchUpPx = upPx) }
         scheduleCollapse(SWALLOW_SAFE_MS)
     }
 
@@ -1310,7 +1314,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 setBlur(false, s)
                 val sw2 = dp(sz.first) + 2 * pad
                 val maxSh = ((screenW - sw2) / 2).coerceAtLeast(0)
-                setGeometry(sw2, dp(sz.second) + 2 * pad, baseX.coerceIn(-maxSh, maxSh), y)
+                val up = if (s.musicExitStretch) ui.value.stretchUpPx.toInt() else 0   // uzayan ada: pencere yukarı doğru da büyür
+                setGeometry(sw2, dp(sz.second) + 2 * pad, baseX.coerceIn(-maxSh, maxSh), y - up)
             }
             k.expanded && assistant && s.assistantFullWidth -> {
                 // Ada kutusu yok: pencere ekran genişliğinde, ada ile aynı üst hizada
