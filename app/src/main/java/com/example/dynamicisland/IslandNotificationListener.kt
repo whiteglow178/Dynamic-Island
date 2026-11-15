@@ -291,7 +291,7 @@ class IslandNotificationListener : NotificationListenerService() {
     private val recChannelHints = listOf("screen_record", "screenrecord", "screen-record", "screen_rec", "screenrec", "scrrec")
     private val recPkgHints = listOf("screenrecord", "screen_record", "screenrec", "scrrecord")
     private val recTextHints = listOf(
-        "screen record", "screenrecord", "ekran kayd", "запись экрана", "bildschirmaufnahme", "enregistrement de l",
+        "screen record", "screenrecord", "ekran kayd", "kayıt yapıldı", "запись экрана", "bildschirmaufnahme", "enregistrement de l",
         "grabación de pantalla", "gravação de tela", "registrazione schermo", "录屏", "屏幕录制", "画面録画", "화면 녹화", "تسجيل الشاشة",
     )
     private val recStopWords = listOf("durdur", "bitir", "dur", "stop", "finish", "end", "остановить", "стоп", "停止", "结束")
@@ -303,7 +303,7 @@ class IslandNotificationListener : NotificationListenerService() {
         val ch = (if (android.os.Build.VERSION.SDK_INT >= 26) n.channelId else null).orEmpty().lowercase()
         if (recChannelHints.any { ch.contains(it) }) return true
         if (recPkgHints.any { pkg.contains(it) }) return true
-        if (pkg.contains("systemui")) {
+        if (pkg.contains("systemui") || pkg.contains("miui")) {
             val ex = n.extras
             val t = (ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty() + " " +
                 ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()).lowercase()
@@ -312,7 +312,8 @@ class IslandNotificationListener : NotificationListenerService() {
         return false
     }
 
-    private fun recPhaseOf(sbn: StatusBarNotification): RecPhase {
+    /** null = kayıt henüz başlamadı (yüzen ada / arka planda hazır bekleme bildirimi): adada gösterilmez. */
+    private fun recPhaseOf(sbn: StatusBarNotification): RecPhase? {
         val n = sbn.notification
         val ex = n.extras
         val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)
@@ -325,8 +326,62 @@ class IslandNotificationListener : NotificationListenerService() {
             digit && !chrono -> RecPhase.Countdown
             ongoing && chrono -> RecPhase.Recording
             ongoing && hasProg -> RecPhase.Processing
-            ongoing -> RecPhase.Recording
+            ongoing -> null          // süre sayacı yok = gerçek kayıt değil (hazır bekleme bildirimi)
             else -> RecPhase.Saved
+        }
+    }
+
+    // ---------------------------------------------------------------- GEÇİCİ TANI KAYDI
+    // Ekran kaydı bildirimlerinin içeriğini İndirilenler/ekran_kaydi_log_*.txt dosyasına yazar (izin gerekmez, Android 10+).
+    // Kayıt algılama sorunu çözülünce bu bölüm ve recLog çağrıları silinebilir.
+    private val recLogBuf = StringBuilder()
+    private var recLogUri: Uri? = null
+
+    private fun recLog(tag: String, sbn: StatusBarNotification) {
+        runCatching {
+            val n = sbn.notification
+            val ex = n.extras
+            fun cs(k: String) = ex.getCharSequence(k)?.toString()?.replace("\n", " / ")
+            val acts = n.actions?.joinToString(" | ") { it.title?.toString().orEmpty() } ?: "-"
+            @Suppress("DEPRECATION")
+            val hasPic = runCatching { ex.getParcelable<Bitmap>(Notification.EXTRA_PICTURE) != null }.getOrDefault(false)
+            val line = buildString {
+                append(java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date()))
+                append(' ').append(tag)
+                append(" pkg=").append(sbn.packageName)
+                append(" ch=").append(if (android.os.Build.VERSION.SDK_INT >= 26) n.channelId else "-")
+                append(" ongoing=").append(sbn.isOngoing)
+                append(" flags=0x").append(Integer.toHexString(n.flags))
+                append(" cat=").append(n.category)
+                append(" title=[").append(cs(Notification.EXTRA_TITLE)).append(']')
+                append(" text=[").append(cs(Notification.EXTRA_TEXT)).append(']')
+                append(" sub=[").append(cs(Notification.EXTRA_SUB_TEXT)).append(']')
+                append(" big=[").append(cs(Notification.EXTRA_BIG_TEXT)).append(']')
+                append(" chrono=").append(ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+                append(" when=").append(n.`when`)
+                append(" showWhen=").append(ex.getBoolean(Notification.EXTRA_SHOW_WHEN))
+                append(" prog=").append(ex.getInt(Notification.EXTRA_PROGRESS, -1)).append('/').append(ex.getInt(Notification.EXTRA_PROGRESS_MAX, -1))
+                append(" indet=").append(ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
+                append(" actions=[").append(acts).append(']')
+                append(" contentIntent=").append(n.contentIntent != null)
+                append(" largeIcon=").append(n.getLargeIcon() != null)
+                append(" picture=").append(hasPic)
+                append(" extras=").append(ex.keySet().joinToString(","))
+            }
+            recLogBuf.append(line).append('\n')
+            if (recLogBuf.length > 60_000) recLogBuf.delete(0, recLogBuf.length - 60_000)
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val uri = recLogUri ?: contentResolver.insert(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME,
+                            "ekran_kaydi_log_" + java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date()) + ".txt")
+                        put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
+                        put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                    },
+                )?.also { recLogUri = it }
+                if (uri != null) contentResolver.openOutputStream(uri, "wt")?.use { it.write(recLogBuf.toString().toByteArray()) }
+            }
         }
     }
 
@@ -335,6 +390,11 @@ class IslandNotificationListener : NotificationListenerService() {
         if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
         val ex = n.extras
         val phase = recPhaseOf(sbn)
+        if (phase == null) {
+            // Bekleme bildirimine dönüldüyse (kayıt bitti, yüzen ada açık kaldı) bitiş sinyali gönder; kayıt yoksa yok sayılır
+            IslandBus.post(IslandEvent.ScreenRecGone(sbn.key, RecPhase.Recording))
+            return
+        }
         val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)
         val count = listOf(
             ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim(),
@@ -359,7 +419,8 @@ class IslandNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (runCatching { isScreenRec(sbn) }.getOrDefault(false)) {
-            runCatching { IslandBus.post(IslandEvent.ScreenRecGone(sbn.key, recPhaseOf(sbn))) }
+            // Hazır bekleme bildirimi kalkarsa da "kayıt bitti" say: kayıt yoksa servis zaten yok sayar
+            runCatching { IslandBus.post(IslandEvent.ScreenRecGone(sbn.key, recPhaseOf(sbn) ?: RecPhase.Recording)) }
             return
         }
         if (sbn.notification?.category == Notification.CATEGORY_CALL) {

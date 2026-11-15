@@ -393,6 +393,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var recOpen: android.app.PendingIntent? = null
     private var recTimeoutJob: Job? = null
     private var recSavedJob: Job? = null
+    private var recViaA11y = false     // kayıt yüzen çubuktaki süre yazısından algılandı (bildirimdeki "bitti" sinyallerini yok say)
 
     private fun recContent(): IslandContent.ScreenRec? =
         recPhase?.let { IslandContent.ScreenRec(it, recSince, recFrozenMs, recCount, recThumb) }
@@ -417,7 +418,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun endRec() {
         recTimeoutJob?.cancel(); recSavedJob?.cancel()
         recPhase = null; recSince = 0L; recFrozenMs = 0L; recCount = 0
-        recThumb = null; recStop = null; recOpen = null
+        recThumb = null; recStop = null; recOpen = null; recViaA11y = false
         if (ui.value.content is IslandContent.ScreenRec) {
             collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
         }
@@ -425,28 +426,35 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun onScreenRec(e: IslandEvent.ScreenRec) {
         if (!settings.value.screenRecEnabled) return
-        recTimeoutJob?.cancel(); recSavedJob?.cancel()
+        if (e.phase != RecPhase.Processing) recTimeoutJob?.cancel()
+        recSavedJob?.cancel()
         val now = System.currentTimeMillis()
         when (e.phase) {
             RecPhase.Countdown -> {
                 recPhase = RecPhase.Countdown; recCount = e.count; recSince = 0L; recFrozenMs = 0L; recThumb = null
                 publishRec(false)
+                // Rakam bir yerde takılı kalırsa ada geri sayımda kalmasın
+                recTimeoutJob = scope.launch { delay(6_000); if (recPhase == RecPhase.Countdown) endRec() }
             }
             RecPhase.Recording -> {
                 val first = recPhase != RecPhase.Recording
                 recPhase = RecPhase.Recording; recStop = e.stop
                 if (first) {
+                    recViaA11y = e.key == "a11y"
                     recSince = e.startedAt.takeIf { it in 1..now } ?: now
                     recFrozenMs = 0L; recThumb = null
                     publishRec(false)
                 } else if (ui.value.content !is IslandContent.ScreenRec) publishRec(false)
             }
             RecPhase.Processing -> {
+                // Kayıt görmediysek (ör. yüzen ada hazır beklerken) işleniyor animasyonu başlatma
+                if (recPhase != RecPhase.Recording && recPhase != RecPhase.Processing) return
                 freezeRec()
-                if (recPhase != RecPhase.Processing) { recPhase = RecPhase.Processing; publishRec(false) }
-                armRecTimeout()
+                if (recPhase != RecPhase.Processing) { recPhase = RecPhase.Processing; publishRec(false); armRecTimeout() }
             }
             RecPhase.Saved -> {
+                // Kayıt başlamadan gelen "kaydedildi" bildirimini (eski kayıt vb.) yok say
+                if (recPhase != RecPhase.Recording && recPhase != RecPhase.Processing) return
                 freezeRec()
                 recPhase = RecPhase.Saved; recThumb = e.thumb; recOpen = e.open
                 publishRec(true)                  // genişler: süre sabit, "Kayıt galeriye kaydedildi", sağda küçük resim
@@ -457,6 +465,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun onScreenRecGone(e: IslandEvent.ScreenRecGone) {
         if (!settings.value.screenRecEnabled) return
+        // Süre yazısından algılanan kaydı yalnızca yine o yol bitirir (bekleme bildirimi kayıt sürerken de güncellenebilir)
+        if (recViaA11y && recPhase == RecPhase.Recording && e.key != "a11y") return
         when {
             // Kayıt bildirimi kalktı: kayıt bitti, işleniyor (beyaz dönen halka) -> kaydedildi bildirimi beklenir
             e.phase == RecPhase.Recording && recPhase == RecPhase.Recording -> {
@@ -472,7 +482,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     /** Adadaki durdur düğmesi: sistem kaydının bildirimdeki "Durdur" eylemini tetikler. */
     private fun onRecStop() {
-        sendCallIntent(recStop)
+        if (recStop != null) sendCallIntent(recStop) else IslandAccessibilityService.stopScreenRec()
         freezeRec(); recPhase = RecPhase.Processing; publishRec(false); armRecTimeout()
     }
 

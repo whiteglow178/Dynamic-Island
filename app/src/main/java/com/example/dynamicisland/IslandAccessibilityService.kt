@@ -7,6 +7,7 @@ import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.view.inputmethod.InputMethodManager
 import androidx.core.app.NotificationManagerCompat
@@ -38,6 +39,13 @@ class IslandAccessibilityService : AccessibilityService() {
         )
         /** Asistan açıkken de olay üretebilen, asistanın kapandığı anlamına GELMEYEN paketler. */
         private val IGNORED_PKGS = setOf("com.android.systemui")
+
+        private val REC_PKG_HINTS = listOf("screenrecord", "screenrec", "screen_record")
+        private val REC_TIME = Regex("^(\\d{1,2}:)?\\d{1,2}:\\d{2}$")
+        private fun isRecPkg(p: String?): Boolean = p != null && REC_PKG_HINTS.any { p.lowercase().contains(it) }
+
+        /** Adadaki durdur düğmesi: sistem kaydedicinin yüzen çubuğundaki durdur düğmesine dokunur. */
+        fun stopScreenRec(): Boolean = instance?.doStopScreenRec() ?: false
     }
 
     private class Win(val w: AccessibilityWindowInfo, val pkg: String?, val r: Rect)
@@ -202,9 +210,122 @@ class IslandAccessibilityService : AccessibilityService() {
         return "floaty" in c || "robin" in c || "invocation" in c || "assistantoverlay" in c
     }
 
+    // ---- Sistem ekran kaydedicisinin yüzen çubuğu (ör. MIUI/Redmi): bildirimde süre olmadığı için çubuktaki
+    // süre yazısı (00:05) okunur. Süre görünüyorsa kayıt var; kaybolunca bitti. Tek rakam = geri sayım.
+    private var recA11yOn = false
+    private var recA11yDigit = 0
+    private var recMiss = 0
+    private var recCheckPending = false
+    private val recCheck = object : Runnable {
+        override fun run() {
+            recCheckPending = false
+            runCatching { checkRecorder() }
+            if (recA11yOn || recA11yDigit != 0) scheduleRecCheck(350)
+        }
+    }
+
+    private fun scheduleRecCheck(delayMs: Long = 60) {
+        if (recCheckPending) return
+        recCheckPending = true
+        handler.postDelayed(recCheck, delayMs)
+    }
+
+    private fun collectTexts(n: AccessibilityNodeInfo, out: MutableList<String>, depth: Int = 0) {
+        if (depth > 12) return
+        n.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+        n.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+        for (i in 0 until n.childCount) {
+            val c = n.getChild(i) ?: continue
+            try { collectTexts(c, out, depth + 1) } finally { @Suppress("DEPRECATION") runCatching { c.recycle() } }
+        }
+    }
+
+    private fun checkRecorder() {
+        val texts = mutableListOf<String>()
+        val ws = runCatching { windows }.getOrNull().orEmpty()
+        for (w in ws) {
+            val root = runCatching { w.root }.getOrNull() ?: continue
+            try {
+                if (isRecPkg(root.packageName?.toString())) collectTexts(root, texts)
+            } finally { @Suppress("DEPRECATION") runCatching { root.recycle() } }
+        }
+        val timer = texts.firstOrNull { REC_TIME.matches(it) }
+        val digit = texts.firstOrNull { it.length == 1 && it[0] in '1'..'9' }?.get(0)?.digitToInt() ?: 0
+        if (timer != null) {
+            recMiss = 0
+            if (recA11yDigit != 0) { recA11yDigit = 0; IslandBus.post(IslandEvent.ScreenRecGone("a11y", RecPhase.Countdown)) }
+            if (!recA11yOn) {
+                recA11yOn = true
+                val parts = timer.split(':').map { it.toIntOrNull() ?: 0 }
+                val sec = parts.fold(0L) { acc, p -> acc * 60 + p }
+                IslandBus.post(IslandEvent.ScreenRec(RecPhase.Recording, "a11y", System.currentTimeMillis() - sec * 1000, 0, null, null, null))
+                scheduleRecCheck(350)
+            }
+            return
+        }
+        if (recA11yOn) {
+            // Süre yazısı bir an kaybolabilir (yeniden çizim): üst üste 2 kontrolde yoksa bitti say
+            if (++recMiss >= 2) {
+                recA11yOn = false; recMiss = 0
+                IslandBus.post(IslandEvent.ScreenRecGone("a11y", RecPhase.Recording))
+            }
+            return
+        }
+        if (digit != 0) {
+            if (digit != recA11yDigit) {
+                recA11yDigit = digit
+                IslandBus.post(IslandEvent.ScreenRec(RecPhase.Countdown, "a11y", 0L, digit, null, null, null))
+            }
+            scheduleRecCheck(350)
+        } else if (recA11yDigit != 0) {
+            recA11yDigit = 0
+            IslandBus.post(IslandEvent.ScreenRecGone("a11y", RecPhase.Countdown))
+        }
+    }
+
+    private fun collectClickable(n: AccessibilityNodeInfo, out: MutableList<Pair<Int, AccessibilityNodeInfo>>, depth: Int = 0) {
+        if (depth > 12) return
+        if (n.isClickable && n.isEnabled) {
+            val r = Rect(); n.getBoundsInScreen(r)
+            out.add(r.width() * r.height() to AccessibilityNodeInfo.obtain(n))
+        }
+        for (i in 0 until n.childCount) {
+            val c = n.getChild(i) ?: continue
+            try { collectClickable(c, out, depth + 1) } finally { @Suppress("DEPRECATION") runCatching { c.recycle() } }
+        }
+    }
+
+    private fun doStopScreenRec(): Boolean {
+        val ws = runCatching { windows }.getOrNull().orEmpty()
+        for (w in ws) {
+            val root = runCatching { w.root }.getOrNull() ?: continue
+            try {
+                if (!isRecPkg(root.packageName?.toString())) continue
+                val list = mutableListOf<Pair<Int, AccessibilityNodeInfo>>()
+                collectClickable(root, list)
+                // Durdur düğmesi çubuğun en küçük tıklanabilir öğesidir
+                val btn = list.filter { it.first > 0 }.minByOrNull { it.first }?.second
+                if (btn != null && btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                // Bulunamazsa: çubuğun solundaki yuvarlak düğmenin olduğu yere dokun
+                val r = Rect(); w.getBoundsInScreen(r)
+                if (r.width() > 0 && r.height() > 0) return tapAt(r.left + r.height() / 2f, r.centerY().toFloat())
+            } finally { @Suppress("DEPRECATION") runCatching { root.recycle() } }
+        }
+        return false
+    }
+
+    private fun tapAt(x: Float, y: Float): Boolean = runCatching {
+        val p = android.graphics.Path().apply { moveTo(x, y) }
+        val g = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(p, 0, 60)).build()
+        dispatchGesture(g, null, null)
+    }.getOrDefault(false)
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         runCatching {
             val e = event ?: return
+            if (isRecPkg(e.packageName?.toString())) scheduleRecCheck()
+            if (e.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED && (recA11yOn || recA11yDigit != 0)) scheduleRecCheck()
             when (e.eventType) {
                 AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> {
                     if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) return
