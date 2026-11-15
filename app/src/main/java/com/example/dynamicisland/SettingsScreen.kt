@@ -161,6 +161,14 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
 
             SectionCard("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)") {
                 SwitchRow("Ekran kaydı adası", "Bildirim erişimi açık olmalı. Kayıt sırasında kırmızı nokta, dokununca süre ve durdur düğmesi", draft.screenRecEnabled) { draft = draft.copy(screenRecEnabled = it) }
+                if (draft.screenRecEnabled) {
+                    SubHeader("Açık ada genişliği")
+                    SegmentedTabs(listOf("Normal", "Tam genişlik"), if (draft.screenRecWide) 1 else 0) {
+                        draft = draft.copy(screenRecWide = it == 1)
+                    }
+                    Text("Tam genişlikte ada durum çubuğunun sağ ve soluna kadar uzanır, köşelere değmez. Kayda dokununca ve kayıt bitince bu boyut kullanılır.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                }
             }
 
             SectionCard("Google Asistan / Gemini", "Asistan açılınca ada Siri benzeri renkli animasyona dönüşür") {

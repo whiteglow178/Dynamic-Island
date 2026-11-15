@@ -385,6 +385,27 @@ class IslandNotificationListener : NotificationListenerService() {
         }
     }
 
+    /** Kaydedildi bildirimindeki önizleme: Android sürümüne göre bitmap ya da Icon olarak gelebilir. */
+    private fun recThumbOf(n: Notification): ImageBitmap? = runCatching {
+        val ex = n.extras
+        fun raw(key: String): Any? = runCatching { @Suppress("DEPRECATION") ex.get(key) }.getOrNull()
+        fun toBmp(o: Any?): Bitmap? = when (o) {
+            is Bitmap -> o
+            is android.graphics.drawable.Icon -> runCatching {
+                o.loadDrawable(this)?.let { d ->
+                    if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) d.toBitmap() else d.toBitmap(256, 256)
+                }
+            }.getOrNull()
+            else -> null
+        }
+        val bmp = toBmp(raw(Notification.EXTRA_PICTURE))
+            ?: (if (android.os.Build.VERSION.SDK_INT >= 31) toBmp(raw(Notification.EXTRA_PICTURE_ICON)) else null)
+            ?: toBmp(raw(Notification.EXTRA_LARGE_ICON_BIG))
+            ?: toBmp(raw(Notification.EXTRA_LARGE_ICON))
+            ?: toBmp(n.getLargeIcon())
+        bmp?.scaledMax(256)?.asImageBitmap()
+    }.getOrNull()
+
     private fun handleScreenRec(sbn: StatusBarNotification) {
         val n = sbn.notification
         if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
@@ -407,12 +428,7 @@ class IslandNotificationListener : NotificationListenerService() {
                 recStopWords.any { t.startsWith(it) }
             }?.actionIntent ?: acts.firstOrNull()?.actionIntent ?: n.contentIntent
         } else null
-        val thumb = if (phase == RecPhase.Saved) runCatching {
-            @Suppress("DEPRECATION")
-            val pic = ex.getParcelable<Bitmap>(Notification.EXTRA_PICTURE)
-            val bmp = pic ?: n.getLargeIcon()?.loadDrawable(this)?.toBitmap(192, 192)
-            bmp?.scaledMax(256)?.asImageBitmap()
-        }.getOrNull() else null
+        val thumb = if (phase == RecPhase.Saved) recThumbOf(n) else null
         val started = if (chrono) n.`when` else 0L
         IslandBus.post(IslandEvent.ScreenRec(phase, sbn.key, started, count, stop, n.contentIntent, thumb))
     }

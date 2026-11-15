@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -365,7 +366,8 @@ fun IslandRoot(
                 tween(240, easing = FastOutSlowInEasing), label = "recCw",
             )
             if (content is IslandContent.ScreenRec) {
-                geo = geo.copy(cw = recCw, ew = maxOf(REC_PILL_W_DP, cfg.compactWidthDp).dp, eh = REC_PILL_H_DP.dp)
+                val screenWDp = LocalConfiguration.current.screenWidthDp.toFloat()
+                geo = geo.copy(cw = recCw, ew = recExpandedWidthDp(cfg, screenWDp).dp, eh = REC_PILL_H_DP.dp)
             }
             if (s.swallow && content is IslandContent.Media) {
                 val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value)
@@ -1070,8 +1072,14 @@ private fun ScreenRecContent(c: IslandContent.ScreenRec, onStop: () -> Unit) {
             )
         }
         if (c.phase == RecPhase.Saved) {
-            c.thumb?.let {
-                Image(it, null, Modifier.size(46.dp).clip(RoundedCornerShape(11.dp)), contentScale = ContentScale.Crop)
+            val th = c.thumb
+            if (th != null) {
+                Image(th, null, Modifier.size(46.dp).clip(RoundedCornerShape(11.dp)), contentScale = ContentScale.Crop)
+            } else {
+                // Önizleme bildirimden gelmediyse boş kalmasın
+                Box(Modifier.size(46.dp).clip(RoundedCornerShape(11.dp)).background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                    Text("▶", color = Color.White.copy(alpha = 0.75f), fontSize = 18.sp)
+                }
             }
         } else if (rec) {
             Box(
@@ -1094,6 +1102,12 @@ private fun formatRemaining(ms: Long): String {
 const val CHARGE_PILL_W_DP = 220f
 const val REC_PILL_W_DP = 280f      // ekran kaydı: açık hal genişliği
 const val REC_PILL_H_DP = 72f       // ekran kaydı: açık hal yüksekliği
+const val REC_WIDE_MARGIN_DP = 10f  // ekran kaydı tam genişlik: ekranın sağ/sol kenarından boşluk
+
+/** Ekran kaydı açık ada genişliği (dp). Servis ve arayüz aynı hesabı kullanır. */
+fun recExpandedWidthDp(cfg: IslandSettings, screenWDp: Float): Float =
+    if (cfg.screenRecWide) (screenWDp - 2f * REC_WIDE_MARGIN_DP).coerceAtLeast(REC_PILL_W_DP)
+    else maxOf(REC_PILL_W_DP, cfg.compactWidthDp)
 fun chargePillHeightDp(cfg: IslandSettings): Float = cfg.compactHeightDp + 4f
 
 @Composable

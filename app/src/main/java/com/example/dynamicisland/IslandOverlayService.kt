@@ -454,9 +454,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             RecPhase.Saved -> {
                 // Kayıt başlamadan gelen "kaydedildi" bildirimini (eski kayıt vb.) yok say
-                if (recPhase != RecPhase.Recording && recPhase != RecPhase.Processing) return
+                val already = recPhase == RecPhase.Saved
+                if (!already && recPhase != RecPhase.Recording && recPhase != RecPhase.Processing) return
                 freezeRec()
-                recPhase = RecPhase.Saved; recThumb = e.thumb; recOpen = e.open
+                // Sistem önizlemeyi çoğu zaman bildirimi güncelleyerek sonradan ekler: ikinci gelen bildirimden de alınır
+                recPhase = RecPhase.Saved; recThumb = e.thumb ?: recThumb; recOpen = e.open ?: recOpen
                 publishRec(true)                  // genişler: süre sabit, "Kayıt galeriye kaydedildi", sağda küçük resim
                 recSavedJob = scope.launch { delay(5_000); endRec() }
             }
@@ -1515,7 +1517,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             when {
                 assistant -> s.assistantWidthDp
                 k.kind == 8 -> maxOf(CHARGE_PILL_W_DP, s.compactWidthDp)     // şarj: kompakt pill
-                k.kind == 9 || k.kind == 10 -> maxOf(REC_PILL_W_DP, s.compactWidthDp)   // ekran kaydı
+                k.kind == 9 || k.kind == 10 -> recExpandedWidthDp(s, wm.currentWindowMetrics.bounds.width() / density)   // ekran kaydı
                 else -> s.expandedWidthDp
             }
         )
