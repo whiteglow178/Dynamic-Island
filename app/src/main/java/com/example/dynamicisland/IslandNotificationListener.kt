@@ -285,7 +285,83 @@ class IslandNotificationListener : NotificationListenerService() {
         IslandBus.post(IslandEvent.Call(sbn.key, sbn.packageName, name, incoming, started, avatar, answer, decline))
     }
 
+
+    // ---------------------------------------------------------------- Ekran kaydı (sistem kaydedicinin bildirimi)
+    // Dile bağlı olmayan ipuçları öncelikli: bildirim kanalı ve paket adı. Metin yalnızca SystemUI için yedek.
+    private val recChannelHints = listOf("screen_record", "screenrecord", "screen-record", "screen_rec", "screenrec", "scrrec")
+    private val recPkgHints = listOf("screenrecord", "screen_record", "screenrec", "scrrecord")
+    private val recTextHints = listOf(
+        "screen record", "screenrecord", "ekran kayd", "запись экрана", "bildschirmaufnahme", "enregistrement de l",
+        "grabación de pantalla", "gravação de tela", "registrazione schermo", "录屏", "屏幕录制", "画面録画", "화면 녹화", "تسجيل الشاشة",
+    )
+    private val recStopWords = listOf("durdur", "bitir", "dur", "stop", "finish", "end", "остановить", "стоп", "停止", "结束")
+
+    private fun isScreenRec(sbn: StatusBarNotification): Boolean {
+        if (sbn.packageName == packageName) return false
+        val n = sbn.notification ?: return false
+        val pkg = sbn.packageName.lowercase()
+        val ch = (if (android.os.Build.VERSION.SDK_INT >= 26) n.channelId else null).orEmpty().lowercase()
+        if (recChannelHints.any { ch.contains(it) }) return true
+        if (recPkgHints.any { pkg.contains(it) }) return true
+        if (pkg.contains("systemui")) {
+            val ex = n.extras
+            val t = (ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty() + " " +
+                ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()).lowercase()
+            if (recTextHints.any { t.contains(it) }) return true
+        }
+        return false
+    }
+
+    private fun recPhaseOf(sbn: StatusBarNotification): RecPhase {
+        val n = sbn.notification
+        val ex = n.extras
+        val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)
+        val hasProg = ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE) || ex.getInt(Notification.EXTRA_PROGRESS_MAX, 0) > 0
+        val ongoing = sbn.isOngoing || (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
+        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
+        val digit = listOf(title, text).any { it.length in 1..2 && it.all(Char::isDigit) }
+        return when {
+            digit && !chrono -> RecPhase.Countdown
+            ongoing && chrono -> RecPhase.Recording
+            ongoing && hasProg -> RecPhase.Processing
+            ongoing -> RecPhase.Recording
+            else -> RecPhase.Saved
+        }
+    }
+
+    private fun handleScreenRec(sbn: StatusBarNotification) {
+        val n = sbn.notification
+        if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+        val ex = n.extras
+        val phase = recPhaseOf(sbn)
+        val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)
+        val count = listOf(
+            ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim(),
+            ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim(),
+        ).firstOrNull { it.length in 1..2 && it.all(Char::isDigit) }?.toIntOrNull() ?: 0
+        val acts = n.actions?.filter { it.actionIntent != null } ?: emptyList()
+        val stop = if (phase == RecPhase.Recording) {
+            acts.firstOrNull { a ->
+                val t = a.title?.toString()?.trim()?.lowercase().orEmpty()
+                recStopWords.any { t.startsWith(it) }
+            }?.actionIntent ?: acts.firstOrNull()?.actionIntent ?: n.contentIntent
+        } else null
+        val thumb = if (phase == RecPhase.Saved) runCatching {
+            @Suppress("DEPRECATION")
+            val pic = ex.getParcelable<Bitmap>(Notification.EXTRA_PICTURE)
+            val bmp = pic ?: n.getLargeIcon()?.loadDrawable(this)?.toBitmap(192, 192)
+            bmp?.scaledMax(256)?.asImageBitmap()
+        }.getOrNull() else null
+        val started = if (chrono) n.`when` else 0L
+        IslandBus.post(IslandEvent.ScreenRec(phase, sbn.key, started, count, stop, n.contentIntent, thumb))
+    }
+
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (runCatching { isScreenRec(sbn) }.getOrDefault(false)) {
+            runCatching { IslandBus.post(IslandEvent.ScreenRecGone(sbn.key, recPhaseOf(sbn))) }
+            return
+        }
         if (sbn.notification?.category == Notification.CATEGORY_CALL) {
             IslandBus.post(IslandEvent.CallEnded(sbn.key))
         }
@@ -293,6 +369,8 @@ class IslandNotificationListener : NotificationListenerService() {
 
     private fun handleNotification(sbn: StatusBarNotification) {
         val n = sbn.notification
+        // Sistem ekran kaydı bildirimi (kayıt / işleniyor / kaydedildi) ayrı yoldan gider
+        if (isScreenRec(sbn)) { handleScreenRec(sbn); return }
         // Arama bildirimleri (gelen / aktif) ayrı yoldan gider; "devam eden" filtresine takılmaz
         if (sbn.packageName != packageName && n.category == Notification.CATEGORY_CALL) {
             handleCall(sbn)

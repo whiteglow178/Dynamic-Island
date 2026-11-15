@@ -13,6 +13,9 @@ data class FavApp(val pkg: String, val label: String, val icon: ImageBitmap?)
 
 enum class StatusKind { Ringer, Charging, Timer, Alarm }
 
+/** Sistem ekran kaydı aşamaları. */
+enum class RecPhase { Countdown, Recording, Processing, Saved }
+
 @Immutable
 sealed interface IslandContent {
     data object Idle : IslandContent
@@ -48,6 +51,15 @@ sealed interface IslandContent {
         val endsAt: Long = 0L,           // zamanlayıcı: bitiş zamanı (System.currentTimeMillis)
         val totalMs: Long = 0L,          // zamanlayıcı: toplam süre
         val silent: Boolean = false,     // zil modu: sessiz mi
+    ) : IslandContent
+
+    /** Sistem ekran kaydı: geri sayım / kayıt / işleniyor / kaydedildi. Süre UI'da startedAt'ten hesaplanır. */
+    data class ScreenRec(
+        val phase: RecPhase,
+        val startedAt: Long = 0L,
+        val frozenMs: Long = 0L,          // kayıt bitince dondurulan süre
+        val count: Int = 0,               // geri sayım rakamı
+        val thumb: ImageBitmap? = null,   // kaydedildi bildirimindeki küçük resim
     ) : IslandContent
 
     data class Media(
@@ -106,6 +118,13 @@ sealed interface IslandEvent {
     data class CallEnded(val key: String) : IslandEvent
     /** Zil modu / şarj / zamanlayıcı / alarm gibi kısa durum gösterimi. */
     data class Status(val content: IslandContent.Status, val holdMs: Long = 4_000L) : IslandEvent
+    /** Sistemin ekran kaydı bildirimi (izin gerektirmez; bildirim erişiminden gelir). */
+    data class ScreenRec(
+        val phase: RecPhase, val key: String, val startedAt: Long, val count: Int,
+        val stop: android.app.PendingIntent?, val open: android.app.PendingIntent?,
+        val thumb: ImageBitmap?,
+    ) : IslandEvent
+    data class ScreenRecGone(val key: String, val phase: RecPhase) : IslandEvent
     data class MediaChanged(val media: IslandContent.Media?) : IslandEvent
     data class AssistantChanged(val active: Boolean) : IslandEvent
     /** Ön plandaki uygulama değişti ([from] -> [to]); müzik uygulamasından çıkış animasyonu için. */

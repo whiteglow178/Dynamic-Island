@@ -160,6 +160,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Favorites -> 4
         is IslandContent.Call -> if (c.isIncoming) 5 else 6
         is IslandContent.Status -> if (c.kind == StatusKind.Charging) 8 else 7
+        is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
     }
 
     // ---------------------------------------------------------------- Olay mantığı
@@ -176,6 +177,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandEvent.Call -> onCall(e)
             is IslandEvent.CallEnded -> onCallEnded(e.key)
+            is IslandEvent.ScreenRec -> onScreenRec(e)
+            is IslandEvent.ScreenRecGone -> onScreenRecGone(e)
             is IslandEvent.Status -> if (!assistantActive && callKey == null) showTemporarily(e.content, e.holdMs)
             is IslandEvent.Notification -> if (!assistantActive && callKey == null) scope.launch {
                 val icon = iconFor(e.pkg)
@@ -245,6 +248,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val cur = ui.value
         when {
             cur.content is IslandContent.Call -> update { it }          // arama sürerken müzik paneline geçme
+            cur.content is IslandContent.ScreenRec -> update { it }     // ekran kaydı sürerken müzik adasına geçme
             cur.content is IslandContent.Assistant -> update { it }
             cur.content is IslandContent.Notif -> update { it }
             cur.content is IslandContent.Status -> update { it }
@@ -308,6 +312,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun rest() {
+        // Ekran kaydı sürerken (kayıt / işleniyor / geri sayım) ada bu hale döner
+        val rp = recPhase
+        if (rp != null && rp != RecPhase.Saved && !assistantActive && callKey == null) {
+            recContent()?.let { c -> update { IslandUiState(c, false) }; return }
+        }
         val m = lastMedia
         update { if (m != null && m.playing) IslandUiState(m, false) else IslandUiState() }
     }
@@ -361,7 +370,110 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 }
             }
             is IslandContent.Status -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            is IslandContent.ScreenRec -> {
+                val c = cur.content as IslandContent.ScreenRec
+                when (c.phase) {
+                    RecPhase.Recording ->
+                        if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+                        else { update { it.copy(expanded = true) }; scheduleCollapse(6_000) }
+                    RecPhase.Saved -> { sendCallIntent(recOpen); endRec() }   // kaydı galeride aç
+                    else -> Unit
+                }
+            }
         }
+    }
+
+    // ---------------------------------------------------------------- Ekran kaydı (sistem kaydedici; izin gerektirmez)
+    private var recPhase: RecPhase? = null
+    private var recSince = 0L
+    private var recFrozenMs = 0L
+    private var recCount = 0
+    private var recThumb: ImageBitmap? = null
+    private var recStop: android.app.PendingIntent? = null
+    private var recOpen: android.app.PendingIntent? = null
+    private var recTimeoutJob: Job? = null
+    private var recSavedJob: Job? = null
+
+    private fun recContent(): IslandContent.ScreenRec? =
+        recPhase?.let { IslandContent.ScreenRec(it, recSince, recFrozenMs, recCount, recThumb) }
+
+    private fun publishRec(expanded: Boolean) {
+        val c = recContent() ?: return
+        if (assistantActive || callKey != null) return
+        collapseJob?.cancel()
+        update { IslandUiState(c, expanded = expanded) }
+    }
+
+    private fun freezeRec() {
+        if (recFrozenMs == 0L && recSince > 0L) recFrozenMs = (System.currentTimeMillis() - recSince).coerceAtLeast(0L)
+    }
+
+    /** Kayıt bitti ama kaydedildi bildirimi gelmediyse (iptal / hata) spinner sonsuza dek dönmesin. */
+    private fun armRecTimeout() {
+        recTimeoutJob?.cancel()
+        recTimeoutJob = scope.launch { delay(20_000); if (recPhase == RecPhase.Processing) endRec() }
+    }
+
+    private fun endRec() {
+        recTimeoutJob?.cancel(); recSavedJob?.cancel()
+        recPhase = null; recSince = 0L; recFrozenMs = 0L; recCount = 0
+        recThumb = null; recStop = null; recOpen = null
+        if (ui.value.content is IslandContent.ScreenRec) {
+            collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+        }
+    }
+
+    private fun onScreenRec(e: IslandEvent.ScreenRec) {
+        if (!settings.value.screenRecEnabled) return
+        recTimeoutJob?.cancel(); recSavedJob?.cancel()
+        val now = System.currentTimeMillis()
+        when (e.phase) {
+            RecPhase.Countdown -> {
+                recPhase = RecPhase.Countdown; recCount = e.count; recSince = 0L; recFrozenMs = 0L; recThumb = null
+                publishRec(false)
+            }
+            RecPhase.Recording -> {
+                val first = recPhase != RecPhase.Recording
+                recPhase = RecPhase.Recording; recStop = e.stop
+                if (first) {
+                    recSince = e.startedAt.takeIf { it in 1..now } ?: now
+                    recFrozenMs = 0L; recThumb = null
+                    publishRec(false)
+                } else if (ui.value.content !is IslandContent.ScreenRec) publishRec(false)
+            }
+            RecPhase.Processing -> {
+                freezeRec()
+                if (recPhase != RecPhase.Processing) { recPhase = RecPhase.Processing; publishRec(false) }
+                armRecTimeout()
+            }
+            RecPhase.Saved -> {
+                freezeRec()
+                recPhase = RecPhase.Saved; recThumb = e.thumb; recOpen = e.open
+                publishRec(true)                  // genişler: süre sabit, "Kayıt galeriye kaydedildi", sağda küçük resim
+                recSavedJob = scope.launch { delay(5_000); endRec() }
+            }
+        }
+    }
+
+    private fun onScreenRecGone(e: IslandEvent.ScreenRecGone) {
+        if (!settings.value.screenRecEnabled) return
+        when {
+            // Kayıt bildirimi kalktı: kayıt bitti, işleniyor (beyaz dönen halka) -> kaydedildi bildirimi beklenir
+            e.phase == RecPhase.Recording && recPhase == RecPhase.Recording -> {
+                freezeRec(); recPhase = RecPhase.Processing; publishRec(false); armRecTimeout()
+            }
+            // Geri sayım bildirimi kalktı: kayıt başlamadıysa (iptal) kapat
+            e.phase == RecPhase.Countdown && recPhase == RecPhase.Countdown -> {
+                recTimeoutJob?.cancel()
+                recTimeoutJob = scope.launch { delay(1_500); if (recPhase == RecPhase.Countdown) endRec() }
+            }
+        }
+    }
+
+    /** Adadaki durdur düğmesi: sistem kaydının bildirimdeki "Durdur" eylemini tetikler. */
+    private fun onRecStop() {
+        sendCallIntent(recStop)
+        freezeRec(); recPhase = RecPhase.Processing; publishRec(false); armRecTimeout()
     }
 
     // ---------------------------------------------------------------- Arama (gelen / aktif)
@@ -1221,6 +1333,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
                     onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
                     onAnswer = ::onCallAnswer, onDecline = ::onCallDecline, onSpeaker = ::onCallSpeaker,
+                    onRecStop = ::onRecStop,
                 )
             }
         }
@@ -1385,13 +1498,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private suspend fun syncWindow(k: WinKey) {
         val s = k.s
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
-        val cw = dp(if (k.kind == 6) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
+        val cw = dp(if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val music = k.kind == 2
         val assistant = k.kind == 3
         val ew = dp(
             when {
                 assistant -> s.assistantWidthDp
                 k.kind == 8 -> maxOf(CHARGE_PILL_W_DP, s.compactWidthDp)     // şarj: kompakt pill
+                k.kind == 9 || k.kind == 10 -> maxOf(REC_PILL_W_DP, s.compactWidthDp)   // ekran kaydı
                 else -> s.expandedWidthDp
             }
         )
@@ -1402,6 +1516,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 5 -> 74f          // gelen arama
                 k.kind == 6 -> 88f          // aktif arama
                 k.kind == 8 -> chargePillHeightDp(s)   // şarj
+                k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
                 k.kind == 4 -> s.favoritesHeightDp(favN)
                 else -> s.expandedHeightDp + if (music) s.musicExtraDp() else 0f
             }

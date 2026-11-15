@@ -232,6 +232,7 @@ private fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float = 
     is IslandContent.Favorites -> cfg.favoritesHeightDp(c.apps.size)
     is IslandContent.Call -> if (c.isIncoming) 74f else 88f
     is IslandContent.Status -> if (c.kind == StatusKind.Charging) chargePillHeightDp(cfg) else cfg.expandedHeightDp
+    is IslandContent.ScreenRec -> REC_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
     else -> cfg.expandedHeightDp
 }
@@ -251,6 +252,7 @@ fun IslandRoot(
     onSpeaker: () -> Unit = {},
     onOpenMusic: () -> Unit = {},
     onSwipe: (Int) -> Unit = {},     // +1 = aşağı, -1 = yukarı
+    onRecStop: () -> Unit = {},
 ) {
     val s by state.collectAsState()
     val cfg by settingsFlow.collectAsState()
@@ -355,11 +357,21 @@ fun IslandRoot(
             if (content is IslandContent.Status && content.kind == StatusKind.Charging) {
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
+            // Ekran kaydı: geri sayım / işleniyor aşamasında kapalı ada biraz genişler (sağda rakam / halka için)
+            val recWide = content is IslandContent.ScreenRec &&
+                (content.phase == RecPhase.Countdown || content.phase == RecPhase.Processing)
+            val recCw by animateDpAsState(
+                if (recWide) maxOf(cw, CALL_COMPACT_W_DP.dp) else cw,
+                tween(240, easing = FastOutSlowInEasing), label = "recCw",
+            )
+            if (content is IslandContent.ScreenRec) {
+                geo = geo.copy(cw = recCw, ew = maxOf(REC_PILL_W_DP, cfg.compactWidthDp).dp, eh = REC_PILL_H_DP.dp)
+            }
             if (s.swallow && content is IslandContent.Media) {
                 val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value)
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop)
         }
     }
 }
@@ -584,6 +596,7 @@ fun IslandPill(
     onOpenMusic: () -> Unit = {},
     onSwipe: (Int) -> Unit = {},
     artFlip: ArtFlip? = null,
+    onRecStop: () -> Unit = {},
 ) {
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
@@ -730,6 +743,7 @@ fun IslandPill(
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
+                    is IslandContent.ScreenRec -> ScreenRecContent(content, onRecStop)
                     IslandContent.Idle -> Unit
                 }
             }
@@ -752,6 +766,14 @@ fun IslandPill(
                     Spacer(Modifier.weight(1f))
                     CallWave(Modifier.width(34.dp).height((geo.ch - 16.dp).coerceAtLeast(10.dp)))
                 }
+            }
+        }
+
+        if (content is IslandContent.ScreenRec && compactVisible) {
+            // Kapalı ada: kayıtta solda yavaşça yanıp sönen kırmızı nokta; geri sayımda halka + rakam; işlenirken dönen halka
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
+                ScreenRecCompact(content, Modifier.fillMaxSize().then(fade))
             }
         }
 
@@ -947,6 +969,121 @@ private fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
     }
 }
 
+// ---------------------------------------------------------------- Ekran kaydı
+private val RecRed = Color(0xFFFF3B30)
+
+/** Kırmızı kayıt noktası; blink açıksa yavaşça yanıp söner, dim açıksa soluk durur. */
+@Composable
+private fun RecDot(blink: Boolean, size: Dp, modifier: Modifier = Modifier, dim: Boolean = false) {
+    val t = rememberInfiniteTransition(label = "recBlink")
+    val pulse = t.animateFloat(
+        1f, 0.25f,
+        infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "recPulse",
+    )
+    Box(
+        modifier.size(size)
+            .graphicsLayer { alpha = if (blink) pulse.value else if (dim) 0.35f else 1f }
+            .background(RecRed, CircleShape)
+    )
+}
+
+@Composable
+private fun RecSpinner(size: Dp, modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "recSpin")
+    val rot = t.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "recRot")
+    Canvas(modifier.size(size).graphicsLayer { rotationZ = rot.value }) {
+        val sw = 2.5.dp.toPx()
+        drawArc(
+            Color.White, startAngle = -90f, sweepAngle = 290f, useCenter = false,
+            topLeft = Offset(sw / 2, sw / 2), size = Size(this.size.width - sw, this.size.height - sw),
+            style = Stroke(sw, cap = StrokeCap.Round),
+        )
+    }
+}
+
+@Composable
+private fun RecCountRing(count: Int, size: Dp, modifier: Modifier = Modifier) {
+    // Her rakamda halka dolu başlar, saniye boyunca boşalır
+    val sweep = remember(count) { Animatable(360f) }
+    LaunchedEffect(count) { sweep.snapTo(360f); sweep.animateTo(0f, tween(1000, easing = LinearEasing)) }
+    Canvas(modifier.size(size)) {
+        val sw = 2.5.dp.toPx()
+        drawArc(
+            Color.White, startAngle = -90f, sweepAngle = sweep.value, useCenter = false,
+            topLeft = Offset(sw / 2, sw / 2), size = Size(this.size.width - sw, this.size.height - sw),
+            style = Stroke(sw, cap = StrokeCap.Round),
+        )
+    }
+}
+
+@Composable
+private fun ScreenRecCompact(c: IslandContent.ScreenRec, modifier: Modifier = Modifier) {
+    Box(modifier) {
+        when (c.phase) {
+            RecPhase.Recording -> RecDot(true, 9.dp, Modifier.align(Alignment.CenterStart).padding(start = 14.dp))
+            RecPhase.Saved -> RecDot(false, 9.dp, Modifier.align(Alignment.CenterStart).padding(start = 14.dp))
+            RecPhase.Countdown -> {
+                RecCountRing(c.count, 17.dp, Modifier.align(Alignment.CenterStart).padding(start = 12.dp))
+                Text(
+                    c.count.toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp),
+                )
+            }
+            RecPhase.Processing -> {
+                RecDot(false, 9.dp, Modifier.align(Alignment.CenterStart).padding(start = 14.dp), dim = true)
+                RecSpinner(17.dp, Modifier.align(Alignment.CenterEnd).padding(end = 14.dp))
+            }
+        }
+    }
+}
+
+private fun formatRecTime(ms: Long): String {
+    val t = (ms / 1000).coerceAtLeast(0)
+    val h = t / 3600; val m = (t % 3600) / 60; val sec = t % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%02d:%02d".format(m, sec)
+}
+
+/** Açık ada: [nokta + süre / Ekran Kaydediliyor]  ...  [durdur düğmesi]  ya da  [küçük resim] (kaydedildi). */
+@Composable
+private fun ScreenRecContent(c: IslandContent.ScreenRec, onStop: () -> Unit) {
+    val rec = c.phase == RecPhase.Recording
+    var now by remember(c.startedAt) { mutableLongStateOf(System.currentTimeMillis()) }
+    if (rec) LaunchedEffect(c.startedAt) { while (true) { now = System.currentTimeMillis(); delay(250) } }
+    val ms = if (rec) (now - c.startedAt).coerceAtLeast(0L) else c.frozenMs
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RecDot(blink = rec, size = 10.dp)
+                if (rec || ms > 0L) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(formatRecTime(ms), color = RecRed, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1)
+                }
+            }
+            Text(
+                if (c.phase == RecPhase.Saved) "Kayıt galeriye kaydedildi" else "Ekran Kaydediliyor",
+                color = Color.White, fontWeight = FontWeight.Medium, fontSize = 15.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (c.phase == RecPhase.Saved) {
+            c.thumb?.let {
+                Image(it, null, Modifier.size(46.dp).clip(RoundedCornerShape(11.dp)), contentScale = ContentScale.Crop)
+            }
+        } else if (rec) {
+            Box(
+                Modifier.size(46.dp).clip(CircleShape)
+                    .border(2.5.dp, Color.White, CircleShape)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onStop),
+                contentAlignment = Alignment.Center,
+            ) { Box(Modifier.size(20.dp).background(RecRed, RoundedCornerShape(6.dp))) }
+        }
+    }
+}
+
 private fun formatRemaining(ms: Long): String {
     val t = ((ms + 999) / 1000).coerceAtLeast(0)
     val h = t / 3600; val m = (t % 3600) / 60; val s = t % 60
@@ -955,6 +1092,8 @@ private fun formatRemaining(ms: Long): String {
 
 /** Şarj görünümü: kapalı adadan biraz geniş, tek satır. Solda yazı, sağda yeşil yüzde + pil. */
 const val CHARGE_PILL_W_DP = 220f
+const val REC_PILL_W_DP = 280f      // ekran kaydı: açık hal genişliği
+const val REC_PILL_H_DP = 72f       // ekran kaydı: açık hal yüksekliği
 fun chargePillHeightDp(cfg: IslandSettings): Float = cfg.compactHeightDp + 4f
 
 @Composable

@@ -159,6 +159,10 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
+            SectionCard("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)") {
+                SwitchRow("Ekran kaydı adası", "Bildirim erişimi açık olmalı. Kayıt sırasında kırmızı nokta, dokununca süre ve durdur düğmesi", draft.screenRecEnabled) { draft = draft.copy(screenRecEnabled = it) }
+            }
+
             SectionCard("Google Asistan / Gemini", "Asistan açılınca ada Siri benzeri renkli animasyona dönüşür") {
                 SwitchRow("Asistan animasyonu", "Erişilebilirlik servisi açık olmalı", draft.assistantEnabled) { draft = draft.copy(assistantEnabled = it) }
                 if (draft.assistantEnabled) {
