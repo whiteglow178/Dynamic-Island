@@ -346,3 +346,51 @@ fun AtomicLaunch(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> Unit
         }
     }
 }
+
+
+// ---- Uzayan ada (iOS tarzı yutma): ada yukarı doğru biraz büyür, sonra eski haline döner.
+// Ada penceresi yeniden boyutlandırılmaz (titreme/takılma olmasın); şekil tam ekran katmanda çizilir.
+const val STRETCH_W_MUL = 1.12f            // büyük genişlik = kapalı ada genişliği x bu değer
+const val STRETCH_H_MUL = 1.5f             // büyük yükseklik = kapalı ada yüksekliği x bu değer
+private const val STRETCH_OPEN_MS = 320    // hız 1x iken uzama süresi
+private const val STRETCH_HOLD_MS = 120L   // en büyük halde bekleme (panel adaya girsin)
+private const val STRETCH_CLOSE_MS = 380   // hız 1x iken eski boyuta dönme süresi
+private const val STRETCH_APPEAR_MS = 40
+private const val STRETCH_FADE_MS = 80
+private val StretchEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
+
+@Composable
+fun IslandStretch(spec: LaunchSpec, onFinished: () -> Unit) {
+    val finished by rememberUpdatedState(onFinished)
+    val a = remember { Animatable(0f) }
+    val appear = remember { Animatable(0f) }
+    val fade = remember { Animatable(1f) }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val sp = spec.speed.coerceIn(0.5f, 3f)
+
+    LaunchedEffect(Unit) {
+        launch { appear.animateTo(1f, tween(STRETCH_APPEAR_MS)) }
+        a.animateTo(1f, tween((STRETCH_OPEN_MS / sp).toInt(), easing = StretchEasing))
+        delay((STRETCH_HOLD_MS / sp).toLong())
+        a.animateTo(0f, tween((STRETCH_CLOSE_MS / sp).toInt(), easing = StretchEasing))
+        fade.animateTo(0f, tween(STRETCH_FADE_MS))
+        finished()
+    }
+
+    Canvas(
+        Modifier.fillMaxSize()
+            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .graphicsLayer { alpha = appear.value * fade.value }
+    ) {
+        val t = a.value
+        val extra = spec.h * (STRETCH_H_MUL - 1f)
+        val up = minOf(extra, spec.top.coerceAtLeast(0f))      // önce ekranın üstüne kadar yukarı, kalanı aşağı
+        val w = spec.w * (1f + (STRETCH_W_MUL - 1f) * t)
+        val h = spec.h + extra * t
+        val top = spec.top - up * t
+        val r = minOf(36f * density, minOf(w, h) / 2f)
+        translate(-origin.x, -origin.y) {
+            drawRoundRect(spec.color, Offset(spec.cx - w / 2f, top), Size(w, h), CornerRadius(r))
+        }
+    }
+}

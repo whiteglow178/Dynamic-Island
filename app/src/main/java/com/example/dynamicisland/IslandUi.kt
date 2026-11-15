@@ -54,10 +54,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionOnScreen
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -94,15 +90,8 @@ fun islandGeo(cfg: IslandSettings, music: Boolean, compactLyrics: Boolean = fals
  * Müzikten çıkış "yutma" efektinde adanın büyüdüğü boyut (dp): kapalı adadan biraz geniş, yaklaşık iki kat yüksek;
  * açık ada boyutunu aşmaz. Hem arayüz hem pencere boyutu aynı formülü kullanır.
  */
-fun swallowSizeDp(cw: Float, ch: Float, ew: Float, eh: Float, stretch: Boolean = false): Pair<Float, Float> =
-    if (stretch) (cw * STRETCH_W_MUL) to (ch * STRETCH_H_MUL)   // uzayan ada: kapalı adadan biraz geniş ve yüksek (açık ada boyutuna bağlı değil)
-    else minOf(ew, cw * 1.15f).coerceAtLeast(cw) to minOf(eh, ch * 2.1f).coerceAtLeast(ch)
-
-// "Uzayan ada" yutma efekti (iOS tarzı): ada yukarı doğru (ekran kenarına kadar, kalan kısmı aşağı) biraz büyür
-const val STRETCH_W_MUL = 1.12f            // büyük genişlik = kapalı ada genişliği x bu değer
-const val STRETCH_H_MUL = 1.5f             // büyük yükseklik = kapalı ada yüksekliği x bu değer
-private const val STRETCH_OPEN_MS = 320    // hız 1x iken uzama süresi
-private const val STRETCH_CLOSE_MS = 380   // hız 1x iken eski boyuta dönme süresi
+fun swallowSizeDp(cw: Float, ch: Float, ew: Float, eh: Float): Pair<Float, Float> =
+    minOf(ew, cw * 1.15f).coerceAtLeast(cw) to minOf(eh, ch * 2.1f).coerceAtLeast(ch)
 
 // ---------------------------------------------------------------- Animasyon (5 stil + kapalı)
 /** Genişlik ve yükseklik ilerlemesi ayrı: "Sıvı" stilinde farklı zamanlanır, diğerlerinde aynıdır. */
@@ -126,16 +115,10 @@ private fun specFor(cfg: IslandSettings, expanding: Boolean, isWidth: Boolean): 
 }
 
 @Composable
-fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean, fast: Boolean = false, stretch: Boolean = false): IslandProgress {
+fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean, fast: Boolean = false): IslandProgress {
     val target = if (expanded) 1f else 0f
     // Yutma efekti: ada panel adaya varmadan büyümüş olsun diye ayardaki stil yerine kısa, düz bir animasyon
-    val sp = cfg.musicExitSpeed.coerceIn(0.5f, 3f)
-    val fastSpec: FiniteAnimationSpec<Float> = when {
-        !cfg.animEnabled -> snap()
-        // Uzayan ada: yumuşak uzama ve yumuşak geri dönüş (hız ayarı müzikten çıkış hızını izler)
-        stretch -> tween(((if (expanded) STRETCH_OPEN_MS else STRETCH_CLOSE_MS) / sp).toInt(), easing = FastOutSlowInEasing)
-        else -> tween(160, easing = LinearOutSlowInEasing)
-    }
+    val fastSpec: FiniteAnimationSpec<Float> = if (cfg.animEnabled) tween(160, easing = LinearOutSlowInEasing) else snap()
     val pw = animateFloatAsState(target, if (fast) fastSpec else specFor(cfg, expanded, true), label = "pw")
     val ph = animateFloatAsState(target, if (fast) fastSpec else specFor(cfg, expanded, false), label = "ph")
     return remember(pw, ph) { IslandProgress(pw, ph) }
@@ -172,7 +155,7 @@ fun IslandRoot(
         if (wantExpanded && cfg.animEnabled && !s.swallow) delay(EXPAND_LEAD_MS)
         animExpanded = wantExpanded
     }
-    val progress = rememberIslandProgress(cfg, animExpanded, s.swallow, cfg.musicExitStretch)
+    val progress = rememberIslandProgress(cfg, animExpanded, s.swallow)
     val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
     val frame = rememberLyricFrame(
         media, lyrics, cfg.lyricsOffsetMs.toLong(),
@@ -189,14 +172,7 @@ fun IslandRoot(
     }
 
     // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
-    // Uzayan ada: pencere yukarı kaydırılsa bile ada, ekrandaki doğru yerinde kalsın diye pencerenin ekran konumu ölçülür
-    var rootY by remember { mutableStateOf(0f) }
-    var rootMeasured by remember { mutableStateOf(false) }
-    val stretchPin = s.swallow && cfg.musicExitStretch && s.stretchTopPx > 0f
-    Box(
-        Modifier.fillMaxSize().onGloballyPositioned { rootY = it.positionOnScreen().y; rootMeasured = true }.padding(cfg.windowPadDp().dp),
-        contentAlignment = Alignment.TopCenter,
-    ) {
+    Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
         // Boştayken de göster açıksa Idle içerikte de (boş) ada çizilir; kapalıysa hiçbir şey çizilmez.
         if (content !is IslandContent.Idle || cfg.showIdle) {
             val music = content is IslandContent.Media
@@ -212,20 +188,10 @@ fun IslandRoot(
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
             if (s.swallow && content is IslandContent.Media) {
-                val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value, cfg.musicExitStretch)
+                val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value)
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
-            Box(Modifier.offset {
-                if (!stretchPin || !rootMeasured) IntOffset.Zero
-                else {
-                    // Üst kenar ekran kenarına doğru yükselir (progress 0 = normal yer, 1 = en yukarı), alt kenar aşağı iner
-                    val t = progress.h.value.coerceIn(0f, 1f)
-                    val natural = rootY + cfg.windowPadDp().dp.toPx()
-                    IntOffset(0, (s.stretchTopPx - s.stretchUpPx * t - natural).roundToInt())
-                }
-            }) {
-                IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe)
-            }
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe)
         }
     }
 }

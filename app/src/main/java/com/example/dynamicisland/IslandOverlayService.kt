@@ -164,6 +164,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         when (e) {
             is IslandEvent.AssistantChanged -> onAssistant(e.active)
             is IslandEvent.AppSwitched -> {
+                if ((swallowView != null || stretchView != null) && isPlayingMediaApp(e.to)) abortExit()   // müzik uygulamasına geri dönüldü
                 val wasMusic = inMusicApp
                 updateInMusicApp(e.to)          // önce "müzik uygulamasında mıyım" güncellenir
                 val started = onAppSwitched(e.from)   // çıkış animasyonu varsa ada yutma durumuna geçer (gizleme atlanır)
@@ -701,39 +702,54 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Çalan şarkının uygulamasından çıkılınca: siyah panel adaya küçülür, ada şarkıyı gösterir. */
     private fun onAppSwitched(from: String): Boolean {
         val s = settings.value
-        if (!s.musicExitAnim || launching || swallowView != null) return false
+        if (!s.musicExitAnim || launching || swallowView != null || stretchView != null) return false
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastExitAt < EXIT_MIN_GAP_MS) return false      // hızlı arka arkaya geçişte animasyon atlanır (ana iş parçacığı yorulmasın)
         val m = lastMedia ?: return false
         if (!m.playing || callKey != null || assistantActive) return false
         val c = ui.value.content
         if (c !is IslandContent.Media && c !is IslandContent.Idle) return false
         if (!isPlayingMediaApp(from)) return false
+        lastExitAt = now
         startSwallowTransition()        // panel penceresi önce eklenir: ilk kare gecikmeden çizilsin
         if (swallowView == null) return false
-        swallowIsland()                 // ada aynı anda yutmaya hazırlanır (açılır / uzar)
+        if (s.musicExitStretch) startStretchOverlay() else swallowIsland()   // uzayan ada ekran katmanında çizilir, ada penceresi büyümez
+        exitWatchdog?.cancel()
+        exitWatchdog = scope.launch { delay(EXIT_WATCHDOG_MS); endExit() }   // ne olursa olsun animasyon durumu takılı kalmasın
         return true
     }
 
     /** [pkg], şu an çalan bir medya oturumunun uygulaması mı? (Bildirim erişimi açıksa okunabilir.) */
-    private fun isPlayingMediaApp(pkg: String): Boolean = runCatching {
-        val msm = getSystemService(android.media.session.MediaSessionManager::class.java)
-        msm.getActiveSessions(android.content.ComponentName(this, IslandNotificationListener::class.java))
-            .any { it.packageName == pkg && it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING }
-    }.getOrDefault(false)
+    private fun isPlayingMediaApp(pkg: String): Boolean {
+        // Sistem çağrısı (binder) ana iş parçacığında çalışır: hızlı geçişlerde tekrarını önlemek için kısa süre önbellekte tutulur
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (pkg == mediaCheckPkg && now - mediaCheckAt < 250L) return mediaCheckVal
+        val v = runCatching {
+            val msm = getSystemService(android.media.session.MediaSessionManager::class.java)
+            msm.getActiveSessions(android.content.ComponentName(this, IslandNotificationListener::class.java))
+                .any { it.packageName == pkg && it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING }
+        }.getOrDefault(false)
+        mediaCheckPkg = pkg; mediaCheckAt = now; mediaCheckVal = v
+        return v
+    }
+    private var mediaCheckPkg = ""
+    private var mediaCheckAt = 0L
+    private var mediaCheckVal = false
+    private var lastExitAt = 0L
+    private var exitWatchdog: Job? = null
+    private val EXIT_MIN_GAP_MS = 450L
+    private val EXIT_WATCHDOG_MS = 2_500L
 
     /** Panel adaya varınca ada kısa süre büyüyüp onu yutar (içerik çizilmez), sonra kapalı müzik haline döner. */
     private fun swallowIsland() {
         val sw = settings.value
-        if (!sw.musicExitSwallow && !sw.musicExitStretch) return   // iki yutma efekti de kapalı
+        if (!sw.musicExitSwallow || sw.musicExitStretch) return   // uzayan ada açıksa o ayrı katmanda oynar
         val m = lastMedia ?: return
         val c = ui.value.content
         if (!m.playing || (c !is IslandContent.Media && c !is IslandContent.Idle)) return
         if (ui.value.swallow && ui.value.expanded) return   // zaten yutma halinde: pencereyi yeniden kurma (kayma olmasın)
         collapseJob?.cancel()
-        // Uzayan ada: adanın ekrandaki üst kenarı ve yukarı uzayabileceği miktar (ekranın üstüne kadar; kalanı aşağı büyür)
-        val chPx = dp(sw.compactHeightDp)
-        val topPx = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(sw.offsetYDp)).toFloat().coerceAtLeast(0f)
-        val upPx = if (sw.musicExitStretch) minOf(chPx * (STRETCH_H_MUL - 1f), topPx) else 0f
-        update { IslandUiState(m, expanded = true, swallow = true, stretchTopPx = if (sw.musicExitStretch) topPx else 0f, stretchUpPx = upPx) }
+        update { IslandUiState(m, expanded = true, swallow = true) }
         scheduleCollapse(SWALLOW_SAFE_MS)
     }
 
@@ -811,6 +827,84 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         swallowView = null; swallowWm = null
         if (exitHold) { exitHold = false; refreshMediaVisibility() }   // panel bitti: müzik artık gösterilebilir
     }
+
+    // ---------------------------------------------------------------- Uzayan ada katmanı (yeni yutma animasyonu)
+    private var stretchView: ComposeView? = null
+    private var stretchWm: WindowManager? = null
+
+    private fun overlayParams(type: Int) = WindowManager.LayoutParams(
+        WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+        PixelFormat.TRANSLUCENT,
+    ).apply {
+        gravity = Gravity.TOP or Gravity.START
+        fitInsetsTypes = 0
+        layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+    }
+
+    private fun startStretchOverlay() {
+        if (stretchView != null) return
+        val s = settings.value
+        val sw = wm.currentWindowMetrics.bounds.width()
+        val chPx = dp(s.compactHeightDp)
+        val spec = LaunchSpec(
+            cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+            top = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)).toFloat(),
+            w = dp(compactWidthFor(s, false)).toFloat(),
+            h = chPx.toFloat(),
+            speed = s.musicExitSpeed,
+            color = islandPanelColor(s, lastMedia?.artColor ?: 0),
+        )
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        lateinit var view: ComposeView
+        view = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@IslandOverlayService)
+            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
+            setContent {
+                val onDone = { handler.post { if (stretchView === view) removeStretchView() }; Unit }
+                IslandStretch(spec, onFinished = onDone)
+            }
+        }
+        var host: WindowManager = wm
+        var added = false
+        IslandAccessibilityService.instance?.let { a11y ->
+            runCatching {
+                val h2 = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
+                h2.addView(view, overlayParams(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY))
+                host = h2; added = true
+            }
+        }
+        if (!added) added = runCatching { wm.addView(view, overlayParams(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)) }.isSuccess
+        if (!added) { view.disposeComposition(); return }
+        stretchView = view; stretchWm = host
+        scope.launch { delay(3_000); if (stretchView === view) removeStretchView() }
+    }
+
+    private fun removeStretchView() {
+        val v = stretchView
+        if (v != null) {
+            runCatching { (stretchWm ?: wm).removeView(v) }
+            v.disposeComposition()
+            v.setViewTreeLifecycleOwner(null)
+            v.setViewTreeSavedStateRegistryOwner(null)
+        }
+        stretchView = null; stretchWm = null
+    }
+
+    /** Çıkış animasyonunu tamamen bitirir: katmanlar kalkar, yutma durumu ve gizleme bayrağı sıfırlanır, müzik yeniden gösterilir. */
+    private fun endExit() {
+        removeStretchView()
+        removeSwallowView()               // exitHold'u da sıfırlar
+        if (ui.value.swallow) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+        else refreshMediaVisibility()
+    }
+
+    private fun abortExit() { exitWatchdog?.cancel(); endExit() }
 
     private fun removeLaunchView() {
         val v = launchView
@@ -1310,12 +1404,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
             k.expanded && k.swallow && music -> {
                 // Yutma efekti: pencere, büyüyen adanın boyutunda (tam açık panel kadar büyük değil)
-                val sz = swallowSizeDp(compactWidthFor(s, false), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp(), s.musicExitStretch)
+                val sz = swallowSizeDp(compactWidthFor(s, false), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp())
                 setBlur(false, s)
                 val sw2 = dp(sz.first) + 2 * pad
                 val maxSh = ((screenW - sw2) / 2).coerceAtLeast(0)
-                val up = if (s.musicExitStretch) ui.value.stretchUpPx.toInt() else 0   // uzayan ada: pencere yukarı doğru da büyür
-                setGeometry(sw2, dp(sz.second) + 2 * pad, baseX.coerceIn(-maxSh, maxSh), y - up)
+                setGeometry(sw2, dp(sz.second) + 2 * pad, baseX.coerceIn(-maxSh, maxSh), y)
             }
             k.expanded && assistant && s.assistantFullWidth -> {
                 // Ada kutusu yok: pencere ekran genişliğinde, ada ile aynı üst hizada
@@ -1491,6 +1584,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { sideCall.hide() }
         runCatching { removeLaunchView() }
         runCatching { removeSwallowView() }
+        runCatching { removeStretchView() }
+        exitWatchdog?.cancel()
         runCatching { detachStatusCover() }
         runCatching { detachEdgeGlow() }
         detachOutside()

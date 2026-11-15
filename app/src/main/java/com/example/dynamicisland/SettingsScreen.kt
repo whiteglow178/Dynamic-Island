@@ -518,9 +518,9 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
             draft.musicExitAnim) { set(draft.copy(musicExitAnim = it)) }
         if (draft.musicExitAnim) {
             SliderRow("Hız", draft.musicExitSpeed, 0.5f..3f, "%.1fx".format(draft.musicExitSpeed)) { set(draft.copy(musicExitSpeed = it)) }
-            SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa (ve Uzayan ada da kapalıysa) ada büyümez",
+            SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa ada büyümez (Uzayan ada açıksa onun yerine o oynar)",
                 draft.musicExitSwallow) { set(draft.copy(musicExitSwallow = it)) }
-            SwitchRow("Uzayan ada (iOS tarzı)", "Ada yukarı doğru (ekran kenarına kadar) yumuşakça büyür, sonra normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır",
+            SwitchRow("Uzayan ada (iOS tarzı)", "Ada yukarı doğru (ekran kenarına kadar) yumuşakça büyür, sonra normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır. Bu sırada cam / çerçeve efektleri düz renkle çizilir",
                 draft.musicExitStretch) { set(draft.copy(musicExitStretch = it)) }
             SectionDivider()
             SubHeader("Panel animasyonu")
