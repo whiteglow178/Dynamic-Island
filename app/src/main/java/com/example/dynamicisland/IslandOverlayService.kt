@@ -236,7 +236,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         return peekBg != null && centerBg(cur.content) == peekBg      // küçülme animasyonu sürerken de (rest() çağrılana dek)
     }
 
-    private fun sideKey(u: IslandUiState) = maxOf(u.side.size, if (u.fromSide != 0) 1 else 0)
+    // Genişlemişken yalnızca gerçekten çizilecek baloncuklar pay ayırır; kapalıyken baloncuğa geri küçülme için fromSide de sayılır
+    private fun sideKey(u: IslandUiState) =
+        if (u.expanded) u.side.size else maxOf(u.side.size, if (u.fromSide != 0) 1 else 0)
 
     // ---------------------------------------------------------------- Çoklu olay (ortada en yeni, yanlarda öncekiler)
     private fun mediaBgActive(): Boolean {
@@ -274,11 +276,31 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         else -> null
     }
 
-    /** Yan baloncuklar: yalnızca kapalı adada; en yeni ortada, sondan ikinci sağda, sondan üçüncü solda. */
+    /**
+     * Yan baloncukların yuvaları (peek modu): yan baloncuğa dokunulunca önceki ortadaki olay, dokunulan baloncuğun
+     * yuvasına geçer (iOS'taki gibi yer değiştirme). Ada kapanınca rest() sıfırlar.
+     */
+    private var sideLayout: List<Bg>? = null
+
+    /**
+     * Yan baloncuklar: en yeni olay ortada, sondan ikinci sağda, sondan üçüncü solda.
+     * Ada genişlemişken de (ekrana sığıyorsa) baloncuklar genişleyen panelin yanında kalır; böylece hangi olayın
+     * hâlâ aktif olduğu görünür.
+     */
     private fun sideFor(n: IslandUiState): List<IslandContent> {
         syncBgOrder()
-        if (n.expanded || n.swallow || n.fromSide != 0) return emptyList()   // fromSide: baloncuğa geri küçülürken yan baloncuk çizilmez
+        if (n.swallow) return emptyList()
         val center = centerBg(n.content) ?: return emptyList()
+        if (n.expanded) {
+            // Dar ekranda panel + baloncuklar sığmıyorsa genişlemişken baloncuk gösterilmez
+            val screenWDp = wm.currentWindowMetrics.bounds.width() / density
+            if (!sideFitsWhenExpanded(n.content, settings.value, screenWDp)) return emptyList()
+            val layout = sideLayout
+            val order = if (layout != null && peekBg != null && center == peekBg) layout
+                        else bgOrder.asReversed().filter { it != center }.take(2)
+            return order.filter { it != center && it in bgOrder }.mapNotNull { bgContent(it) }
+        }
+        if (n.fromSide != 0) return emptyList()   // fromSide: baloncuğa geri küçülürken yan baloncuk çizilmez
         return bgOrder.asReversed().filter { it != center }.take(2).mapNotNull { bgContent(it) }
     }
 
@@ -395,6 +417,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun rest() {
         peekBg = null
+        sideLayout = null
         syncBgOrder()
         if (callKey != null && callIncoming) { publishCall(); return }     // gelen arama hep ortada
         // Ortaya en yeni etkin olay gelir; öncekiler update() içinde yan baloncuk olur.
@@ -874,6 +897,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val promote = settings.value.sideTapPromote
         if (promote) { bgOrder.remove(b); bgOrder.add(b) }
         peekBg = if (promote) null else b
+        // Peek modunda önceki ortadaki olay, dokunulan baloncuğun yuvasına geçer (genişleyen panelin yanında baloncuk olarak kalır)
+        sideLayout = if (promote) null else {
+            val prev = centerBg(cur.content)
+            val slots = cur.side.mapNotNull { centerBg(it) }.toMutableList()
+            if (prev != null && index in slots.indices) { slots[index] = prev; slots } else null
+        }
         collapseJob?.cancel()
         when (b) {
             Bg.Media -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(8_000) }
@@ -1789,7 +1818,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val xExp = baseX.coerceIn(-maxShift, maxShift)
         val settle = s.settleMs()
         // Yan baloncuklar varsa pencere iki yanda (simetrik) baloncuk payı kadar genişler; ada pencerenin ortasında kalır
-        val sideExtra = if (k.side > 0 && !k.expanded && k.kind != 0) dp(sideExtraDp(s)) else 0
+        // Genişlemişken de baloncuk varsa pencere iki yanda pay ayırır (baloncuk genişleyen panelin yanında durur)
+        val sideExtra = if (k.side > 0 && k.kind != 0) dp(sideExtraDp(s)) else 0
         val blurOk = pad == 0 && sideExtra == 0   // pay / yan baloncuk varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
@@ -1818,7 +1848,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             k.expanded -> {
                 setBlur(false, s)
-                setGeometry(ew + 2 * pad, eh + 2 * pad, xExp, y)
+                val winW = ew + 2 * pad + 2 * sideExtra
+                val maxShSide = ((screenW - winW) / 2).coerceAtLeast(0)
+                val xWin = if (sideExtra > 0) baseX.coerceIn(-maxShSide, maxShSide) else xExp
+                setGeometry(winW, eh + 2 * pad, xWin, y)
+                winSide = sideExtra
                 if (blurOk && !assistant) { delay(settle); setBlur(true, s) }
             }
             else -> {
@@ -1834,7 +1868,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (blurOk) setBlur(true, s)
             }
         }
-        if (k.expanded || k.kind == 0) winSide = 0
+        if (k.kind == 0 || (k.expanded && sideExtra == 0)) winSide = 0
     }
 
     private fun startAsForeground() {

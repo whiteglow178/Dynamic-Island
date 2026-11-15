@@ -91,7 +91,8 @@ data class IslandUiState(
     /** Müzikten çıkış "yutma" efekti: ada kısa süre büyüyüp (içeriksiz) eski haline döner. */
     val swallow: Boolean = false,
     /**
-     * Ortadaki adanın yanında ayrı baloncuk olarak duran arka plan olayları (yalnızca kapalı adada).
+     * Ortadaki adanın yanında ayrı baloncuk olarak duran arka plan olayları (ada genişlemişken de panelin yanında kalır;
+     * dar ekranda sığmıyorsa genişlemişken gösterilmez).
      * [0] = sağ baloncuk (sondan ikinci olay), [1] = sol baloncuk (sondan üçüncü olay). Servis hesaplar.
      * Her öğe Media / ScreenRec / Call içeriğidir; arayüz bunları küçük simge olarak çizer.
      */

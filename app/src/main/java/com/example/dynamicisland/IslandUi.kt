@@ -125,6 +125,16 @@ const val SIDE_GAP_DP = 8f
 /** Yan baloncuklar için pencerenin her iki yanda ayıracağı pay (dp): boşluk + baloncuk çapı + yay taşması. Servis kullanır. */
 fun sideExtraDp(cfg: IslandSettings): Float = SIDE_GAP_DP + cfg.compactHeightDp + 6f
 
+/** Açık haldeki ada genişliği (dp). Servis, genişleyen panelin yanına baloncuk sığıp sığmadığını buradan hesaplar. */
+fun expandedWidthDpFor(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = when (c) {
+    is IslandContent.ScreenRec -> recExpandedWidthDp(cfg, screenWDp)
+    else -> cfg.expandedWidthDp
+}
+
+/** Ada genişlemişken iki yanına baloncuk (çap + boşluk) sığıyor mu? Dar ekranda sığmazsa baloncuk gösterilmez. */
+fun sideFitsWhenExpanded(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Boolean =
+    expandedWidthDpFor(c, cfg, screenWDp) + 2f * (SIDE_GAP_DP + cfg.compactHeightDp + 4f) <= screenWDp
+
 private class SideHold { var c: IslandContent? = null }
 
 /**
@@ -208,7 +218,8 @@ private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: Islan
     Box(Modifier.fillMaxSize()) {
         // Köprü + baloncuk gövdesi (ada ile aynı renk)
         Canvas(Modifier.fillMaxSize()) {
-            val k = (1f - progress.mean * 2f).coerceIn(0f, 1f)     // ada genişlerken baloncuk kaybolur
+            // Baloncuk hâlâ aktifse (genişleyen panelin yanında kalıyorsa) tam görünür; yalnızca kaldırılırken ada genişlemesiyle solar
+            val k = if (present) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f)
             if (k <= 0f) return@Canvas
             val ch = geo.ch.toPx()
             val r = min(36.dp.toPx(), ch / 2f)
@@ -231,7 +242,7 @@ private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: Islan
                 .graphicsLayer {
                     val s = sep.value
                     translationX = sideCenterX(dir, geo, progress, s)
-                    alpha = ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (1f - progress.mean * 2f).coerceIn(0f, 1f)
+                    alpha = ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
                 }
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (present) onTap() },
             contentAlignment = Alignment.Center,
