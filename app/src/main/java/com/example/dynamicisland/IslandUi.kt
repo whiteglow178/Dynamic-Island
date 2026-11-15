@@ -190,9 +190,14 @@ private fun IslandSides(sides: List<IslandContent>, geo: Geo, progress: IslandPr
 private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, tappedOpen: Boolean, onTap: () -> Unit) {
     val hold = remember { SideHold() }
     if (target != null) hold.c = target          // birleşme animasyonu sürerken son içerik çizilmeye devam eder
-    val spec: AnimationSpec<Float> = if (cfg.animEnabled) spring(dampingRatio = 0.72f, stiffness = 150f) else snap()
-    val sep = animateFloatAsState(if (target != null) 1f else 0f, spec, label = "sideSep")
     val present = target != null
+    // Dokunulup açılan baloncuk küçülüp kendi yerine (daire olarak) döndü: yeniden adadan ayrılmaz, anında yerine oturur
+    val tapHold = remember { BooleanArray(1) }
+    if (tappedOpen) tapHold[0] = true
+    val snapIn = tapHold[0] && !tappedOpen && present
+    SideEffect { if (snapIn) tapHold[0] = false }
+    val spec: AnimationSpec<Float> = if (cfg.animEnabled && !snapIn) spring(dampingRatio = 0.72f, stiffness = 150f) else snap()
+    val sep = animateFloatAsState(if (target != null) 1f else 0f, spec, label = "sideSep")
     // Dokunulan baloncuk ortadaki adaya dönüşüp büyüyor: eski baloncuk anında çizilmeyi bırakır (çift görüntü olmasın)
     if (!present && tappedOpen) { hold.c = null; return }
     val alive by remember(present) { derivedStateOf { present || sep.value > 0.004f } }
@@ -465,6 +470,8 @@ fun IslandRoot(
     }
     val progress = rememberIslandProgress(cfg, animExpanded, s.swallow)
     val prevCw = remember { mutableFloatStateOf(cfg.compactWidthDp) }
+    val popIn = remember { Animatable(1f) }
+    val fromKind = remember { arrayOfNulls<Any>(1) }
     // Genişletilmiş kapak dönüşü zamana bağlı (yavaş): açılırken 0 -> 360, küçülürken ters yönde 360 -> 0
     LaunchedEffect(animExpanded, flipOn) {
         if (!flipOn) { artFlip.spin.snapTo(0f); return@LaunchedEffect }
@@ -532,7 +539,16 @@ fun IslandRoot(
                 (s.fromSide * ((prevCw.value / 2f - r) + (2f * r + SIDE_GAP_DP))).dp
             }
             IslandSides(s.side, geo, progress, cfg, sideBody, s.fromSide, onSideTap)
+            // Baloncuğa küçülüp yerine oturduktan sonra ortadaki ada (önceki olay) yumuşakça belirir
+            val returning = fromKind[0] != null && s.fromSide == 0 && !s.expanded && fromKind[0] != content::class
+            if (s.fromSide != 0) fromKind[0] = content::class
+            else if (!returning && (s.expanded || fromKind[0] == content::class)) fromKind[0] = null
+            LaunchedEffect(returning) {
+                if (returning) { popIn.snapTo(0f); fromKind[0] = null; popIn.animateTo(1f, tween(240)) }
+            }
+            Box(Modifier.graphicsLayer { alpha = if (returning) 0f else popIn.value }) {
             IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX)
+            }
         }
     }
 }
@@ -951,6 +967,28 @@ fun IslandPill(
                     )
                     Spacer(Modifier.weight(1f))
                     CallWave(Modifier.width(34.dp).height((geo.ch - 16.dp).coerceAtLeast(10.dp)))
+                }
+            }
+        }
+
+        if (content is IslandContent.Notif && compactVisible) {
+            // Küçültülmüş bildirim: solda uygulamanın simgesi (küçülürken görünür)
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                val sz = (geo.ch - 12.dp).coerceAtLeast(14.dp)
+                val ic = content.icon
+                Box(
+                    Modifier.align(Alignment.CenterStart).padding(start = 9.dp).size(sz)
+                        .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (ic != null) {
+                        Image(bitmap = ic, contentDescription = null, contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(sz * 0.28f)))
+                    } else {
+                        Box(Modifier.fillMaxSize().background(accent, RoundedCornerShape(sz * 0.28f)), contentAlignment = Alignment.Center) {
+                            Text(content.title.trim().take(1).uppercase().ifEmpty { "•" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                    }
                 }
             }
         }

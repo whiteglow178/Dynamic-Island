@@ -148,7 +148,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
-            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow, u.side.size) }
+            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow, sideKey(u)) }
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
         }
@@ -227,14 +227,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val s = settings.value
         val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
             lastMedia?.playing == true && n.content is IslandContent.Media
-        ui.value = n.copy(compactLyrics = want && !n.swallow, side = sideFor(n), fromSide = if (n.expanded) n.fromSide else 0)
+        ui.value = n.copy(compactLyrics = want && !n.swallow, side = sideFor(n))
     }
 
     /** Yan baloncuktan açılan (ortaya kalıcı geçmemiş) olay şu an ortada açık mı? Öyleyse arka plan yayınları ortayı geri almaz. */
     private fun peeking(): Boolean {
         val cur = ui.value
-        return peekBg != null && cur.expanded && centerBg(cur.content) == peekBg
+        return peekBg != null && centerBg(cur.content) == peekBg      // küçülme animasyonu sürerken de (rest() çağrılana dek)
     }
+
+    private fun sideKey(u: IslandUiState) = maxOf(u.side.size, if (u.fromSide != 0) 1 else 0)
 
     // ---------------------------------------------------------------- Çoklu olay (ortada en yeni, yanlarda öncekiler)
     private fun mediaBgActive(): Boolean {
@@ -275,7 +277,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Yan baloncuklar: yalnızca kapalı adada; en yeni ortada, sondan ikinci sağda, sondan üçüncü solda. */
     private fun sideFor(n: IslandUiState): List<IslandContent> {
         syncBgOrder()
-        if (n.expanded || n.swallow) return emptyList()
+        if (n.expanded || n.swallow || n.fromSide != 0) return emptyList()   // fromSide: baloncuğa geri küçülürken yan baloncuk çizilmez
         val center = centerBg(n.content) ?: return emptyList()
         return bgOrder.asReversed().filter { it != center }.take(2).mapNotNull { bgContent(it) }
     }
@@ -384,15 +386,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private suspend fun collapseAndRest() {
         val peek = peekBg != null && centerBg(ui.value.content) == peekBg
-        peekBg = null
-        update { it.copy(expanded = false) }
-        // Yan baloncuktan açılan olay küçülürken yarı yolda yerine döner; ortada bekleyip sonradan yana geçmez
+        // Yan baloncuktan açılan olay: fromSide korunur; ada küçülürken baloncuğun yerine (daire) geri döner
+        update { it.copy(expanded = false, fromSide = if (peek) it.fromSide else 0) }
         val settle = settings.value.settleMs()
-        delay(if (peek) settle * 45 / 100 else settle)
+        delay(if (peek) settle * 85 / 100 else settle)
         rest()
     }
 
     private fun rest() {
+        peekBg = null
         syncBgOrder()
         if (callKey != null && callIncoming) { publishCall(); return }     // gelen arama hep ortada
         // Ortaya en yeni etkin olay gelir; öncekiler update() içinde yan baloncuk olur.
@@ -453,7 +455,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             IslandContent.Assistant -> Unit
             is IslandContent.Call -> {
                 // Gelen arama hep açık (düğmeler kendi dokunuşunu işler). Aktif aramada dokununca aç / küçült.
-                if (!callIncoming) {
+                if (!callIncoming && peeking()) collapseNow()          // baloncuktan açılmış arama: dokununca baloncuğa geri küçülür
+                else if (!callIncoming) {
                     if (callExpanded) { callExpanded = false; callCollapseJob?.cancel(); publishCall() }
                     else { callExpanded = true; publishCall(); scheduleCallCollapse() }
                 }
@@ -675,7 +678,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun onCall(e: IslandEvent.Call) {
         callEndJob?.cancel()
-        collapseJob?.cancel()
+        if (e.incoming || !peeking()) collapseJob?.cancel()      // baloncuktan açılan panelin kapanma zamanlayıcısı bozulmasın
         val justAnswered = !e.incoming && (callKey == null || callIncoming)   // yeni aktif arama / az önce cevaplandı
         callKey = e.key
         callName = e.name
@@ -700,10 +703,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun publishCall() {
         syncBgOrder()
         // Aktif arama, daha yeni bir olayın (müzik / ekran kaydı) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
-        // Yan baloncuktan açılan müzik / kayıt paneli açıkken (saniyelik süre güncellemesi dahil) ortayı geri alma
-        if (!callIncoming && ui.value.content !is IslandContent.Call &&
-            (peeking() || bgOrder.lastOrNull().let { it != null && it != Bg.Call })) { update { it }; return }
         val dur = if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince)
+        // Yan baloncuktan açılan olay (müzik / kayıt / arama) ortadayken: açık / kapalı durumunu yalnızca peek yönetir.
+        // Saniyelik süre güncellemesi paneli ne kapatır ne de ortayı geri alır; arama paneliyse yalnızca süre yenilenir.
+        if (!callIncoming && peeking()) {
+            update { st ->
+                if (st.content is IslandContent.Call) st.copy(content = IslandContent.Call(callName, false, dur, callAvatar, callSpeaker)) else st
+            }
+            return
+        }
+        if (!callIncoming && ui.value.content !is IslandContent.Call &&
+            bgOrder.lastOrNull().let { it != null && it != Bg.Call }) { update { it }; return }
         if (!callExpanded) callFromSide = 0
         update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = callExpanded, fromSide = callFromSide) }
     }
@@ -1375,7 +1385,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { attachEdgeGlow() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, ui.value.side.size)) }
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, sideKey(ui.value))) }
     }
 
     // ---------------------------------------------------------------- Durum çubuğu örtüsü
@@ -1937,7 +1947,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun bringIslandToFront() {
         runCatching { detachOverlay() }
         safeAttachOverlay()
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, ui.value.side.size)) }
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, sideKey(ui.value))) }
     }
 
     /** Sistem pencereyi istediğimizden farklı bir yere koyduysa (durum çubuğu payı vb.) farkı kadar geri çeker. */
