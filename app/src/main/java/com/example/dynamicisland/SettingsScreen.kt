@@ -704,9 +704,14 @@ private fun RecPreviewPermissionRow() {
     var granted by remember {
         mutableStateOf(androidx.core.content.ContextCompat.checkSelfPermission(ctx, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED)
     }
+    var denied by remember { mutableStateOf(false) }
+    // Sistem ayarlarından değiştirilip uygulamaya dönülürse durum yenilensin
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        granted = androidx.core.content.ContextCompat.checkSelfPermission(ctx, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         granted = ok
-        if (!ok) Toast.makeText(ctx, "İzin verilmedi. İstersen uygulama ayarlarından açabilirsin", Toast.LENGTH_LONG).show()
+        denied = !ok
     }
     SubHeader("Kayıt önizlemesi (isteğe bağlı)")
     Text(
@@ -718,5 +723,19 @@ private fun RecPreviewPermissionRow() {
         Text("İzin verildi", color = Color(0xFF34C759), fontSize = 13.sp, fontWeight = FontWeight.Medium)
     } else {
         Button(onClick = { launcher.launch(perm) }, modifier = Modifier.fillMaxWidth()) { Text("Galeri iznini ver") }
+        if (denied) {
+            // Android aynı izni birkaç reddedişten sonra tekrar sormaz: izin uygulama ayarlarından verilmeli
+            Text("İzin verilmedi. Pencere çıkmıyorsa uygulama ayarlarından Fotoğraflar ve videolar iznini aç.",
+                color = Color(0xFFFFC107), fontSize = 12.sp, lineHeight = 17.sp)
+            OutlinedButton(
+                onClick = {
+                    ctx.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.parse("package:${ctx.packageName}")),
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Uygulama ayarlarını aç") }
+        }
     }
 }
