@@ -352,6 +352,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 if (draft.animEnabled) {
                     SwitchRow("Müzik adası animasyonu", "Müzik çalarken ada genişlerken içerik bulanıktan netleşerek belirir; küçülürken bunun tersi olur (iOS tarzı)",
                         draft.musicBlurAnim) { draft = draft.copy(musicBlurAnim = it) }
+                    SwitchRow("Albüm kapağı dönme animasyonu", "Ada açılırken kapak bir kez 360° döner, küçülürken ters yöne döner. Şarkı değişince kapak dönerek değişir (sonraki: bir yöne, önceki: ters yöne)",
+                        draft.musicArtFlip) { draft = draft.copy(musicArtFlip = it) }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         ANIM_STYLES.forEachIndexed { i, (name, desc) ->
                             RadioRow(name, desc, draft.animStyle == i) { draft = draft.copy(animStyle = i) }
@@ -510,6 +512,7 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
     SectionCard("Kaydırma hareketleri", "Müzik adada görünürken") {
         SwitchRow("Aşağı kaydırınca genişlesin", "Küçük adayı aşağı çekince açılır", draft.swipeDownExpand) { set(draft.copy(swipeDownExpand = it)) }
         SwitchRow("Yukarı kaydırınca küçülsün", "Açık adayı yukarı kaydırınca küçülür", draft.swipeUpCollapse) { set(draft.copy(swipeUpCollapse = it)) }
+        SwitchRow("Yana kaydırınca şarkı değişsin", "Müzik çalarken ada küçükken de açıkken de: sağdan sola kaydır = sonraki şarkı, soldan sağa = önceki şarkı", draft.swipeTrackChange) { set(draft.copy(swipeTrackChange = it)) }
     }
     SectionCard("Müzik uygulamasındayken", "Çalan müziğin uygulamasını açıkken adada şarkı gösterilmesin") {
         SwitchRow("Müzik uygulamasında adayı gizle", "Çalan müziğin uygulamasındayken ada müziği göstermez. \"Müzikten çıkış animasyonu\" da açıksa çıkınca önce panel adaya girip yutulur, sonra şarkı görünür",

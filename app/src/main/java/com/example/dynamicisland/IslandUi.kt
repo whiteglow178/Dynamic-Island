@@ -1,6 +1,7 @@
 package com.example.dynamicisland
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -104,6 +105,63 @@ private fun GraphicsLayerScope.musicCompactBlur(c: Float) {
 /** Aktif aramada küçültülmüş adanın genişliği (telefon simgesi + süre + ses dalgası sığsın). */
 const val CALL_COMPACT_W_DP = 160f
 
+// ---------------------------------------------------------------- Albüm kapağı dönme (Y ekseninde)
+/** Kapak dönme durumu: şarkı değişiminde yarım tur (180°), yön sonraki / önceki şarkıya göre değişir. */
+@Stable
+class ArtFlip {
+    var dir by mutableIntStateOf(1)        // bir sonraki değişim için istenen yön: +1 sonraki, -1 önceki
+    var flipDir by mutableIntStateOf(1)    // oynayan dönüşün yönü
+    var from by mutableStateOf<ImageBitmap?>(null)   // dönüşün ilk yarısında görünen eski kapak
+    val track = Animatable(0f)             // 0..180 derece (büyüklük)
+}
+
+private class TrackHolder { var key: String? = null; var art: ImageBitmap? = null }
+
+/** Açıyı -90..90 arasına katlar: kart arka yüzü görününce ayna görüntüsü yerine düz görünür (kapak 90°'de değişir). */
+private fun foldDeg(a: Float): Float = ((a + 90f) % 180f + 180f) % 180f - 90f
+
+/**
+ * Dönen albüm kapağı. [spin] ada geçişinin dönüşü, [flip] şarkı değişiminin dönüşüdür; ikisi toplanır.
+ * Kenar-üstüne yaklaştıkça kart kararır ve hafif bulanır (perspektifli, iOS tarzı).
+ */
+@Composable
+fun FlipAlbumArt(
+    art: ImageBitmap?, size: Dp, flip: ArtFlip?, spin: () -> Float, corner: Dp,
+    allowOld: Boolean = true, modifier: Modifier = Modifier,
+) {
+    val showOld by remember(flip) { derivedStateOf { flip != null && flip.from != null && flip.track.value < 90f } }
+    val shown = if (allowOld && showOld) flip?.from else art
+    val shape = RoundedCornerShape(corner)
+    fun angle(): Float = spin() + if (flip != null) flip.flipDir * flip.track.value else 0f
+    Box(
+        modifier.size(size)
+            .graphicsLayer {
+                val f = foldDeg(angle())
+                rotationY = f
+                cameraDistance = 10f * density
+                setBlurPx(abs(f) / 90f * 5.dp.toPx())
+            }
+            .clip(shape)
+            .drawWithContent {
+                drawContent()
+                val k = abs(foldDeg(angle())) / 90f
+                if (k > 0.01f) drawRect(Color.Black.copy(alpha = (k * k * 0.75f).coerceIn(0f, 0.85f)))
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (shown != null) {
+            Image(
+                bitmap = shown, contentDescription = null, contentScale = ContentScale.Crop,
+                filterQuality = FilterQuality.Medium, modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                Text("♪", color = Color.White.copy(alpha = 0.7f), fontSize = 22.sp)
+            }
+        }
+    }
+}
+
 @Immutable
 data class Geo(val cw: Dp, val ch: Dp, val ew: Dp, val eh: Dp)
 
@@ -178,6 +236,32 @@ fun IslandRoot(
     val lyrics by lyricsFlow.collectAsState()
     val content = s.content
     val media = content as? IslandContent.Media
+
+    // Kapak dönme: şarkı değişince eski kapak yarım tur dönüp yenisiyle değişir (yön: sonraki / önceki)
+    val artFlip = remember { ArtFlip() }
+    val trackHolder = remember { TrackHolder() }
+    val trackKey = media?.let { it.title + "|" + it.artist }
+    val flipOn = cfg.animEnabled && cfg.musicArtFlip
+    SideEffect { if (trackKey == trackHolder.key) trackHolder.art = media?.art }
+    LaunchedEffect(trackKey) {
+        artFlip.from = null
+        artFlip.track.snapTo(0f)
+        val old = trackHolder.art
+        val prev = trackHolder.key
+        if (flipOn && trackKey != null && prev != null && trackKey != prev && old != null) {
+            artFlip.flipDir = artFlip.dir
+            artFlip.dir = 1
+            artFlip.from = old
+            artFlip.track.animateTo(180f, tween(560, easing = FastOutSlowInEasing))
+            artFlip.from = null
+            artFlip.track.snapTo(0f)
+        }
+        trackHolder.key = trackKey; trackHolder.art = media?.art
+    }
+    val cmd: (MediaCommand) -> Unit = { c ->
+        when (c) { MediaCommand.Next -> artFlip.dir = 1; MediaCommand.Previous -> artFlip.dir = -1; else -> Unit }
+        onCommand(c)
+    }
     // Açılırken animasyonu çok kısa geciktir: pencere önce büyüsün, animasyonun ilk (en hızlı) kareleri
     // küçük pencereye çizilip kırpılmasın ("yaylı" animasyonda açılışta takılma). Kapanış gecikmesizdir.
     val wantExpanded = s.expanded   // arama: açık/küçük durumunu servis belirler (gelen arama hep açık)
@@ -222,7 +306,7 @@ fun IslandRoot(
                 val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value)
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip)
         }
     }
 }
@@ -446,12 +530,14 @@ fun IslandPill(
     swallow: Boolean = false,      // yutma efekti: ada büyür ama içerik çizilmez
     onOpenMusic: () -> Unit = {},
     onSwipe: (Int) -> Unit = {},
+    artFlip: ArtFlip? = null,
 ) {
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
     val longPressNow by rememberUpdatedState(onLongPress)
     val openMusicNow by rememberUpdatedState(onOpenMusic)
     val swipeNow by rememberUpdatedState(onSwipe)
+    val commandNow by rememberUpdatedState(onCommand)
     // Asistan modunda: kendi şekli; cam ve sıvı cam ayarları uygulanır. Çerçeve / dış parıltı kapalı (şekle uymaz).
     val assistant = content is IslandContent.Assistant
     val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false) else cfg
@@ -507,6 +593,7 @@ fun IslandPill(
                     val swipeMin = 18.dp.toPx()
                     var outcome = 0      // 0 = basılı tutma, 1 = dokunma, 2 = iptal, 3 = dikey kaydırma
                     var swipeDir = 0
+                    var swipeDirX = 0
                     withTimeoutOrNull(cfgNow.longPressMs.toLong()) {
                         while (true) {
                             val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
@@ -515,6 +602,9 @@ fun IslandPill(
                             val delta = change.position - down.position
                             if (abs(delta.y) > swipeMin && abs(delta.y) > abs(delta.x) * 1.2f) {
                                 outcome = 3; swipeDir = if (delta.y > 0f) 1 else -1; break
+                            }
+                            if (isMediaNow && cfgNow.swipeTrackChange && abs(delta.x) > swipeMin && abs(delta.x) > abs(delta.y) * 1.2f) {
+                                outcome = 4; swipeDirX = if (delta.x > 0f) 1 else -1; break
                             }
                             if (delta.getDistance() > slop) { outcome = 2; break }
                         }
@@ -533,6 +623,13 @@ fun IslandPill(
                             val artZone = min(size.height * 1.15f, size.width * 0.4f)
                             // Küçük adada albüm kapağı bölgesi; açık adada kapak / şarkı adı panelin kendi dokunuşunu işler
                             if (isMediaNow && compact && c.openCompArt && x <= artZone) openMusicNow() else tapNow()
+                        }
+                        4 -> {
+                            // Sağdan sola = sonraki şarkı, soldan sağa = önceki şarkı
+                            commandNow(if (swipeDirX < 0) MediaCommand.Next else MediaCommand.Previous)
+                            do {
+                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            } while (c != null && c.pressed)
                         }
                         3 -> {
                             swipeNow(swipeDir)
@@ -556,6 +653,9 @@ fun IslandPill(
         }
 
         val musicBlur = cfg.animEnabled && cfg.musicBlurAnim && content is IslandContent.Media
+        // Genişletilmiş kapak: ada açılırken 0 -> 360°, küçülürken ters yönde 360° -> 0 (ilerlemeye bağlı)
+        val spinOn = cfg.animEnabled && cfg.musicArtFlip
+        val artSpin: () -> Float = if (spinOn) { { 360f * ((progress.mean - 0.35f) / 0.65f).coerceIn(0f, 1f) } } else { { 0f } }
         if (panelVisible && !swallow) {
             Box(
                 Modifier
@@ -570,7 +670,7 @@ fun IslandPill(
                     is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline, onSpeaker)
                     is IslandContent.Status ->
                         if (content.kind == StatusKind.Charging) ChargeContent(content, rb) else StatusContent(content, rb)
-                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic)
+                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     IslandContent.Idle -> Unit
@@ -615,11 +715,9 @@ fun IslandPill(
                 val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
                 val shownArt = customArt ?: content.art
                 shownArt?.let { art ->
-                    Image(
-                        bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
-                        filterQuality = FilterQuality.Medium,
-                        modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
-                            .size(artSize).clip(RoundedCornerShape(7.dp)).then(fade),
+                    FlipAlbumArt(
+                        art, artSize, artFlip, { 0f }, 7.dp, customArt == null,
+                        Modifier.align(Alignment.CenterStart).padding(start = 8.dp).then(fade),
                     )
                 }
                 if (compactLyrics && cfg.lyricsEnabled && cfg.lyricsCompact && lyrics is LyricsState.Ready) {
