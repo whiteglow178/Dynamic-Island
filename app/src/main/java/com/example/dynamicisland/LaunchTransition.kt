@@ -115,7 +115,7 @@ private const val START_TOP_FRAC = 0.30f   // başlangıçta panelin üst kenar�
 private const val END_W_DP = 34f           // adaya girerken ince uzun şekil
 private const val END_H_DP = 56f
 
-private val ShrinkEasing = CubicBezierEasing(0.3f, 0f, 0.5f, 1f)
+private val ShrinkEasing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.8f)   // adaya varırken hız kesilmez (duraksama olmasın)
 
 /**
  * Uygulama ekranı gibi uzun (ekranla aynı oranlı) siyah panel: aşağıdan yukarı adaya doğru daralarak küçülür.
@@ -237,7 +237,8 @@ fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         val w = size.width
         val h = size.height
         val p = a.value
-        val p1 = 1f - (1f - min(p / ATOM_SPLIT, 1f)).pow(3)                     // yumuşak oturan kart geçişi
+        val x1 = min(p / ATOM_SPLIT, 1f)
+        val p1 = x1 * (1.6f - 0.6f * x1)                                         // sonda hız sıfırlanmaz: duraksama olmasın
         val q = ((p - ATOM_SPLIT) / (1f - ATOM_SPLIT)).coerceIn(0f, 1f)
 
         // 1) Pencere → eğik kart (sol tarafa kayar, sağ kenar uzaklaşır, hafif döner)
@@ -272,7 +273,7 @@ fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         base.forEachIndexed { i, pt ->
             val v = (pt.y - yMin) / span
             val r = (q * (1f + ATOM_FUNNEL) - v * ATOM_FUNNEL).coerceIn(0f, 1f)
-            val e = r * r * (3f - 2f * r)
+            val e = r * (0.35f + 0.65f * r)                              // sıfır hızla başlamaz, adaya doğru hızlanır
             val x = pt.x + (ix - pt.x) * e
             val y = pt.y + (iy - pt.y) * e
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
