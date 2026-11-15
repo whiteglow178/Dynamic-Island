@@ -319,7 +319,7 @@ fun IslandRoot(
     LaunchedEffect(animExpanded, flipOn) {
         if (!flipOn) { artFlip.spin.snapTo(0f); return@LaunchedEffect }
         if (animExpanded) { artFlip.spin.snapTo(0f); artFlip.spin.animateTo(360f, tween(1100, easing = FastOutSlowInEasing)) }
-        else artFlip.spin.animateTo(0f, tween(800, easing = FastOutSlowInEasing))
+        else artFlip.spin.animateTo(0f, tween(750, easing = FastOutSlowInEasing))   // küçülürken kapalı adadaki kapak da döner (artSpin)
     }
     val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
     val frame = rememberLyricFrame(
@@ -773,7 +773,7 @@ fun IslandPill(
                 val shownArt = customArt ?: content.art ?: artFlip?.held
                 shownArt?.let { art ->
                     FlipAlbumArt(
-                        art, artSize, artFlip, { 0f }, 7.dp, customArt == null,
+                        art, artSize, artFlip, artSpin, 7.dp, customArt == null,
                         Modifier.align(Alignment.CenterStart).padding(start = 8.dp).then(fade),
                     )
                 }

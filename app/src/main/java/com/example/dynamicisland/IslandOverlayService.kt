@@ -316,9 +316,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val cur = ui.value
         when (cur.content) {
             is IslandContent.Media -> {
-                // Çok hızlı art arda dokunuşlar: animasyon bitmeden yeniden aç-kapa yapılmaz (takılmayı önler)
+                // Yalnızca titreşimle gelen çift dokunuşu eler (60 ms); gerçek hızlı dokunuşlar anında işlenir.
+                // Takılma artık pencere bekletme / panel önden hazırlama ile giderildi.
                 val nowT = android.os.SystemClock.elapsedRealtime()
-                if (nowT - lastPillToggleAt < 260) return
+                if (nowT - lastPillToggleAt < 60) return
                 lastPillToggleAt = nowT
                 val s = settings.value
                 if (cur.expanded) {
