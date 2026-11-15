@@ -117,6 +117,7 @@ class ArtFlip {
     var dir by mutableIntStateOf(1)        // bir sonraki değişim için istenen yön: +1 sonraki, -1 önceki
     var flipDir by mutableIntStateOf(1)    // oynayan dönüşün yönü
     var from by mutableStateOf<ImageBitmap?>(null)   // dönüşün ilk yarısında görünen eski kapak
+    var held by mutableStateOf<ImageBitmap?>(null)   // yeni şarkının kapağı yüklenene kadar eski kapak burada tutulur (kapak yok olmasın)
     var trackDeg by mutableFloatStateOf(0f)   // şarkı değişimi dönüşü: 0..180 derece (büyüklük)
     val spin = Animatable(0f)              // ada açılırken 0 -> 360, küçülürken 360 -> 0
 }
@@ -262,7 +263,10 @@ fun IslandRoot(
     val trackHolder = remember { TrackHolder() }
     val trackKey = media?.let { it.title + "|" + it.artist }
     val flipOn = cfg.animEnabled && cfg.musicArtFlip
-    SideEffect { if (trackKey == trackHolder.key) trackHolder.art = media?.art }
+    SideEffect {
+        if (trackKey == trackHolder.key) trackHolder.art = media?.art
+        if (media?.art != null && artFlip.held != null) artFlip.held = null   // yeni kapak geldi: tutulan eskisi bırakılır
+    }
     // Şarkı değişimi, yeni şarkının İLK karesinde eski kapak görünsün diye kompozisyon sırasında hazırlanır (kapak yanıp sönmesin)
     remember(trackKey) {
         val old = trackHolder.art
@@ -270,6 +274,8 @@ fun IslandRoot(
         artFlip.trackDeg = 0f
         artFlip.from = if (flipOn && trackKey != null && prev != null && trackKey != prev && old != null) old else null
         if (artFlip.from != null) { artFlip.flipDir = artFlip.dir; artFlip.dir = 1 }
+        // Yeni şarkının kapağı henüz yüklenmediyse (art == null) eski kapak ekranda kalır; aksi halde kapak bir an yok olurdu
+        artFlip.held = if (trackKey != null && prev != null && trackKey != prev && media?.art == null) old else null
         trackHolder.key = trackKey; trackHolder.art = media?.art
         0
     }
@@ -280,6 +286,8 @@ fun IslandRoot(
             artFlip.trackDeg = 0f
         }
     }
+    // Yeni şarkının kapağı hiç gelmezse (kapaksız uygulama) eski kapak sonsuza dek kalmasın
+    LaunchedEffect(trackKey) { if (artFlip.held != null) { delay(2_500); artFlip.held = null } }
     val cmd: (MediaCommand) -> Unit = { c ->
         when (c) { MediaCommand.Next -> artFlip.dir = 1; MediaCommand.Previous -> artFlip.dir = -1; else -> Unit }
         onCommand(c)
@@ -762,7 +770,7 @@ fun IslandPill(
                     if (musicBlur) musicCompactBlur(c)
                 }
                 val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
-                val shownArt = customArt ?: content.art
+                val shownArt = customArt ?: content.art ?: artFlip?.held
                 shownArt?.let { art ->
                     FlipAlbumArt(
                         art, artSize, artFlip, { 0f }, 7.dp, customArt == null,
