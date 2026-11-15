@@ -373,9 +373,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         collapseJob = scope.launch { delay(holdMs); collapseAndRest() }
     }
 
+    /** Yan baloncuğa dokunulup (ortaya kalıcı geçmeden) açılan olay: küçülünce hemen yana geri döner. */
+    private var peekBg: Bg? = null
+
     private suspend fun collapseAndRest() {
+        val peek = peekBg != null && centerBg(ui.value.content) == peekBg
+        peekBg = null
         update { it.copy(expanded = false) }
-        delay(settings.value.settleMs())
+        // Yan baloncuktan açılan olay küçülürken yarı yolda yerine döner; ortada bekleyip sonradan yana geçmez
+        val settle = settings.value.settleMs()
+        delay(if (peek) settle * 45 / 100 else settle)
         rest()
     }
 
@@ -846,6 +853,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         val promote = settings.value.sideTapPromote
         if (promote) { bgOrder.remove(b); bgOrder.add(b) }
+        peekBg = if (promote) null else b
         collapseJob?.cancel()
         when (b) {
             Bg.Media -> { update { IslandUiState(c, expanded = true) }; scheduleCollapse(8_000) }
