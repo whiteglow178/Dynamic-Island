@@ -227,7 +227,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val s = settings.value
         val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
             lastMedia?.playing == true && n.content is IslandContent.Media
-        ui.value = n.copy(compactLyrics = want && !n.swallow, side = sideFor(n))
+        // Geri dönüş animasyonu jetonu: animasyon süresince yayınlanan her duruma eklenir (sayaç sıfırlanıp animasyon kesilmesin)
+        val swapOn = android.os.SystemClock.elapsedRealtime() < swapUntil
+        ui.value = n.copy(
+            compactLyrics = want && !n.swallow, side = sideFor(n),
+            swapSeq = if (swapOn) swapSeqV else 0L, swapDir = if (swapOn) swapDirV else 0,
+        )
         syncRevert(ui.value)
     }
 
@@ -278,6 +283,23 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /**
+     * Yan baloncukların yuvaları [sağ, sol] (geçici öne alma sırasında): dokunulan baloncuğun yuvasına önceki ortadaki olay geçer,
+     * böylece baloncuklar birbirinin yerine atlamaz. Geri dönüşte / yeniden dinlenmede sıfırlanır.
+     */
+    private var sideLayout: List<Bg>? = null
+    private var swapSeqV = 0L
+    private var swapDirV = 0
+    private var swapUntil = 0L
+
+    private fun defaultSides(center: Bg): List<Bg> = bgOrder.asReversed().filter { it != center }.take(2)
+
+    private fun orderedSides(center: Bg): List<Bg> {
+        val layout = sideLayout ?: return defaultSides(center)
+        val kept = layout.filter { it != center && it in bgOrder }
+        return (kept + defaultSides(center).filter { it !in kept }).take(2)
+    }
+
+    /**
      * Yan baloncuklar: en yeni olay ortada, sondan ikinci sağda, sondan üçüncü solda.
      * Ada genişlemişken de (ekrana sığıyorsa) baloncuklar genişleyen panelin yanında kalır; böylece hangi olayın
      * hâlâ aktif olduğu görünür.
@@ -290,10 +312,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             // Dar ekranda panel + baloncuklar sığmıyorsa genişlemişken baloncuk gösterilmez
             val screenWDp = wm.currentWindowMetrics.bounds.width() / density
             if (!sideFitsWhenExpanded(n.content, settings.value, screenWDp)) return emptyList()
-            return bgOrder.asReversed().filter { it != center }.take(2).mapNotNull { bgContent(it) }
+            return orderedSides(center).mapNotNull { bgContent(it) }
         }
         if (n.fromSide != 0) return emptyList()   // fromSide: baloncuğa geri küçülürken yan baloncuk çizilmez
-        return bgOrder.asReversed().filter { it != center }.take(2).mapNotNull { bgContent(it) }
+        return orderedSides(center).mapNotNull { bgContent(it) }
     }
 
     private var assistantActive = false
@@ -409,6 +431,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun rest() {
         peekBg = null
+        if (revertOrder == null) sideLayout = null
         syncBgOrder()
         if (callKey != null && callIncoming) { publishCall(); return }     // gelen arama hep ortada
         // Ortaya en yeni etkin olay gelir; öncekiler update() içinde yan baloncuk olur.
@@ -889,10 +912,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // (önceki ortadaki olay ortaya döner, dokunulan olay yine baloncuk olur).
         val permanent = settings.value.sideTapPromote
         revertJob?.cancel(); revertJob = null
+        swapUntil = 0L
         if (permanent) revertOrder = null
         else if (revertOrder == null) revertOrder = bgOrder.toList()    // art arda dokunmada ilk (asıl) sıra korunur
         bgOrder.remove(b); bgOrder.add(b)
         peekBg = null
+        // Önceki ortadaki olay, dokunulan baloncuğun yuvasına geçer
+        val prevBg = centerBg(cur.content)
+        val slots = cur.side.mapNotNull { centerBg(it) }.toMutableList()
+        sideLayout = if (prevBg != null && index in slots.indices) { slots[index] = prevBg; slots } else null
         collapseJob?.cancel()
         when (b) {
             Bg.Media -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(8_000) }
@@ -920,11 +948,20 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         revertOrder = null; revertJob = null
         syncBgOrder()
         val n = ui.value
+        sideLayout = null
         // Başka bir olay araya girdiyse (bildirim, yeni olay...) sıraya dokunulmaz
         if (n.expanded || centerBg(n.content) != bgOrder.lastOrNull()) return
         val cur = bgOrder.toList()
         val restored = saved.filter { it in cur } + cur.filter { it !in saved }
         bgOrder.clear(); bgOrder.addAll(restored)
+        // Ortaya dönecek olay şu an hangi baloncukta? (animasyonun çıkış yönü; ortadaki ada da o baloncuğa küçülür)
+        val top = bgOrder.lastOrNull { it != Bg.Media || lastMedia?.playing == true }
+        val idx = ui.value.side.indexOfFirst { centerBg(it) == top }
+        if (top != null && top != centerBg(n.content) && idx >= 0) {
+            swapDirV = if (idx == 0) 1 else -1
+            swapSeqV = android.os.SystemClock.elapsedRealtime()      // her geri dönüşte farklı değer
+            swapUntil = swapSeqV + 700L
+        }
         rest()
     }
 

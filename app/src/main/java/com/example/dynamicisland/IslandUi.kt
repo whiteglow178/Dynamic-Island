@@ -192,13 +192,19 @@ private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, se
 
 /** Ortadaki adanın yanındaki baloncuklar: [0] sağda, [1] solda. Her biri adadan sıvı gibi bölünüp ayrılır, birleşirken geri girer. */
 @Composable
-private fun IslandSides(sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, fromSide: Int, onTap: (Int) -> Unit) {
-    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color, fromSide == 1) { onTap(0) }
-    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color, fromSide == -1) { onTap(1) }
+private fun IslandSides(
+    sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, fromSide: Int,
+    swapSeq: Long, swapDir: Int, startCwDp: Float, animExpanded: Boolean, onTap: (Int) -> Unit,
+) {
+    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color, fromSide == 1, swapSeq, swapDir, startCwDp, animExpanded) { onTap(0) }
+    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color, fromSide == -1, swapSeq, swapDir, startCwDp, animExpanded) { onTap(1) }
 }
 
 @Composable
-private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, tappedOpen: Boolean, onTap: () -> Unit) {
+private fun SideSlot(
+    target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, tappedOpen: Boolean,
+    swapSeq: Long, swapDir: Int, startCwDp: Float, animExpanded: Boolean, onTap: () -> Unit,
+) {
     val hold = remember { SideHold() }
     if (target != null) hold.c = target          // birleşme animasyonu sürerken son içerik çizilmeye devam eder
     val present = target != null
@@ -209,6 +215,26 @@ private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: Islan
     SideEffect { if (snapIn) tapHold[0] = false }
     val spec: AnimationSpec<Float> = if (cfg.animEnabled && !snapIn) spring(dampingRatio = 0.72f, stiffness = 150f) else snap()
     val sep = animateFloatAsState(if (target != null) 1f else 0f, spec, label = "sideSep")
+    // Yer değiştirme: eski ortadaki olay, ortadaki adadan küçülüp bu baloncuğun yerine kayar (ani kaybolma / ani geçiş olmasın).
+    //  token -1 = baloncuğa dokunuldu (ada genişlerken); token > 0 = geri dönüş (küçük adada, servis sayacı)
+    val token = when {
+        tappedOpen && present -> -1L
+        swapSeq != 0L && swapDir == dir && present -> swapSeq
+        else -> 0L
+    }
+    val swap = remember(token) { Animatable(if (token != 0L) 0f else 1f) }
+    val dens = androidx.compose.ui.platform.LocalDensity.current
+    // Eski ortadaki adanın ölçüsü (yer değiştirme animasyonunun başlangıç şekli)
+    val startW = remember(token) {
+        with(dens) { if (progress.w.value > 0.05f) lerp(geo.cw, geo.ew, progress.w.value).toPx() else startCwDp.dp.toPx() }
+    }
+    val startH = remember(token) { with(dens) { lerp(geo.ch, geo.eh, progress.h.value).toPx() } }
+    val go = token > 0L || animExpanded       // dokunmada: yeni ada genişlemeye başlayınca (pencere hazır olunca) birlikte başlar
+    LaunchedEffect(token, go) {
+        if (token != 0L && go) {
+            if (cfg.animEnabled) swap.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) else swap.snapTo(1f)
+        }
+    }
     // Dokunulan baloncuk ortadaki adaya dönüşüp büyüyor: eski baloncuk anında çizilmeyi bırakır (çift görüntü olmasın)
     if (!present && tappedOpen) { hold.c = null; return }
     val alive by remember(present) { derivedStateOf { present || sep.value > 0.004f } }
@@ -228,6 +254,21 @@ private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: Islan
             val a = Offset(cx + sideCenterX(dir, geo, progress, 0f), cy)            // adanın bu yandaki ucu (yuvarlak kısım)
             val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value), cy)     // baloncuk
             val col = color.value.let { it.copy(alpha = it.alpha * k) }
+            val sw = swap.value
+            if (sw < 1f) {
+                // Ortadaki ada gibi başlayıp (genişlik x yükseklik) baloncuğa küçülürken yerine kayar
+                val fx = cx + sideCenterX(dir, geo, progress, 1f)
+                val w = startW + (2f * r - startW) * sw
+                val h = startH + (2f * r - startH) * sw
+                val x = cx + (fx - cx) * sw
+                val cr = CornerRadius(min(36.dp.toPx(), h / 2f))
+                drawRoundRect(col, Offset(x - w / 2f, 0f), Size(w, h), cr)
+                if (cfg.borderEnabled) {
+                    val bw = cfg.borderWidthDp.dp.toPx()
+                    drawRoundRect(Color(cfg.borderColorArgb).copy(alpha = k), Offset(x - w / 2f + bw / 2f, bw / 2f), Size((w - bw).coerceAtLeast(0f), (h - bw).coerceAtLeast(0f)), CornerRadius((cr.x - bw / 2f).coerceAtLeast(0f)), style = Stroke(bw))
+                }
+                return@Canvas
+            }
             drawCircle(col, r, b)
             // Neck: daireler birbirinden uzaklaştıkça incelir, belli bir noktada kopar
             metaballPath(a, r, b, r, 2f * r + SIDE_GAP_DP.dp.toPx() * 0.55f)?.let { drawPath(it, col) }
@@ -241,8 +282,9 @@ private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: Islan
             Modifier.align(Alignment.TopCenter).requiredSize(geo.ch)
                 .graphicsLayer {
                     val s = sep.value
-                    translationX = sideCenterX(dir, geo, progress, s)
-                    alpha = ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
+                    val sw = swap.value
+                    translationX = if (sw < 1f) sideCenterX(dir, geo, progress, 1f) * sw else sideCenterX(dir, geo, progress, s)
+                    alpha = (if (sw < 1f) 1f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f)) * (if (present) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
                 }
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (present) onTap() },
             contentAlignment = Alignment.Center,
@@ -484,6 +526,18 @@ fun IslandRoot(
     val prevCw = remember { mutableFloatStateOf(cfg.compactWidthDp) }
     val popIn = remember { Animatable(1f) }
     val popLatch = remember { mutableStateOf(false) }
+    // Geri dönüş: baloncuktaki olay ortaya (küçük ada olarak) kayarak gelir; 0 = baloncuğun yerinde daire, 1 = normal küçük ada
+    var arriveV by remember { mutableFloatStateOf(1f) }
+    val seenSwap = remember { longArrayOf(0L) }
+    if (s.swapSeq != seenSwap[0]) {
+        seenSwap[0] = s.swapSeq
+        arriveV = if (s.swapSeq != 0L && s.swapDir != 0) 0f else 1f
+    }
+    LaunchedEffect(s.swapSeq) {
+        if (s.swapSeq != 0L && s.swapDir != 0) {
+            if (cfg.animEnabled) animate(0f, 1f, animationSpec = tween(320, easing = FastOutSlowInEasing)) { v, _ -> arriveV = v } else arriveV = 1f
+        }
+    }
     val popScope = rememberCoroutineScope()
     val fromKind = remember { arrayOfNulls<Any>(1) }
     // Genişletilmiş kapak dönüşü zamana bağlı (yavaş): açılırken 0 -> 360, küçülürken ters yönde 360 -> 0
@@ -552,7 +606,14 @@ fun IslandRoot(
                 val r = min(36f, geo.ch.value / 2f)
                 (s.fromSide * ((prevCw.value / 2f - r) + (2f * r + SIDE_GAP_DP))).dp
             }
-            IslandSides(s.side, geo, progress, cfg, sideBody, s.fromSide, onSideTap)
+            // Geri dönüşte olayın geldiği baloncuğun yeri (eski ortadaki adanın genişliğine göre); yalnızca geçiş anında hesaplanır
+            val arriveXdp = remember(s.swapSeq) {
+                if (s.swapSeq == 0L || s.swapDir == 0) 0.dp else {
+                    val r = min(36f, geo.ch.value / 2f)
+                    (s.swapDir * ((prevCw.value / 2f - r) + (2f * r + SIDE_GAP_DP))).dp
+                }
+            }
+            IslandSides(s.side, geo, progress, cfg, sideBody, s.fromSide, s.swapSeq, s.swapDir, prevCw.value, animExpanded, onSideTap)
             // Baloncuğa küçülüp yerine oturduktan sonra ortadaki ada (önceki olay) yumuşakça belirir
             val trigger = fromKind[0] != null && s.fromSide == 0 && !s.expanded && fromKind[0] != content::class
             if (s.fromSide != 0) fromKind[0] = content::class
@@ -576,7 +637,7 @@ fun IslandRoot(
             // Ada açılınca (ya da başka olay gelince) her zaman tam görünür
             LaunchedEffect(s.expanded) { if (s.expanded) popIn.snapTo(1f) }
             Box(Modifier.graphicsLayer { alpha = if (hidden) 0f else popIn.value }) {
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX, arrive = { arriveV }, arriveX = arriveXdp)
             }
         }
     }
@@ -805,6 +866,8 @@ fun IslandPill(
     onRecStop: () -> Unit = {},
     onNotifSwipeSide: () -> Unit = {},
     fromX: Dp = 0.dp,       // yan baloncuktan açılıyorsa baloncuğun ada merkezine göre yatay konumu (0 = normal açılış)
+    arrive: () -> Float = { 1f },   // geri dönüş: baloncuktan küçük ada olarak gelme ilerlemesi (1 = bitti)
+    arriveX: Dp = 0.dp,             // geri dönüş: geldiği baloncuğun ada merkezine göre yatay konumu
 ) {
     val fromNow by rememberUpdatedState(fromX)
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
@@ -857,9 +920,13 @@ fun IslandPill(
     Box(
         modifier = Modifier
             // Yan baloncuktan açılış: ada baloncuğun yerinden (daire) başlar, büyürken ortaya kayar
-            .graphicsLayer { if (fromNow != 0.dp) translationX = fromNow.toPx() * (1f - progress.w.value).coerceIn(0f, 1f) }
+            .graphicsLayer {
+                if (fromNow != 0.dp) translationX = fromNow.toPx() * (1f - progress.w.value).coerceIn(0f, 1f)
+                else if (arriveX != 0.dp) translationX = arriveX.toPx() * (1f - arrive()).coerceIn(0f, 1f)
+            }
             .layout { measurable, _ ->
-                val w = lerp(if (fromNow != 0.dp) geo.ch else geo.cw, geo.ew, progress.w.value).roundToPx().coerceAtLeast(1)
+                val base = if (fromNow != 0.dp) geo.ch else lerp(geo.ch, geo.cw, arrive().coerceIn(0f, 1f))
+                val w = lerp(base, geo.ew, progress.w.value).roundToPx().coerceAtLeast(1)
                 val h = lerp(geo.ch, geo.eh, progress.h.value).roundToPx().coerceAtLeast(1)
                 val placeable = measurable.measure(Constraints.fixed(w, h))
                 layout(w, h) { placeable.place(0, 0) }
@@ -980,9 +1047,20 @@ fun IslandPill(
             ) { SideGlyph(content, geo.ch) }
         }
 
+        // Geri dönüşte: baloncuğun simgesi, ada baloncuktan büyürken solar
+        val arriveOn by remember { derivedStateOf { arrive() < 0.999f } }
+        if (arriveX != 0.dp && arriveOn) {
+            Box(
+                Modifier.requiredSize(geo.ch).align(Alignment.TopCenter)
+                    .graphicsLayer { alpha = (1f - arrive() * 2.5f).coerceIn(0f, 1f) },
+                contentAlignment = Alignment.Center,
+            ) { SideGlyph(content, geo.ch) }
+        }
+        val arriveFade = Modifier.graphicsLayer { alpha = ((arrive() - 0.35f) / 0.65f).coerceIn(0f, 1f) }
+
         if (content is IslandContent.Call && !content.isIncoming && compactVisible) {
             // Küçültülmüş aktif arama: solda yeşil telefon + süre, sağda renkli ses dalgası
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(arriveFade)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
                 Row(
                     Modifier.fillMaxSize().padding(start = 9.dp, end = 14.dp).then(fade),
@@ -1024,7 +1102,7 @@ fun IslandPill(
 
         if (content is IslandContent.ScreenRec && compactVisible) {
             // Kapalı ada: kayıtta solda yavaşça yanıp sönen kırmızı nokta; geri sayımda halka + rakam; işlenirken dönen halka
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(arriveFade)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
                 ScreenRecCompact(content, Modifier.fillMaxSize().then(fade))
             }
@@ -1038,7 +1116,7 @@ fun IslandPill(
         )
         if (content is IslandContent.Media && compactVisible && !swallow) {
             // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(arriveFade)) {
                 val fade = Modifier.graphicsLayer {
                     val c = (1f - progress.mean * 2f).coerceIn(0f, 1f)
                     alpha = if (swallow) 0f else c * swallowAlpha.value
