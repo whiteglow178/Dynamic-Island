@@ -90,8 +90,15 @@ fun islandGeo(cfg: IslandSettings, music: Boolean, compactLyrics: Boolean = fals
  * Müzikten çıkış "yutma" efektinde adanın büyüdüğü boyut (dp): kapalı adadan biraz geniş, yaklaşık iki kat yüksek;
  * açık ada boyutunu aşmaz. Hem arayüz hem pencere boyutu aynı formülü kullanır.
  */
-fun swallowSizeDp(cw: Float, ch: Float, ew: Float, eh: Float): Pair<Float, Float> =
-    minOf(ew, cw * 1.15f).coerceAtLeast(cw) to minOf(eh, ch * 2.1f).coerceAtLeast(ch)
+fun swallowSizeDp(cw: Float, ch: Float, ew: Float, eh: Float, stretch: Boolean = false): Pair<Float, Float> =
+    if (stretch) (cw * STRETCH_W_MUL) to (cw * STRETCH_H_MUL).coerceAtLeast(ch)   // uzayan ada: ince, uzun kapsül (açık ada boyutuna bağlı değil)
+    else minOf(ew, cw * 1.15f).coerceAtLeast(cw) to minOf(eh, ch * 2.1f).coerceAtLeast(ch)
+
+// "Uzayan ada" yutma efekti (iOS tarzı): ada kendi genişliğinin ~1.8 katı kadar aşağı uzar
+private const val STRETCH_W_MUL = 1.08f    // kapsül genişliği = kapalı ada genişliği x bu değer
+private const val STRETCH_H_MUL = 1.8f     // kapsül yüksekliği = kapalı ada genişliği x bu değer
+private const val STRETCH_OPEN_MS = 320    // hız 1x iken uzama süresi
+private const val STRETCH_CLOSE_MS = 380   // hız 1x iken eski boyuta dönme süresi
 
 // ---------------------------------------------------------------- Animasyon (5 stil + kapalı)
 /** Genişlik ve yükseklik ilerlemesi ayrı: "Sıvı" stilinde farklı zamanlanır, diğerlerinde aynıdır. */
@@ -115,10 +122,16 @@ private fun specFor(cfg: IslandSettings, expanding: Boolean, isWidth: Boolean): 
 }
 
 @Composable
-fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean, fast: Boolean = false): IslandProgress {
+fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean, fast: Boolean = false, stretch: Boolean = false): IslandProgress {
     val target = if (expanded) 1f else 0f
     // Yutma efekti: ada panel adaya varmadan büyümüş olsun diye ayardaki stil yerine kısa, düz bir animasyon
-    val fastSpec: FiniteAnimationSpec<Float> = if (cfg.animEnabled) tween(160, easing = LinearOutSlowInEasing) else snap()
+    val sp = cfg.musicExitSpeed.coerceIn(0.5f, 3f)
+    val fastSpec: FiniteAnimationSpec<Float> = when {
+        !cfg.animEnabled -> snap()
+        // Uzayan ada: yumuşak uzama ve yumuşak geri dönüş (hız ayarı müzikten çıkış hızını izler)
+        stretch -> tween(((if (expanded) STRETCH_OPEN_MS else STRETCH_CLOSE_MS) / sp).toInt(), easing = FastOutSlowInEasing)
+        else -> tween(160, easing = LinearOutSlowInEasing)
+    }
     val pw = animateFloatAsState(target, if (fast) fastSpec else specFor(cfg, expanded, true), label = "pw")
     val ph = animateFloatAsState(target, if (fast) fastSpec else specFor(cfg, expanded, false), label = "ph")
     return remember(pw, ph) { IslandProgress(pw, ph) }
@@ -155,7 +168,7 @@ fun IslandRoot(
         if (wantExpanded && cfg.animEnabled && !s.swallow) delay(EXPAND_LEAD_MS)
         animExpanded = wantExpanded
     }
-    val progress = rememberIslandProgress(cfg, animExpanded, s.swallow)
+    val progress = rememberIslandProgress(cfg, animExpanded, s.swallow, cfg.musicExitStretch)
     val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
     val frame = rememberLyricFrame(
         media, lyrics, cfg.lyricsOffsetMs.toLong(),
@@ -188,7 +201,7 @@ fun IslandRoot(
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
             if (s.swallow && content is IslandContent.Media) {
-                val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value)
+                val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value, cfg.musicExitStretch)
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
             IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe)

@@ -525,7 +525,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (!sent) launchApp(ctrl.packageName)
         }
         val s = settings.value
-        launchWithAnim(s.musicOpenAnim, pickAtomic(s.launchClassic, s.launchAtomic), open)
+        launchWithAnim(s.musicOpenAnim, pickAtomic(s.launchClassic, s.launchAtomic), s.launchSpeed, open)
     }
 
     /** Adayı dikey kaydırma: aşağı (+1) genişletir, yukarı (-1) küçültür. */
@@ -595,13 +595,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /** Ada önce açıktan kapalı hale geçer; animasyon (açıksa) bu geçişle birlikte başlar, ekran kapanınca [open] çalışır. */
-    private fun launchWithAnim(animOn: Boolean, atomic: Boolean = false, open: () -> Unit) {
+    private fun launchWithAnim(animOn: Boolean, atomic: Boolean = false, speed: Float = 1f, open: () -> Unit) {
         collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
         if (!animOn) { open(); return }
         if (launching) return
         launching = true
         // Atom ada: kart adanın kendisinden açıldığı için ada küçülmesini beklemeden başlar
-        scope.launch { delay(if (atomic) 0L else LAUNCH_LEAD_MS); startLaunchTransition(open, atomic) }
+        scope.launch { delay(if (atomic) 0L else LAUNCH_LEAD_MS); startLaunchTransition(open, atomic, speed) }
     }
 
     /** Stil seçimi: yalnızca atom açıksa atom; klasik de açıksa her seferinde rastgele. */
@@ -609,7 +609,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun launchFavorite(pkg: String) {
         val s = settings.value
-        launchWithAnim(s.favoriteLaunchAnim, pickAtomic(s.favLaunchClassic, s.favLaunchAtomic)) { launchApp(pkg) }
+        launchWithAnim(s.favoriteLaunchAnim, pickAtomic(s.favLaunchClassic, s.favLaunchAtomic), s.favoriteLaunchSpeed) { launchApp(pkg) }
     }
 
     /** Bildirime dokununca: bildirimin kendi hedefi (ör. ilgili sohbet) açılır; yoksa uygulamanın ana ekranı. */
@@ -627,10 +627,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (!sent) launchApp(n.pkg)
         }
         val s = settings.value
-        launchWithAnim(s.notifLaunchAnim, pickAtomic(s.launchClassic, s.launchAtomic), open)
+        launchWithAnim(s.notifLaunchAnim, pickAtomic(s.launchClassic, s.launchAtomic), s.launchSpeed, open)
     }
 
-    private fun startLaunchTransition(open: () -> Unit, atomic: Boolean = false) {
+    private fun startLaunchTransition(open: () -> Unit, atomic: Boolean = false, speed: Float = 1f) {
         val s = settings.value
         val sw = wm.currentWindowMetrics.bounds.width()
         val chPx = dp(s.compactHeightDp)
@@ -639,7 +639,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             top = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)).toFloat(),
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
-            speed = s.favoriteLaunchSpeed,
+            speed = speed,
             color = islandPanelColor(s, (ui.value.content as? IslandContent.Media)?.artColor ?: 0, opaque = true),
         )
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -707,9 +707,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val c = ui.value.content
         if (c !is IslandContent.Media && c !is IslandContent.Idle) return false
         if (!isPlayingMediaApp(from)) return false
-        swallowIsland()                 // ada önce açılır (yutmaya hazırlanır)
-        startSwallowTransition()        // panel, ada açılırken kısa gecikmeyle başlar
-        return swallowView != null
+        startSwallowTransition()        // panel penceresi önce eklenir: ilk kare gecikmeden çizilsin
+        if (swallowView == null) return false
+        swallowIsland()                 // ada aynı anda yutmaya hazırlanır (açılır / uzar)
+        return true
     }
 
     /** [pkg], şu an çalan bir medya oturumunun uygulaması mı? (Bildirim erişimi açıksa okunabilir.) */
@@ -721,7 +722,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     /** Panel adaya varınca ada kısa süre büyüyüp onu yutar (içerik çizilmez), sonra kapalı müzik haline döner. */
     private fun swallowIsland() {
-        if (!settings.value.musicExitSwallow) return
+        val sw = settings.value
+        if (!sw.musicExitSwallow && !sw.musicExitStretch) return   // iki yutma efekti de kapalı
         val m = lastMedia ?: return
         val c = ui.value.content
         if (!m.playing || (c !is IslandContent.Media && c !is IslandContent.Idle)) return
@@ -1304,7 +1306,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
             k.expanded && k.swallow && music -> {
                 // Yutma efekti: pencere, büyüyen adanın boyutunda (tam açık panel kadar büyük değil)
-                val sz = swallowSizeDp(compactWidthFor(s, false), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp())
+                val sz = swallowSizeDp(compactWidthFor(s, false), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp(), s.musicExitStretch)
                 setBlur(false, s)
                 val sw2 = dp(sz.first) + 2 * pad
                 val maxSh = ((screenW - sw2) / 2).coerceAtLeast(0)

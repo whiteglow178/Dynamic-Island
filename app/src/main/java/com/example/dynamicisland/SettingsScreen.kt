@@ -154,7 +154,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 SwitchRow("Dokununca uygulamayı aç", "Bildirimin geldiği uygulama açılır (mümkünse ilgili sohbet / ekran)",
                     draft.notifTapOpens) { draft = draft.copy(notifTapOpens = it) }
                 if (draft.notifTapOpens) {
-                    SwitchRow("Açılış animasyonu", "Adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır. Hız, Favori uygulamalar bölümündeki ayardan alınır",
+                    SwitchRow("Açılış animasyonu", "Adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır. Hız ve stil: Hareket bölümü",
                         draft.notifLaunchAnim) { draft = draft.copy(notifLaunchAnim = it) }
                 }
             }
@@ -342,7 +342,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                     draft.launchClassic) { draft = draft.copy(launchClassic = it, launchAtomic = if (!it) true else draft.launchAtomic) }
                 SwitchRow("Atom ada", "Adadan açılan siyah kart huni gibi genişleyip ekranı kaplar, ardından uygulama açılır (OriginOS tarzı)",
                     draft.launchAtomic) { draft = draft.copy(launchAtomic = it, launchClassic = if (!it) true else draft.launchClassic) }
-                Text("İkisi de açıksa her açılışta rastgele biri oynar. Bildirim animasyonunun açık olması gerekir; hız, Favori uygulamalar bölümündeki ayardan alınır.",
+                SliderRow("Hız", draft.launchSpeed, 0.5f..3f, "%.1fx".format(draft.launchSpeed)) { draft = draft.copy(launchSpeed = it) }
+                Text("İkisi de açıksa her açılışta rastgele biri oynar. Hız, hem klasik hem atom ada için geçerlidir (bildirim ve müzik uygulaması açılışı). Bildirim animasyonunun açık olması gerekir.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             }
 
@@ -517,8 +518,10 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
             draft.musicExitAnim) { set(draft.copy(musicExitAnim = it)) }
         if (draft.musicExitAnim) {
             SliderRow("Hız", draft.musicExitSpeed, 0.5f..3f, "%.1fx".format(draft.musicExitSpeed)) { set(draft.copy(musicExitSpeed = it)) }
-            SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa ada büyümez",
+            SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa (ve Uzayan ada da kapalıysa) ada büyümez",
                 draft.musicExitSwallow) { set(draft.copy(musicExitSwallow = it)) }
+            SwitchRow("Uzayan ada (iOS tarzı)", "Ada aşağı doğru uzun bir kapsüle uzanır, sonra yumuşakça normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır",
+                draft.musicExitStretch) { set(draft.copy(musicExitStretch = it)) }
             SectionDivider()
             SubHeader("Panel animasyonu")
             SwitchRow("Klasik panel", "Uzun panel küçülerek adaya girer",
