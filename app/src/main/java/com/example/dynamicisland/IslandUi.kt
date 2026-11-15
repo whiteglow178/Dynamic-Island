@@ -2,6 +2,7 @@ package com.example.dynamicisland
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -112,7 +113,8 @@ class ArtFlip {
     var dir by mutableIntStateOf(1)        // bir sonraki değişim için istenen yön: +1 sonraki, -1 önceki
     var flipDir by mutableIntStateOf(1)    // oynayan dönüşün yönü
     var from by mutableStateOf<ImageBitmap?>(null)   // dönüşün ilk yarısında görünen eski kapak
-    val track = Animatable(0f)             // 0..180 derece (büyüklük)
+    var trackDeg by mutableFloatStateOf(0f)   // şarkı değişimi dönüşü: 0..180 derece (büyüklük)
+    val spin = Animatable(0f)              // ada açılırken 0 -> 360, küçülürken 360 -> 0
 }
 
 private class TrackHolder { var key: String? = null; var art: ImageBitmap? = null }
@@ -129,16 +131,19 @@ fun FlipAlbumArt(
     art: ImageBitmap?, size: Dp, flip: ArtFlip?, spin: () -> Float, corner: Dp,
     allowOld: Boolean = true, modifier: Modifier = Modifier,
 ) {
-    val showOld by remember(flip) { derivedStateOf { flip != null && flip.from != null && flip.track.value < 90f } }
-    val shown = if (allowOld && showOld) flip?.from else art
+    val showOld by remember(flip) { derivedStateOf { flip != null && flip.from != null && flip.trackDeg < 90f } }
+    val old = flip?.from
+    // İlk yarıda eski kapak; ikinci yarıda yenisi (henüz yüklenmediyse eskisi kalır, boşluk / ♪ görünmez)
+    val shown = when { !allowOld || old == null -> art; showOld -> old; else -> art ?: old }
     val shape = RoundedCornerShape(corner)
-    fun angle(): Float = spin() + if (flip != null) flip.flipDir * flip.track.value else 0f
+    fun angle(): Float = spin() + if (flip != null) flip.flipDir * flip.trackDeg else 0f
     Box(
         modifier.size(size)
             .graphicsLayer {
                 val f = foldDeg(angle())
                 rotationY = f
-                cameraDistance = 10f * density
+                // Kamera, kartın boyutundan uzakta olmalı; yakın olursa dönerken kart kamerayın arkasına geçip kaybolur
+                cameraDistance = maxOf(this.size.width, this.size.height) * 3f   // 'size' parametresi (Dp) ile karışmasın
                 setBlurPx(abs(f) / 90f * 5.dp.toPx())
             }
             .clip(shape)
@@ -243,20 +248,22 @@ fun IslandRoot(
     val trackKey = media?.let { it.title + "|" + it.artist }
     val flipOn = cfg.animEnabled && cfg.musicArtFlip
     SideEffect { if (trackKey == trackHolder.key) trackHolder.art = media?.art }
-    LaunchedEffect(trackKey) {
-        artFlip.from = null
-        artFlip.track.snapTo(0f)
+    // Şarkı değişimi, yeni şarkının İLK karesinde eski kapak görünsün diye kompozisyon sırasında hazırlanır (kapak yanıp sönmesin)
+    remember(trackKey) {
         val old = trackHolder.art
         val prev = trackHolder.key
-        if (flipOn && trackKey != null && prev != null && trackKey != prev && old != null) {
-            artFlip.flipDir = artFlip.dir
-            artFlip.dir = 1
-            artFlip.from = old
-            artFlip.track.animateTo(180f, tween(560, easing = FastOutSlowInEasing))
-            artFlip.from = null
-            artFlip.track.snapTo(0f)
-        }
+        artFlip.trackDeg = 0f
+        artFlip.from = if (flipOn && trackKey != null && prev != null && trackKey != prev && old != null) old else null
+        if (artFlip.from != null) { artFlip.flipDir = artFlip.dir; artFlip.dir = 1 }
         trackHolder.key = trackKey; trackHolder.art = media?.art
+        0
+    }
+    LaunchedEffect(trackKey) {
+        if (artFlip.from != null) {
+            animate(0f, 180f, animationSpec = tween(600, easing = FastOutSlowInEasing)) { v, _ -> artFlip.trackDeg = v }
+            artFlip.from = null
+            artFlip.trackDeg = 0f
+        }
     }
     val cmd: (MediaCommand) -> Unit = { c ->
         when (c) { MediaCommand.Next -> artFlip.dir = 1; MediaCommand.Previous -> artFlip.dir = -1; else -> Unit }
@@ -271,6 +278,12 @@ fun IslandRoot(
         animExpanded = wantExpanded
     }
     val progress = rememberIslandProgress(cfg, animExpanded, s.swallow)
+    // Genişletilmiş kapak dönüşü zamana bağlı (yavaş): açılırken 0 -> 360, küçülürken ters yönde 360 -> 0
+    LaunchedEffect(animExpanded, flipOn) {
+        if (!flipOn) { artFlip.spin.snapTo(0f); return@LaunchedEffect }
+        if (animExpanded) { artFlip.spin.snapTo(0f); artFlip.spin.animateTo(360f, tween(1100, easing = FastOutSlowInEasing)) }
+        else artFlip.spin.animateTo(0f, tween(800, easing = FastOutSlowInEasing))
+    }
     val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
     val frame = rememberLyricFrame(
         media, lyrics, cfg.lyricsOffsetMs.toLong(),
@@ -653,9 +666,7 @@ fun IslandPill(
         }
 
         val musicBlur = cfg.animEnabled && cfg.musicBlurAnim && content is IslandContent.Media
-        // Genişletilmiş kapak: ada açılırken 0 -> 360°, küçülürken ters yönde 360° -> 0 (ilerlemeye bağlı)
-        val spinOn = cfg.animEnabled && cfg.musicArtFlip
-        val artSpin: () -> Float = if (spinOn) { { 360f * ((progress.mean - 0.35f) / 0.65f).coerceIn(0f, 1f) } } else { { 0f } }
+        val artSpin: () -> Float = { artFlip?.spin?.value ?: 0f }
         if (panelVisible && !swallow) {
             Box(
                 Modifier
