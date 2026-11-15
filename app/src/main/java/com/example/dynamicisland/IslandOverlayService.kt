@@ -227,7 +227,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val s = settings.value
         val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
             lastMedia?.playing == true && n.content is IslandContent.Media
-        ui.value = n.copy(compactLyrics = want && !n.swallow, side = sideFor(n))
+        ui.value = n.copy(compactLyrics = want && !n.swallow, side = sideFor(n), fromSide = if (n.expanded) n.fromSide else 0)
+    }
+
+    /** Yan baloncuktan açılan (ortaya kalıcı geçmemiş) olay şu an ortada açık mı? Öyleyse arka plan yayınları ortayı geri almaz. */
+    private fun peeking(): Boolean {
+        val cur = ui.value
+        return peekBg != null && cur.expanded && centerBg(cur.content) == peekBg
     }
 
     // ---------------------------------------------------------------- Çoklu olay (ortada en yeni, yanlarda öncekiler)
@@ -488,7 +494,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         syncBgOrder()
         // Kayıt, daha yeni bir olayın (müzik / arama) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
         if (!expanded && c.phase != RecPhase.Saved && ui.value.content !is IslandContent.ScreenRec &&
-            bgOrder.lastOrNull().let { it != null && it != Bg.Rec }) {
+            (peeking() || bgOrder.lastOrNull().let { it != null && it != Bg.Rec })) {
             update { it }
             return
         }
@@ -664,6 +670,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var callSpeaker = false
     private val sideCall by lazy { SideCallOverlay(this, this, this, wm) }
     private var callExpanded = true
+    private var callFromSide = 0      // aramaya yan baloncuktan dokunulduysa açılış yönü (animasyon için)
     private var callCollapseJob: Job? = null
 
     private fun onCall(e: IslandEvent.Call) {
@@ -693,10 +700,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun publishCall() {
         syncBgOrder()
         // Aktif arama, daha yeni bir olayın (müzik / ekran kaydı) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
+        // Yan baloncuktan açılan müzik / kayıt paneli açıkken (saniyelik süre güncellemesi dahil) ortayı geri alma
         if (!callIncoming && ui.value.content !is IslandContent.Call &&
-            bgOrder.lastOrNull().let { it != null && it != Bg.Call }) { update { it }; return }
+            (peeking() || bgOrder.lastOrNull().let { it != null && it != Bg.Call })) { update { it }; return }
         val dur = if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince)
-        update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = callExpanded) }
+        if (!callExpanded) callFromSide = 0
+        update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = callExpanded, fromSide = callFromSide) }
     }
 
     private fun formatCallDuration(ms: Long): String {
@@ -851,16 +860,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandContent.Call -> Bg.Call
             else -> return
         }
+        val from = if (index == 0) 1 else -1          // 0 = sağ baloncuk, 1 = sol
         val promote = settings.value.sideTapPromote
         if (promote) { bgOrder.remove(b); bgOrder.add(b) }
         peekBg = if (promote) null else b
         collapseJob?.cancel()
         when (b) {
-            Bg.Media -> { update { IslandUiState(c, expanded = true) }; scheduleCollapse(8_000) }
-            Bg.Rec -> { update { IslandUiState(c, expanded = true) }; scheduleCollapse(6_000) }
+            Bg.Media -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(8_000) }
+            Bg.Rec -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
             Bg.Call ->
-                if (promote) { callExpanded = true; publishCall(); scheduleCallCollapse() }
-                else { update { IslandUiState(c, expanded = true) }; scheduleCollapse(CALL_AUTO_COLLAPSE_MS) }
+                if (promote) { callExpanded = true; callFromSide = from; publishCall(); scheduleCallCollapse() }
+                else { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(CALL_AUTO_COLLAPSE_MS) }
         }
     }
 

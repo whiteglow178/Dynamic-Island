@@ -96,6 +96,8 @@ data class IslandUiState(
      * Her öğe Media / ScreenRec / Call içeriğidir; arayüz bunları küçük simge olarak çizer.
      */
     val side: List<IslandContent> = emptyList(),
+    /** Yan baloncuğa dokunulunca ada o baloncuktan büyüyerek açılır: +1 = sağdaki, -1 = soldaki, 0 = normal. Kapanınca sıfırlanır. */
+    val fromSide: Int = 0,
 )
 
 // ---------------------------------------------------------------- Şarkı sözü modeli

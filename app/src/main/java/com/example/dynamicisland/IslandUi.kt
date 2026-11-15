@@ -181,18 +181,20 @@ private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, se
 
 /** Ortadaki adanın yanındaki baloncuklar: [0] sağda, [1] solda. Her biri adadan sıvı gibi bölünüp ayrılır, birleşirken geri girer. */
 @Composable
-private fun IslandSides(sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, onTap: (Int) -> Unit) {
-    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color) { onTap(0) }
-    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color) { onTap(1) }
+private fun IslandSides(sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, fromSide: Int, onTap: (Int) -> Unit) {
+    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color, fromSide == 1) { onTap(0) }
+    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color, fromSide == -1) { onTap(1) }
 }
 
 @Composable
-private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, onTap: () -> Unit) {
+private fun SideSlot(target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, tappedOpen: Boolean, onTap: () -> Unit) {
     val hold = remember { SideHold() }
     if (target != null) hold.c = target          // birleşme animasyonu sürerken son içerik çizilmeye devam eder
     val spec: AnimationSpec<Float> = if (cfg.animEnabled) spring(dampingRatio = 0.72f, stiffness = 150f) else snap()
     val sep = animateFloatAsState(if (target != null) 1f else 0f, spec, label = "sideSep")
     val present = target != null
+    // Dokunulan baloncuk ortadaki adaya dönüşüp büyüyor: eski baloncuk anında çizilmeyi bırakır (çift görüntü olmasın)
+    if (!present && tappedOpen) { hold.c = null; return }
     val alive by remember(present) { derivedStateOf { present || sep.value > 0.004f } }
     if (!alive) { hold.c = null; return }
     val shown = hold.c ?: return
@@ -462,6 +464,7 @@ fun IslandRoot(
         animExpanded = wantExpanded
     }
     val progress = rememberIslandProgress(cfg, animExpanded, s.swallow)
+    val prevCw = remember { mutableFloatStateOf(cfg.compactWidthDp) }
     // Genişletilmiş kapak dönüşü zamana bağlı (yavaş): açılırken 0 -> 360, küçülürken ters yönde 360 -> 0
     LaunchedEffect(animExpanded, flipOn) {
         if (!flipOn) { artFlip.spin.snapTo(0f); return@LaunchedEffect }
@@ -522,8 +525,14 @@ fun IslandRoot(
                 geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
             }
             // Yan baloncuklar adanın ARKASINA çizilir (ada üstte kalır); köprü adanın ucundan uzanır
-            IslandSides(s.side, geo, progress, cfg, sideBody, onSideTap)
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onNotifSwipeSide = onNotifSwipeSide)
+            // Önceki ortadaki adanın kapalı genişliği: yan baloncuğun konumu buna göre hesaplanmıştı (animasyonun çıkış noktası)
+            if (s.fromSide == 0 && !s.expanded) SideEffect { prevCw.value = geo.cw.value }
+            val fromX = if (s.fromSide == 0) 0.dp else run {
+                val r = min(36f, geo.ch.value / 2f)
+                (s.fromSide * ((prevCw.value / 2f - r) + (2f * r + SIDE_GAP_DP))).dp
+            }
+            IslandSides(s.side, geo, progress, cfg, sideBody, s.fromSide, onSideTap)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX)
         }
     }
 }
@@ -750,7 +759,9 @@ fun IslandPill(
     artFlip: ArtFlip? = null,
     onRecStop: () -> Unit = {},
     onNotifSwipeSide: () -> Unit = {},
+    fromX: Dp = 0.dp,       // yan baloncuktan açılıyorsa baloncuğun ada merkezine göre yatay konumu (0 = normal açılış)
 ) {
+    val fromNow by rememberUpdatedState(fromX)
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
     val longPressNow by rememberUpdatedState(onLongPress)
@@ -796,12 +807,14 @@ fun IslandPill(
     // ilk karelerinde ağır kompozisyon (takılma) olmaz. 1,5 sn içinde açılmazsa bırakılır.
     var warm by remember { mutableStateOf(false) }
     LaunchedEffect(warm) { if (warm) { delay(1_500); warm = false } }
-    val compactVisible by remember(progress) { derivedStateOf { progress.mean < 0.5f } }
+    val compactVisible by remember(progress) { derivedStateOf { progress.mean < 0.5f && fromNow == 0.dp } }
 
     Box(
         modifier = Modifier
+            // Yan baloncuktan açılış: ada baloncuğun yerinden (daire) başlar, büyürken ortaya kayar
+            .graphicsLayer { if (fromNow != 0.dp) translationX = fromNow.toPx() * (1f - progress.w.value).coerceIn(0f, 1f) }
             .layout { measurable, _ ->
-                val w = lerp(geo.cw, geo.ew, progress.w.value).roundToPx().coerceAtLeast(1)
+                val w = lerp(if (fromNow != 0.dp) geo.ch else geo.cw, geo.ew, progress.w.value).roundToPx().coerceAtLeast(1)
                 val h = lerp(geo.ch, geo.eh, progress.h.value).roundToPx().coerceAtLeast(1)
                 val placeable = measurable.measure(Constraints.fixed(w, h))
                 layout(w, h) { placeable.place(0, 0) }
@@ -911,6 +924,15 @@ fun IslandPill(
                     IslandContent.Idle -> Unit
                 }
             }
+        }
+
+        // Baloncuktan açılırken: baloncuğun simgesi (kapak / kırmızı nokta / telefon) ada büyürken solar
+        if (fromX != 0.dp && progress.mean < 0.35f) {
+            Box(
+                Modifier.requiredSize(geo.ch).align(Alignment.TopCenter)
+                    .graphicsLayer { alpha = (1f - progress.mean * 3f).coerceIn(0f, 1f) },
+                contentAlignment = Alignment.Center,
+            ) { SideGlyph(content, geo.ch) }
         }
 
         if (content is IslandContent.Call && !content.isIncoming && compactVisible) {
