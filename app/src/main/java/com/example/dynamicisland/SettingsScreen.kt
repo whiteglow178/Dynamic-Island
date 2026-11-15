@@ -337,6 +337,15 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
 
             // ---- Hareket
             GroupLabel("Hareket")
+            SectionCard("Açılış animasyonu stili", "Bildirime ya da müzik uygulamasına dokununca") {
+                SwitchRow("Klasik", "Adadan siyah ekran çıkıp ekranı kaplar",
+                    draft.launchClassic) { draft = draft.copy(launchClassic = it, launchAtomic = if (!it) true else draft.launchAtomic) }
+                SwitchRow("Atom ada", "Adadan açılan siyah kart huni gibi genişleyip ekranı kaplar, ardından uygulama açılır (OriginOS tarzı)",
+                    draft.launchAtomic) { draft = draft.copy(launchAtomic = it, launchClassic = if (!it) true else draft.launchClassic) }
+                Text("İkisi de açıksa her açılışta rastgele biri oynar. Bildirim animasyonunun açık olması gerekir; hız, Favori uygulamalar bölümündeki ayardan alınır.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+
             SectionCard("Animasyon", "Açılma ve küçülme geçişi") {
                 SwitchRow("Animasyonlar", "Kapatırsan ada anında açılır/kapanır", draft.animEnabled) { draft = draft.copy(animEnabled = it) }
                 if (draft.animEnabled) {
@@ -487,6 +496,9 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         if (draft.openCompTap && !draft.openCompLong) {
             SwitchRow("Basılı tutunca ada genişlesin", "Adaya basınca müzik uygulaması açıldığı için", draft.expandOnLong) { set(draft.copy(expandOnLong = it)) }
         }
+        SectionDivider()
+        SwitchRow("Açılış animasyonu", "Müzik uygulaması açılırken ada animasyonu oynar (stil: Hareket > Açılış animasyonu stili)",
+            draft.musicOpenAnim) { set(draft.copy(musicOpenAnim = it)) }
         SectionDivider()
         SliderRow("Basılı tutma süresi", draft.longPressMs.toFloat(), 250f..1500f, "${draft.longPressMs} ms") {
             set(draft.copy(longPressMs = (it / 50f).toInt() * 50))

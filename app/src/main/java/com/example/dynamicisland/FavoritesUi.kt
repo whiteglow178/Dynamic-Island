@@ -118,7 +118,7 @@ fun FavoritesSection(draft: IslandSettings, set: (IslandSettings) -> Unit) {
             SectionDivider()
             SwitchRow(
                 "Açılış animasyonu",
-                "Uygulamaya dokununca adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır",
+                "Uygulamaya dokununca ada animasyonu ekranı kaplar, ardından uygulama açılır",
                 draft.favoriteLaunchAnim,
             ) { set(draft.copy(favoriteLaunchAnim = it)) }
             if (draft.favoriteLaunchAnim) {
@@ -126,6 +126,19 @@ fun FavoritesSection(draft: IslandSettings, set: (IslandSettings) -> Unit) {
                     "Animasyon hızı", draft.favoriteLaunchSpeed, 0.5f..2.5f,
                     "%.1fx".format(draft.favoriteLaunchSpeed),
                 ) { set(draft.copy(favoriteLaunchSpeed = (it * 10f).toInt() / 10f)) }
+                SubHeader("Animasyon stili")
+                SwitchRow(
+                    "Klasik", "Adadan siyah ekran çıkıp ekranı kaplar",
+                    draft.favLaunchClassic,
+                ) { set(draft.copy(favLaunchClassic = it, favLaunchAtomic = if (!it) true else draft.favLaunchAtomic)) }
+                SwitchRow(
+                    "Atom ada", "Adadan açılan siyah kart huni gibi genişleyip ekranı kaplar (OriginOS tarzı)",
+                    draft.favLaunchAtomic,
+                ) { set(draft.copy(favLaunchAtomic = it, favLaunchClassic = if (!it) true else draft.favLaunchClassic)) }
+                Text(
+                    "İkisi de açıksa her açılışta rastgele biri oynar.",
+                    color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+                )
             }
             SectionDivider()
             if (selected.isNotEmpty()) {

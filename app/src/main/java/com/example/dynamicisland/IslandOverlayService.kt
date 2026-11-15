@@ -507,22 +507,25 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     /** Çalan müziğin uygulamasını açar (oturumun kendi açılış hedefi, yoksa uygulamanın ana ekranı). */
     private fun openMusicApp() {
-        collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
         val ctrl = runCatching {
             val msm = getSystemService(android.media.session.MediaSessionManager::class.java)
             val list = msm.getActiveSessions(android.content.ComponentName(this, IslandNotificationListener::class.java))
             list.firstOrNull { it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING } ?: list.firstOrNull()
         }.getOrNull() ?: return
-        val pi = ctrl.sessionActivity
-        val sent = pi != null && runCatching {
-            val opts = if (Build.VERSION.SDK_INT >= 34) {
-                android.app.ActivityOptions.makeBasic()
-                    .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
-                    .toBundle()
-            } else null
-            pi.send(this, 0, null, null, null, null, opts)
-        }.isSuccess
-        if (!sent) launchApp(ctrl.packageName)
+        val open: () -> Unit = {
+            val pi = ctrl.sessionActivity
+            val sent = pi != null && runCatching {
+                val opts = if (Build.VERSION.SDK_INT >= 34) {
+                    android.app.ActivityOptions.makeBasic()
+                        .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                        .toBundle()
+                } else null
+                pi.send(this, 0, null, null, null, null, opts)
+            }.isSuccess
+            if (!sent) launchApp(ctrl.packageName)
+        }
+        val s = settings.value
+        launchWithAnim(s.musicOpenAnim, pickAtomic(s.launchClassic, s.launchAtomic), open)
     }
 
     /** Adayı dikey kaydırma: aşağı (+1) genişletir, yukarı (-1) küçültür. */
@@ -592,16 +595,22 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /** Ada önce açıktan kapalı hale geçer; animasyon (açıksa) bu geçişle birlikte başlar, ekran kapanınca [open] çalışır. */
-    private fun launchWithAnim(animOn: Boolean, open: () -> Unit) {
+    private fun launchWithAnim(animOn: Boolean, atomic: Boolean = false, open: () -> Unit) {
         collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
         if (!animOn) { open(); return }
         if (launching) return
         launching = true
-        scope.launch { delay(LAUNCH_LEAD_MS); startLaunchTransition(open) }
+        // Atom ada: kart adanın kendisinden açıldığı için ada küçülmesini beklemeden başlar
+        scope.launch { delay(if (atomic) 0L else LAUNCH_LEAD_MS); startLaunchTransition(open, atomic) }
     }
 
-    private fun launchFavorite(pkg: String) =
-        launchWithAnim(settings.value.favoriteLaunchAnim) { launchApp(pkg) }
+    /** Stil seçimi: yalnızca atom açıksa atom; klasik de açıksa her seferinde rastgele. */
+    private fun pickAtomic(classic: Boolean, atomic: Boolean) = atomic && (!classic || kotlin.random.Random.nextBoolean())
+
+    private fun launchFavorite(pkg: String) {
+        val s = settings.value
+        launchWithAnim(s.favoriteLaunchAnim, pickAtomic(s.favLaunchClassic, s.favLaunchAtomic)) { launchApp(pkg) }
+    }
 
     /** Bildirime dokununca: bildirimin kendi hedefi (ör. ilgili sohbet) açılır; yoksa uygulamanın ana ekranı. */
     private fun openNotification(n: IslandContent.Notif) {
@@ -617,10 +626,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }.isSuccess
             if (!sent) launchApp(n.pkg)
         }
-        launchWithAnim(settings.value.notifLaunchAnim, open)
+        val s = settings.value
+        launchWithAnim(s.notifLaunchAnim, pickAtomic(s.launchClassic, s.launchAtomic), open)
     }
 
-    private fun startLaunchTransition(open: () -> Unit) {
+    private fun startLaunchTransition(open: () -> Unit, atomic: Boolean = false) {
         val s = settings.value
         val sw = wm.currentWindowMetrics.bounds.width()
         val chPx = dp(s.compactHeightDp)
@@ -638,11 +648,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
             setContent {
-                LaunchTransition(
-                    spec,
-                    onCovered = { runCatching { open() } },                       // ekran tamamen siyah: uygulamayı aç
-                    onFinished = { handler.post { if (launchView === view) removeLaunchView() } },
-                )
+                val onCov = { runCatching { open() }; Unit }                  // ekran tamamen siyah: uygulamayı aç
+                val onFin = { handler.post { if (launchView === view) removeLaunchView() }; Unit }
+                if (atomic) AtomicLaunch(spec, onCovered = onCov, onFinished = onFin)
+                else LaunchTransition(spec, onCovered = onCov, onFinished = onFin)
             }
         }
         fun params(type: Int) = WindowManager.LayoutParams(

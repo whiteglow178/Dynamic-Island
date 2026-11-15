@@ -193,7 +193,7 @@ private fun roundedRectPoints(l: Float, t: Float, r: Float, b: Float, rad: Float
         }
     }
     fun edge(x0: Float, y0: Float, x1: Float, y1: Float) {
-        for (i in 1 until 10) { val f = i / 10f; out.add(Offset(lerpF(x0, x1, f), lerpF(y0, y1, f))) }
+        for (i in 1 until 20) { val f = i / 20f; out.add(Offset(lerpF(x0, x1, f), lerpF(y0, y1, f))) }
     }
     arc(l + rr, t + rr, PI);            edge(l + rr, t, r - rr, t)
     arc(r - rr, t + rr, 1.5 * PI);      edge(r, t + rr, r, b - rr)
@@ -285,6 +285,64 @@ fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
 
         translate(-origin.x, -origin.y) {
             drawPath(path, spec.color)
+        }
+    }
+}
+
+
+// ---- Atom ada açılışı (OriginOS tarzı): adadan açılan siyah kart huni gibi genişleyip tüm ekranı kaplar
+private const val ATOM_LAUNCH_MS = 480       // hız 1x iken ekranı kaplama süresi
+
+/**
+ * Atom ada paneli ([AtomicToIsland]) ters yönde: ada noktasından başlayan siyah kart, alt kısmı önde gidecek
+ * şekilde huni gibi genişler ve tüm ekranı kaplar. Ekran tamamen kapanınca [onCovered] çağrılır (uygulamayı o an aç);
+ * siyah kısa süre bekler, sonra solar ve [onFinished] gelir. Renk her zaman siyahtır.
+ */
+@Composable
+fun AtomicLaunch(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> Unit) {
+    val covered by rememberUpdatedState(onCovered)
+    val finished by rememberUpdatedState(onFinished)
+    val a = remember { Animatable(0f) }
+    val fade = remember { Animatable(1f) }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val sp = spec.speed.coerceIn(0.25f, 4f)
+
+    LaunchedEffect(Unit) {
+        a.animateTo(1f, tween((ATOM_LAUNCH_MS / sp).toInt(), easing = LinearEasing))
+        covered()
+        delay((HOLD_MS / sp).toLong())
+        fade.animateTo(0f, tween(FADE_MS))
+        finished()
+    }
+
+    Canvas(
+        Modifier.fillMaxSize()
+            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .graphicsLayer { alpha = fade.value }
+    ) {
+        val d = density
+        val w = size.width
+        val h = size.height
+        val mg = MARGIN_DP * d                       // ekran köşelerinin de kapanması için taşma payı
+        val q = 1f - a.value                          // 1 = ada noktası, 0 = tam ekran
+        val base = roundedRectPoints(-mg, -mg, w + mg, h + mg, CORNER_DP * d)
+        val ix = spec.cx
+        val iy = spec.top + spec.h / 2f
+        val yMin = -mg
+        val span = h + 2f * mg
+        val path = Path()
+        base.forEachIndexed { i, pt ->
+            val v = (pt.y - yMin) / span
+            val r = (q * (1f + ATOM_FUNNEL) - v * ATOM_FUNNEL).coerceIn(0f, 1f)   // alt kısım önde, üst kısım adaya yakın kalır
+            val m = (0.35f * q + 0.65f * r).coerceIn(0f, 1f)
+            val e = m * (0.4f + 0.6f * m)
+            val x = pt.x + (ix - pt.x) * e
+            val y = pt.y + (iy - pt.y) * e
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        translate(-origin.x, -origin.y) {
+            drawPath(path, Color.Black)
         }
     }
 }
