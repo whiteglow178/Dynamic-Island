@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -57,6 +58,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.graphicsLayer
@@ -68,6 +70,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
@@ -81,6 +85,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -416,6 +421,7 @@ private fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float = 
     is IslandContent.Call -> if (c.isIncoming) 74f else 88f
     is IslandContent.Status -> if (c.kind == StatusKind.Charging) chargePillHeightDp(cfg) else cfg.expandedHeightDp
     is IslandContent.ScreenRec -> REC_PILL_H_DP
+    is IslandContent.Shazam -> SHAZAM_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
     else -> cfg.expandedHeightDp
 }
@@ -561,6 +567,7 @@ fun IslandRoot(
                 if (recWide) maxOf(cw, CALL_COMPACT_W_DP.dp) else cw,
                 tween(240, easing = FastOutSlowInEasing), label = "recCw",
             )
+            if (content is IslandContent.Shazam) geo = geo.copy(eh = SHAZAM_PILL_H_DP.dp)
             if (content is IslandContent.ScreenRec) {
                 val screenWDp = LocalConfiguration.current.screenWidthDp.toFloat()
                 geo = geo.copy(cw = recCw, ew = recExpandedWidthDp(cfg, screenWDp).dp, eh = REC_PILL_H_DP.dp)
@@ -984,7 +991,7 @@ fun IslandPill(
             CustomBackdrop(bgBoth, bgCompact, bgExpanded, cfg.customBgDim, geo, progress)
         }
 
-        val musicBlur = cfg.animEnabled && cfg.musicBlurAnim && content is IslandContent.Media
+        val musicBlur = cfg.animEnabled && ((cfg.musicBlurAnim && content is IslandContent.Media) || content is IslandContent.Shazam)
         val artSpin: () -> Float = { artFlip?.spin?.value ?: 0f }
         if ((panelVisible || (warm && content is IslandContent.Media)) && !swallow) {
             Box(
@@ -1005,6 +1012,7 @@ fun IslandPill(
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     is IslandContent.ScreenRec -> ScreenRecContent(content, onRecStop)
+                    is IslandContent.Shazam -> ShazamContent(content)
                     IslandContent.Idle -> Unit
                 }
             }
@@ -1066,6 +1074,42 @@ fun IslandPill(
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
                 ScreenRecCompact(content, Modifier.fillMaxSize().then(fade))
+            }
+        }
+
+        if (content is IslandContent.Shazam && compactVisible) {
+            // Kapalı ada: solda Shazam logosu, sağda mavi ses dalgası. Ada genişlerken ikisi de bulanıp kaybolur.
+            // Bulundu görünümü küçülürken (açıldıktan >1,5 sn sonra) logo yerine şarkının kapağı görünür.
+            val shz = remember { ShazamHold() }
+            if (content.phase == ShazamPhase.Listening) shz.foundAt = 0L
+            else if (shz.foundAt == 0L) shz.foundAt = android.os.SystemClock.elapsedRealtime()
+            val expandingNow = content.phase == ShazamPhase.Listening ||
+                android.os.SystemClock.elapsedRealtime() - shz.foundAt < 1_500L
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                val fade = Modifier.graphicsLayer {
+                    val c = (1f - progress.mean * 2f).coerceIn(0f, 1f)
+                    alpha = c
+                    if (cfg.animEnabled) musicCompactBlur(c)
+                }
+                val sz = (geo.ch - 12.dp).coerceAtLeast(14.dp)
+                val cover = content.cover
+                if (expandingNow || cover == null) {
+                    Canvas(Modifier.align(Alignment.CenterStart).padding(start = 9.dp).size(sz).then(fade)) {
+                        drawShazamGlyph(Offset.Zero, size.minDimension, 1f, true)
+                    }
+                } else {
+                    Image(
+                        bitmap = cover, contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = Modifier.align(Alignment.CenterStart).padding(start = 9.dp).size(sz)
+                            .clip(RoundedCornerShape(sz * 0.28f)).then(fade),
+                    )
+                }
+                if (expandingNow) {
+                    ShazamWave(
+                        Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
+                            .width(22.dp).height((geo.ch - 16.dp).coerceAtLeast(10.dp)).then(fade),
+                    )
+                }
             }
         }
 
@@ -1539,6 +1583,237 @@ private fun SpeakerIcon(on: Boolean, tint: Color, modifier: Modifier = Modifier)
             val st = Stroke(width = 2f, cap = StrokeCap.Round)
             drawArc(tint, -45f, 90f, false, Offset(8.5f, 7.5f), Size(9f, 9f), style = st)
             if (on) drawArc(tint, -50f, 100f, false, Offset(5f, 3.5f), Size(16f, 17f), style = st)
+        }
+    }
+}
+
+/** Shazam sonucu: açık ada yüksekliği (dp). Kapak + iki satır yazı sığar. */
+const val SHAZAM_PILL_H_DP = 88f
+
+// ---------------------------------------------------------------- Shazam
+private class ShazamHold { var foundAt = 0L }
+
+private class ShazamSpark(val angle: Float, val speed: Float, val rad: Float, val delay: Float, val life: Float)
+
+private val ShazamBlueTop = Color(0xFF33AEFF)
+private val ShazamBlueBottom = Color(0xFF0A68FF)
+
+/**
+ * Shazam logosu: mavi daire + beyaz "S". Resmi logo yerine yol (Path) ile çizilen yaklaşık bir şekildir;
+ * res/drawable'a gerçek logoyu koyarsan bu fonksiyonun yerine Image(painterResource(...)) kullanabilirsin.
+ */
+private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, alpha: Float, disc: Boolean) {
+    if (disc) {
+        drawCircle(
+            brush = Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom), startY = topLeft.y, endY = topLeft.y + side),
+            radius = side / 2f, center = Offset(topLeft.x + side / 2f, topLeft.y + side / 2f), alpha = alpha,
+        )
+    }
+    val fx = { u: Float -> topLeft.x + u * side }
+    val fy = { v: Float -> topLeft.y + v * side }
+    val path = Path().apply {
+        moveTo(fx(0.69f), fy(0.31f))
+        cubicTo(fx(0.56f), fy(0.19f), fx(0.29f), fy(0.22f), fx(0.30f), fy(0.39f))
+        cubicTo(fx(0.31f), fy(0.54f), fx(0.70f), fy(0.45f), fx(0.70f), fy(0.62f))
+        cubicTo(fx(0.71f), fy(0.79f), fx(0.44f), fy(0.81f), fx(0.31f), fy(0.69f))
+    }
+    drawPath(path, Color.White, alpha = alpha, style = Stroke(width = side * 0.11f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+}
+
+/** Küçük adadaki Shazam ses dalgası: mavi, hareketli çubuklar. */
+@Composable
+private fun ShazamWave(modifier: Modifier = Modifier) {
+    val tr = rememberInfiniteTransition(label = "shzWave")
+    val phase: Float by tr.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.2831855f,
+        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
+        label = "shzPhase",
+    )
+    Canvas(modifier) {
+        val n = 5
+        val gap: Float = size.width / n
+        val bw: Float = gap * 0.46f
+        for (i in 0 until n) {
+            val v: Float = 0.30f + 0.70f * abs(sin(phase + i * 1.15f))
+            val h: Float = (size.height * v).coerceAtLeast(bw)
+            val x: Float = gap * i + gap / 2f
+            val color = androidx.compose.ui.graphics.lerp(ShazamBlueTop, Color(0xFF7FC6FF), i / (n - 1).toFloat())
+            drawLine(color, Offset(x, (size.height - h) / 2f), Offset(x, (size.height + h) / 2f), strokeWidth = bw, cap = StrokeCap.Round)
+        }
+    }
+}
+
+/**
+ * Albüm kapağının "patlayarak" belirmesi. [progress] 0..1:
+ *  0.00-0.30  küçük ışık patlaması (parlama + ışınlar)
+ *  0.18-0.48  parlama büyüyüp yuvarlatılmış kareye dönüşür (beyaz-pembe)
+ *  0.46-1.00  kapak, beyazın içinden piksel piksel (rastgele) belirir; kenarlardan kıvılcımlar saçılır
+ */
+@Composable
+private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifier: Modifier = Modifier) {
+    val sparks = remember {
+        val r = kotlin.random.Random(7)
+        List(30) {
+            ShazamSpark(
+                angle = r.nextFloat() * 6.2831855f, speed = 0.5f + r.nextFloat() * 0.8f,
+                rad = 0.8f + r.nextFloat() * 1.5f, delay = r.nextFloat() * 0.4f, life = 0.30f + r.nextFloat() * 0.30f,
+            )
+        }
+    }
+    val cells = 12
+    val thresholds = remember { val r = kotlin.random.Random(11); FloatArray(cells * cells) { r.nextFloat() } }
+    Canvas(modifier) {
+        val t = progress().coerceIn(0f, 1f)
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val center = Offset(cx, cy)
+        val full = size.width * (60f / 72f)                       // kapağın kenar uzunluğu
+        val burstP = (t / 0.30f).coerceIn(0f, 1f)
+        val bloomP = ((t - 0.18f) / 0.30f).coerceIn(0f, 1f)
+        val revealP = ((t - 0.46f) / 0.54f).coerceIn(0f, 1f)
+        val pink = Color(0xFFFFD9E8)
+
+        // 1) Parlama (başta küçük beyaz bir nokta, patlamayla büyür, kapak belirirken söner)
+        val gr = full * (0.14f + 0.44f * burstP)
+        val ga = ((0.45f + 0.55f * burstP) * (1f - revealP)).coerceIn(0f, 1f)
+        if (ga > 0.01f) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color.White.copy(alpha = ga), pink.copy(alpha = ga * 0.55f), Color.Transparent),
+                    center = center, radius = gr,
+                ),
+                radius = gr, center = center,
+            )
+        }
+
+        // 2) Işınlar (havai fişek)
+        val rayA = (1f - bloomP) * (0.2f + 0.8f * burstP)
+        if (rayA > 0.02f) {
+            val n = 22
+            for (i in 0 until n) {
+                val a = i * (6.2831855f / n) + 0.15f * sin(i * 2.1f)
+                val k = 0.55f + 0.45f * abs(sin(i * 1.7f + 0.6f))
+                val r0 = full * 0.08f
+                val r1 = r0 + full * (0.10f + 0.34f * burstP) * k
+                drawLine(
+                    Color.White.copy(alpha = rayA),
+                    Offset(cx + r0 * cos(a), cy + r0 * sin(a)), Offset(cx + r1 * cos(a), cy + r1 * sin(a)),
+                    strokeWidth = 1.3.dp.toPx(), cap = StrokeCap.Round,
+                )
+            }
+        }
+
+        // 3) Yuvarlaktan yuvarlatılmış kareye dönüşen beyaz-pembe gövde
+        if (bloomP > 0.01f) {
+            val e = bloomP * bloomP * (3f - 2f * bloomP)
+            val side = full * (0.30f + 0.70f * e)
+            val rad = side / 2f + (full * 0.22f - side / 2f) * e
+            val body = androidx.compose.ui.graphics.lerp(Color.White, pink, e)
+            drawRoundRect(
+                color = body.copy(alpha = e), topLeft = Offset(cx - side / 2f, cy - side / 2f),
+                size = Size(side, side), cornerRadius = CornerRadius(rad, rad),
+            )
+        }
+
+        // 4) Kapak: beyazın içinden piksel piksel belirir
+        if (revealP > 0f) {
+            val left = cx - full / 2f
+            val top = cy - full / 2f
+            val fullPx = full.roundToInt()
+            val ox = left.roundToInt()
+            val oy = top.roundToInt()
+            if (cover != null) {
+                val rr = Path().apply { addRoundRect(RoundRect(left, top, left + full, top + full, CornerRadius(full * 0.22f, full * 0.22f))) }
+                val side = min(cover.width, cover.height)
+                val sx0 = (cover.width - side) / 2
+                val sy0 = (cover.height - side) / 2
+                clipPath(rr) {
+                    if (revealP >= 0.999f) {
+                        drawImage(
+                            cover, IntOffset(sx0, sy0), IntSize(side, side), IntOffset(ox, oy), IntSize(fullPx, fullPx),
+                            filterQuality = FilterQuality.High,
+                        )
+                    } else {
+                        for (gy in 0 until cells) {
+                            for (gx in 0 until cells) {
+                                val a = ((revealP - thresholds[gy * cells + gx] * 0.55f) / 0.45f).coerceIn(0f, 1f)
+                                if (a <= 0f) continue
+                                val s0x = sx0 + gx * side / cells
+                                val s1x = sx0 + (gx + 1) * side / cells
+                                val s0y = sy0 + gy * side / cells
+                                val s1y = sy0 + (gy + 1) * side / cells
+                                val d0x = ox + gx * fullPx / cells
+                                val d1x = ox + (gx + 1) * fullPx / cells
+                                val d0y = oy + gy * fullPx / cells
+                                val d1y = oy + (gy + 1) * fullPx / cells
+                                drawImage(
+                                    cover, IntOffset(s0x, s0y), IntSize(s1x - s0x, s1y - s0y),
+                                    IntOffset(d0x, d0y), IntSize(d1x - d0x, d1y - d0y),
+                                    alpha = a, filterQuality = FilterQuality.Low,
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Kapak bildirimde yoksa: Shazam logolu mavi kare
+                drawRoundRect(
+                    brush = Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom), startY = top, endY = top + full),
+                    topLeft = Offset(left, top), size = Size(full, full),
+                    cornerRadius = CornerRadius(full * 0.22f, full * 0.22f), alpha = revealP,
+                )
+                drawShazamGlyph(Offset(left + full * 0.12f, top + full * 0.12f), full * 0.76f, revealP, false)
+            }
+        }
+
+        // 5) Kıvılcımlar: merkezden dışarı saçılır, solar
+        for (sp in sparks) {
+            val l = (t - sp.delay) / sp.life
+            if (l <= 0f || l >= 1f) continue
+            val eo = 1f - (1f - l) * (1f - l) * (1f - l)
+            val r = full * 0.16f + sp.speed * full * 0.36f * eo
+            val pos = Offset(cx + r * cos(sp.angle), cy + r * sin(sp.angle))
+            drawCircle(Color.White.copy(alpha = (1f - l) * 0.95f), radius = sp.rad.dp.toPx() * (1f - 0.5f * l), center = pos)
+        }
+    }
+}
+
+/** Açık ada: [kapak (patlama animasyonu)]  [şarkı adı / sanatçı]. Yazılar bulanıktan netleşir. Apple Music etiketi yok. */
+@Composable
+private fun ShazamContent(c: IslandContent.Shazam) {
+    val found = c.phase == ShazamPhase.Found
+    val burst = remember(c.title, c.artist) { Animatable(0f) }
+    val reveal = remember(c.title, c.artist) { Animatable(0f) }
+    LaunchedEffect(c.title, c.artist, found) {
+        burst.snapTo(0f); reveal.snapTo(0f)
+        if (!found) return@LaunchedEffect
+        launch { delay(120); reveal.animateTo(1f, tween(750, easing = FastOutSlowInEasing)) }
+        delay(280)
+        burst.animateTo(1f, tween(1900, easing = LinearEasing))
+    }
+    if (found) {
+        Row(
+            Modifier.fillMaxSize().padding(start = 6.dp, end = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            ShazamCoverBurst(c.cover, { burst.value }, Modifier.size(72.dp))
+            Column(
+                Modifier.weight(1f).graphicsLayer {
+                    val r = reveal.value
+                    alpha = 0.25f + 0.75f * r
+                    setBlurPx((1f - r) * 14.dp.toPx())
+                },
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (c.artist.isNotBlank()) {
+                    Text(c.artist, color = Color.White.copy(alpha = 0.66f), fontWeight = FontWeight.Medium, fontSize = 15.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
     }
 }

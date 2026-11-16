@@ -16,6 +16,9 @@ enum class StatusKind { Ringer, Charging, Timer, Alarm }
 /** Sistem ekran kaydı aşamaları. */
 enum class RecPhase { Countdown, Recording, Processing, Saved }
 
+/** Shazam: Listening = dinliyor (kapalı ada, logo + ses dalgası), Found = şarkı bulundu (ada açılır, kapak + isim). */
+enum class ShazamPhase { Listening, Found }
+
 @Immutable
 sealed interface IslandContent {
     data object Idle : IslandContent
@@ -61,6 +64,14 @@ sealed interface IslandContent {
         val frozenMs: Long = 0L,          // kayıt bitince dondurulan süre
         val count: Int = 0,               // geri sayım rakamı
         val thumb: ImageBitmap? = null,   // kaydedildi bildirimindeki küçük resim
+    ) : IslandContent
+
+    /** Shazam: dinleme animasyonu ve bulunan şarkı (albüm kapağı, şarkı adı, sanatçı). Bildirimden beslenir. */
+    data class Shazam(
+        val phase: ShazamPhase,
+        val title: String = "",
+        val artist: String = "",
+        val cover: ImageBitmap? = null,
     ) : IslandContent
 
     data class Media(
@@ -140,6 +151,15 @@ sealed interface IslandEvent {
     data class AssistantChanged(val active: Boolean) : IslandEvent
     /** Ön plandaki uygulama değişti ([from] -> [to]); müzik uygulamasından çıkış animasyonu için. */
     data class AppSwitched(val from: String, val to: String) : IslandEvent
+    /** Shazam dinlemeye başladı (Shazam'ın "dinliyor" bildirimi geldi). */
+    data class ShazamListening(val key: String) : IslandEvent
+    /** Shazam şarkıyı buldu (sonuç bildirimi): başlık, sanatçı ve kapak bildirimden gelir. */
+    data class ShazamFound(
+        val title: String, val artist: String, val cover: ImageBitmap?,
+        val open: android.app.PendingIntent?, val key: String,
+    ) : IslandEvent
+    /** Shazam'ın dinleme bildirimi kalktı ya da "eşleşme yok" bildirimi geldi. */
+    data object ShazamGone : IslandEvent
     /** Ana Sayfa > Dene: favori uygulamalar panelini aç (ayarlarda favoriler açık ve en az bir uygulama seçili olmalı). */
     data object ShowFavorites : IslandEvent
 }

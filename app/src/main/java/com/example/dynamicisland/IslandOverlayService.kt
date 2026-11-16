@@ -169,6 +169,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Call -> if (c.isIncoming) 5 else 6
         is IslandContent.Status -> if (c.kind == StatusKind.Charging) 8 else 7
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
+        is IslandContent.Shazam -> 11
     }
 
     // ---------------------------------------------------------------- Olay mantığı
@@ -193,6 +194,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key), holdMs = 4_000)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
+            is IslandEvent.ShazamListening -> onShazamListening()
+            is IslandEvent.ShazamFound -> onShazamFound(e)
+            is IslandEvent.ShazamGone -> onShazamGone()
             is IslandEvent.ShowFavorites -> if (!assistantActive && callKey == null && ui.value.content is IslandContent.Idle) openFavorites()
         }
     }
@@ -352,6 +356,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cc is IslandContent.Notif -> update { it }
             cc is IslandContent.Status -> update { it }
             cc is IslandContent.Favorites -> update { it }              // favori paneli açıkken müzik paneline geçme
+            cc is IslandContent.Shazam -> update { it }                 // Shazam dinlerken / sonucu gösterirken müzik ortayı almaz
             cc is IslandContent.ScreenRec && cc.phase == RecPhase.Saved -> update { it }   // "kaydedildi" görünümü bozulmasın
             // Müzik yeni başladı: en yeni olay olarak ortaya geçer, önceki ortadaki olay yan baloncuğa ayrılır
             nowActive && !wasActive && m != null && cc !is IslandContent.Media -> {
@@ -428,6 +433,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (revertOrder == null) sideLayout = null
         syncBgOrder()
         if (callKey != null && callIncoming) { publishCall(); return }     // gelen arama hep ortada
+        // Shazam hâlâ dinliyorsa (araya bildirim vb. girdiyse) dinleme görünümüne dön
+        if (shazamPhase == ShazamPhase.Listening) {
+            update { IslandUiState(IslandContent.Shazam(ShazamPhase.Listening), expanded = false) }
+            return
+        }
         // Ortaya en yeni etkin olay gelir; öncekiler update() içinde yan baloncuk olur.
         // Duraklatılmış müzik (yalnızca baloncuk tutma süresi içinde) ortayı almaz.
         val top = bgOrder.lastOrNull { it != Bg.Media || lastMedia?.playing == true }
@@ -493,6 +503,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 }
             }
             is IslandContent.Status -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            is IslandContent.Shazam -> {
+                // Bulunan şarkıya dokununca Shazam açılır; dinlerken dokunma bir şey yapmaz
+                if ((cur.content as IslandContent.Shazam).phase == ShazamPhase.Found) { sendCallIntent(shazamOpen); endShazam() }
+            }
             is IslandContent.ScreenRec -> {
                 val c = cur.content as IslandContent.ScreenRec
                 when (c.phase) {
@@ -503,6 +517,56 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     else -> Unit
                 }
             }
+        }
+    }
+
+    // ---------------------------------------------------------------- Shazam (dinleme animasyonu + bulunan şarkı)
+    private var shazamPhase: ShazamPhase? = null
+    private var shazamOpen: android.app.PendingIntent? = null
+    private var shazamJob: Job? = null
+    private val SHAZAM_LISTEN_MAX_MS = 25_000L     // sonuç gelmezse dinleme görünümü en fazla bu kadar kalır
+    private val SHAZAM_GONE_GRACE_MS = 1_500L      // dinleme bildirimi kalkınca sonuç bildiriminin gelmesi için tolerans
+    private val SHAZAM_HOLD_MS = 7_000L            // bulunan şarkı panelinin açık kalma süresi
+
+    private fun shazamBlocked() = assistantActive || (callKey != null && callIncoming)
+
+    /** Shazam dinlemeye başladı: ada kapalı halde kalır, solda Shazam logosu + sağda ses dalgası gösterilir. */
+    private fun onShazamListening() {
+        if (shazamBlocked()) return
+        shazamPhase = ShazamPhase.Listening
+        shazamOpen = null
+        collapseJob?.cancel()
+        update { IslandUiState(IslandContent.Shazam(ShazamPhase.Listening), expanded = false) }
+        shazamJob?.cancel()
+        shazamJob = scope.launch { delay(SHAZAM_LISTEN_MAX_MS); if (shazamPhase == ShazamPhase.Listening) endShazam() }
+    }
+
+    /** Şarkı bulundu: ada genişler, kapak patlama animasyonuyla belirir; şarkı adı + sanatçı gösterilir. */
+    private fun onShazamFound(e: IslandEvent.ShazamFound) {
+        if (shazamBlocked()) return
+        if (e.title.isBlank() && e.artist.isBlank()) return
+        shazamPhase = ShazamPhase.Found
+        shazamOpen = e.open
+        collapseJob?.cancel()
+        // Dinleme kapalı adadaysa aynı içerik türü: ada yerinde büyür (logo + dalga bulanıp kaybolur)
+        update { IslandUiState(IslandContent.Shazam(ShazamPhase.Found, e.title, e.artist, e.cover), expanded = true) }
+        shazamJob?.cancel()
+        shazamJob = scope.launch { delay(SHAZAM_HOLD_MS); if (shazamPhase == ShazamPhase.Found) endShazam() }
+    }
+
+    /** Dinleme bildirimi kalktı / eşleşme yok: kısa bir tolerans sonra ada eski haline döner. */
+    private fun onShazamGone() {
+        if (shazamPhase != ShazamPhase.Listening) return
+        shazamJob?.cancel()
+        shazamJob = scope.launch { delay(SHAZAM_GONE_GRACE_MS); if (shazamPhase == ShazamPhase.Listening) endShazam() }
+    }
+
+    private fun endShazam() {
+        shazamJob?.cancel(); shazamJob = null
+        shazamPhase = null; shazamOpen = null
+        if (ui.value.content is IslandContent.Shazam) {
+            collapseJob?.cancel()
+            collapseJob = scope.launch { collapseAndRest() }
         }
     }
 
@@ -1026,6 +1090,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 else if (s.notifDeleteSwipeUp) dismissNotif(c)           // çakışırsa silme önceliklidir
                 else if (s.notifCollapseSwipeUp) collapseNow()
             }
+            is IslandContent.Shazam -> if (c.phase == ShazamPhase.Found) endShazam()
             is IslandContent.ScreenRec -> when {
                 // "Kaydedildi" görünümü: herhangi bir dikey kaydırma kapatır (önceden hareketle küçültülemiyordu)
                 c.phase == RecPhase.Saved -> endRec()
@@ -1878,6 +1943,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 6 -> 88f          // aktif arama
                 k.kind == 8 -> chargePillHeightDp(s)   // şarj
                 k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
+                k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
                 else -> s.expandedHeightDp + if (music) s.musicExtraDp() else 0f
             }

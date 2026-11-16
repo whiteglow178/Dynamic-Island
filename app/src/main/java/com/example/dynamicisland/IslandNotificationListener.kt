@@ -251,6 +251,90 @@ class IslandNotificationListener : NotificationListenerService() {
         }.getOrDefault(this)
     }
 
+    // ---------------------------------------------------------------- Shazam (bildirimden tanıma)
+    // Shazam iki bildirim yayınlar: (1) dinlerken "devam eden" bildirim, (2) şarkıyı bulunca sonuç bildirimi
+    // (başlık = şarkı adı, metin = sanatçı, büyük simge = albüm kapağı). Bildirim dili / sürümü değişebildiği için
+    // sınıflandırma birkaç ipucuna bakar; tanı kaydı (SHAZAM_DEBUG_LOG) tutmayı unutma: tutmazsa ipuçlarını buradan ayarla.
+    private val SHAZAM_DEBUG_LOG = true      // true: Shazam bildirimlerinin içeriği İndirilenler/ekran_kaydi_log_*.txt dosyasına yazılır (sorun çözülünce false yap)
+    private val shazamPkgs = setOf("com.shazam.android", "com.shazam.encore.android")
+    private val shazamListenHints = listOf(
+        "dinle", "dinli", "listening", "tagging", "identifying", "recognizing", "tanımlan", "tanimlan", "aranıyor",
+        "écoute", "escuchando", "hört zu", "in ascolto", "ouvindo", "слушаю", "聆听", "듣고",
+    )
+    private val shazamAutoHints = listOf("auto shazam", "otomatik shazam", "autoshazam", "pop-up", "pop up", "açılır")
+    private val shazamNoMatchHints = listOf(
+        "no result", "no match", "couldn't", "could not", "not found", "try again", "sonuç yok", "bulunamadı", "bulunamadi",
+        "eşleşme yok", "eşleşme bulunamad", "tekrar dene", "aucun résultat", "sin resultado", "kein ergebnis",
+    )
+    private val shazamSkipChannels = listOf("promo", "news", "chart", "marketing", "discover", "social", "recommend")
+
+    private enum class ShazamKind { Listening, Result, NoMatch, None }
+
+    private var shazamListenKey: String? = null
+    private var shazamListenAt = 0L          // son "dinliyor" bildiriminin zamanı (elapsedRealtime)
+    private var lastShazamSig = ""
+    private var lastShazamAt = 0L
+
+    private fun classifyShazam(sbn: StatusBarNotification, now: Long): ShazamKind {
+        val n = sbn.notification ?: return ShazamKind.None
+        if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return ShazamKind.None
+        val ex = n.extras
+        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
+        val all = "$title $text".lowercase()
+        val ongoing = sbn.isOngoing || (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
+        if (ongoing) {
+            // "Otomatik Shazam açık" gibi kalıcı bildirimler dinleme animasyonu başlatmaz
+            if (shazamAutoHints.any { all.contains(it) }) return ShazamKind.None
+            val indeterminate = ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE)
+            return if (indeterminate || shazamListenHints.any { all.contains(it) }) ShazamKind.Listening else ShazamKind.None
+        }
+        if (title.isBlank() && text.isBlank()) return ShazamKind.None
+        val recent = now - shazamListenAt < 40_000L
+        if (shazamNoMatchHints.any { all.contains(it) }) return if (recent) ShazamKind.NoMatch else ShazamKind.None
+        val cat = n.category.orEmpty()
+        if (cat == Notification.CATEGORY_PROMO || cat == Notification.CATEGORY_RECOMMENDATION || cat == Notification.CATEGORY_SOCIAL) return ShazamKind.None
+        val ch = (if (android.os.Build.VERSION.SDK_INT >= 26) n.channelId else null).orEmpty().lowercase()
+        if (shazamSkipChannels.any { ch.contains(it) }) return ShazamKind.None
+        val hasCover = n.getLargeIcon() != null || ex.containsKey(Notification.EXTRA_PICTURE)
+        // Sonuç bildirimi: kapağı var ya da az önce dinleme başlamıştı (arka plan / otomatik Shazam sonuçları da kapaklıdır)
+        return if (hasCover || recent) ShazamKind.Result else ShazamKind.None
+    }
+
+    /** Shazam bildirimiyse adaya olay gönderir ve true döner (bildirim normal bildirim olarak gösterilmez). */
+    private fun handleShazam(sbn: StatusBarNotification): Boolean {
+        if (sbn.packageName !in shazamPkgs) return false
+        if (SHAZAM_DEBUG_LOG) recLog("SHAZAM", sbn)
+        val n = sbn.notification ?: return false
+        val now = SystemClock.elapsedRealtime()
+        when (classifyShazam(sbn, now)) {
+            ShazamKind.Listening -> {
+                // Aynı bildirimin güncellemeleri dinlemeyi yeniden başlatmasın
+                if (sbn.key == shazamListenKey && now - shazamListenAt < 60_000L) return true
+                shazamListenKey = sbn.key; shazamListenAt = now
+                IslandBus.post(IslandEvent.ShazamListening(sbn.key))
+                return true
+            }
+            ShazamKind.Result -> {
+                val ex = n.extras
+                val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+                val artist = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
+                    .ifBlank { ex.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty().trim() }
+                    .ifBlank { ex.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty().trim() }
+                val sig = "$title|$artist"
+                if (sig == lastShazamSig && now - lastShazamAt < 15_000L) return true     // bildirim güncellemesi: tekrar gösterme
+                lastShazamSig = sig; lastShazamAt = now
+                shazamListenAt = 0L
+                IslandBus.post(IslandEvent.ShazamFound(title, artist, recThumbOf(n), n.contentIntent, sbn.key))
+                return true
+            }
+            ShazamKind.NoMatch -> { IslandBus.post(IslandEvent.ShazamGone); return true }
+            ShazamKind.None -> return false
+        }
+        @Suppress("UNREACHABLE_CODE")
+        return false
+    }
+
     // ---------------------------------------------------------------- Bildirimler
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         runCatching { handleNotification(sbn) }
@@ -440,6 +524,12 @@ class IslandNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (sbn.packageName in shazamPkgs) {
+            // Dinleme bildirimi kalktı: sonuç gelmezse ada kapanır (servis kısa bir tolerans bekler)
+            val kind = runCatching { classifyShazam(sbn, SystemClock.elapsedRealtime()) }.getOrNull()
+            if (kind == ShazamKind.Listening) { shazamListenKey = null; IslandBus.post(IslandEvent.ShazamGone) }
+            return
+        }
         if (runCatching { isScreenRec(sbn) }.getOrDefault(false)) {
             // Hazır bekleme bildirimi kalkarsa da "kayıt bitti" say: kayıt yoksa servis zaten yok sayar
             runCatching { IslandBus.post(IslandEvent.ScreenRecGone(sbn.key, recPhaseOf(sbn) ?: RecPhase.Recording)) }
@@ -452,6 +542,8 @@ class IslandNotificationListener : NotificationListenerService() {
 
     private fun handleNotification(sbn: StatusBarNotification) {
         val n = sbn.notification
+        // Shazam: dinleme / sonuç bildirimleri adada özel animasyonla gösterilir
+        if (handleShazam(sbn)) return
         // Sistem ekran kaydı bildirimi (kayıt / işleniyor / kaydedildi) ayrı yoldan gider
         if (isScreenRec(sbn)) { handleScreenRec(sbn); return }
         // Arama bildirimleri (gelen / aktif) ayrı yoldan gider; "devam eden" filtresine takılmaz
