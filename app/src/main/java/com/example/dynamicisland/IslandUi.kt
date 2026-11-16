@@ -1646,11 +1646,14 @@ private fun ShazamWave(modifier: Modifier = Modifier) {
     }
 }
 
+private fun shzSmooth(x: Float): Float { val c = x.coerceIn(0f, 1f); return c * c * (3f - 2f * c) }
+
 /**
- * Albüm kapağının "patlayarak" belirmesi. [progress] 0..1:
- *  0.00-0.30  küçük ışık patlaması (parlama + ışınlar)
- *  0.18-0.48  parlama büyüyüp yuvarlatılmış kareye dönüşür (beyaz-pembe)
- *  0.46-1.00  kapak, beyazın içinden piksel piksel (rastgele) belirir; kenarlardan kıvılcımlar saçılır
+ * Albüm kapağının belirmesi. [progress] 0..1:
+ *  0.00-0.30  küçük beyaz ışık patlaması (parlama + ışınlar + kıvılcımlar)
+ *  0.14-0.42  parlama büyüyüp SAF BEYAZ yuvarlatılmış kareye dönüşür (pembe yok)
+ *  0.45-1.00  beyaz blok yavaşça şeffaflaşır; altındaki kapak bulanıktan netleşir (beyazla yıkanmış halden normale)
+ *  Kıvılcımlar 0.72'ye kadar tamamen söner, sonda kenarda hiçbir şey kalmaz.
  */
 @Composable
 private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifier: Modifier = Modifier) {
@@ -1659,124 +1662,131 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
         List(30) {
             ShazamSpark(
                 angle = r.nextFloat() * 6.2831855f, speed = 0.5f + r.nextFloat() * 0.8f,
-                rad = 0.8f + r.nextFloat() * 1.5f, delay = r.nextFloat() * 0.4f, life = 0.30f + r.nextFloat() * 0.30f,
+                rad = 0.8f + r.nextFloat() * 1.5f, delay = r.nextFloat() * 0.30f, life = 0.25f + r.nextFloat() * 0.17f,
             )
         }
     }
-    val cells = 12
-    val thresholds = remember { val r = kotlin.random.Random(11); FloatArray(cells * cells) { r.nextFloat() } }
-    Canvas(modifier) {
-        val t = progress().coerceIn(0f, 1f)
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val center = Offset(cx, cy)
-        val full = size.width * (60f / 72f)                       // kapağın kenar uzunluğu
-        val burstP = (t / 0.30f).coerceIn(0f, 1f)
-        val bloomP = ((t - 0.18f) / 0.30f).coerceIn(0f, 1f)
-        val revealP = ((t - 0.46f) / 0.54f).coerceIn(0f, 1f)
-        val pink = Color(0xFFFFD9E8)
+    // Netleşirken kapağın üstünde görünen ince beyaz tanecikler (konumları sabit)
+    val grain = remember {
+        val r = kotlin.random.Random(23)
+        List(70) { Triple(r.nextFloat(), r.nextFloat(), r.nextFloat()) }
+    }
+    val coverShape = remember { RoundedCornerShape(percent = 22) }
 
-        // 1) Parlama (başta küçük beyaz bir nokta, patlamayla büyür, kapak belirirken söner)
-        val gr = full * (0.14f + 0.44f * burstP)
-        val ga = ((0.45f + 0.55f * burstP) * (1f - revealP)).coerceIn(0f, 1f)
-        if (ga > 0.01f) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(Color.White.copy(alpha = ga), pink.copy(alpha = ga * 0.55f), Color.Transparent),
-                    center = center, radius = gr,
-                ),
-                radius = gr, center = center,
-            )
-        }
+    Box(modifier, contentAlignment = Alignment.Center) {
+        // Katman 0: küçük parlama, ışınlar ve parlamanın beyaz kareye dönüşmesi
+        Canvas(Modifier.fillMaxSize()) {
+            val t = progress().coerceIn(0f, 1f)
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val center = Offset(cx, cy)
+            val full = size.width * (60f / 72f)
+            val burstP = (t / 0.30f).coerceIn(0f, 1f)
+            val bloomP = ((t - 0.14f) / 0.28f).coerceIn(0f, 1f)
 
-        // 2) Işınlar (havai fişek)
-        val rayA = (1f - bloomP) * (0.2f + 0.8f * burstP)
-        if (rayA > 0.02f) {
-            val n = 22
-            for (i in 0 until n) {
-                val a = i * (6.2831855f / n) + 0.15f * sin(i * 2.1f)
-                val k = 0.55f + 0.45f * abs(sin(i * 1.7f + 0.6f))
-                val r0 = full * 0.08f
-                val r1 = r0 + full * (0.10f + 0.34f * burstP) * k
-                drawLine(
-                    Color.White.copy(alpha = rayA),
-                    Offset(cx + r0 * cos(a), cy + r0 * sin(a)), Offset(cx + r1 * cos(a), cy + r1 * sin(a)),
-                    strokeWidth = 1.3.dp.toPx(), cap = StrokeCap.Round,
+            val gr = full * (0.14f + 0.44f * burstP)
+            val ga = ((0.45f + 0.55f * burstP) * (1f - bloomP)).coerceIn(0f, 1f)
+            if (ga > 0.01f) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(Color.White.copy(alpha = ga), Color.White.copy(alpha = ga * 0.5f), Color.Transparent),
+                        center = center, radius = gr,
+                    ),
+                    radius = gr, center = center,
+                )
+            }
+            val rayA = (1f - bloomP) * (0.2f + 0.8f * burstP)
+            if (rayA > 0.02f) {
+                val n = 22
+                for (i in 0 until n) {
+                    val a = i * (6.2831855f / n) + 0.15f * sin(i * 2.1f)
+                    val k = 0.55f + 0.45f * abs(sin(i * 1.7f + 0.6f))
+                    val r0 = full * 0.08f
+                    val r1 = r0 + full * (0.10f + 0.34f * burstP) * k
+                    drawLine(
+                        Color.White.copy(alpha = rayA),
+                        Offset(cx + r0 * cos(a), cy + r0 * sin(a)), Offset(cx + r1 * cos(a), cy + r1 * sin(a)),
+                        strokeWidth = 1.3.dp.toPx(), cap = StrokeCap.Round,
+                    )
+                }
+            }
+            if (bloomP > 0.01f) {
+                val e = shzSmooth(bloomP)
+                val side = full * (0.30f + 0.70f * e)
+                val rad = side / 2f + (full * 0.22f - side / 2f) * e
+                drawRoundRect(
+                    color = Color.White.copy(alpha = e), topLeft = Offset(cx - side / 2f, cy - side / 2f),
+                    size = Size(side, side), cornerRadius = CornerRadius(rad, rad),
                 )
             }
         }
 
-        // 3) Yuvarlaktan yuvarlatılmış kareye dönüşen beyaz-pembe gövde
-        if (bloomP > 0.01f) {
-            val e = bloomP * bloomP * (3f - 2f * bloomP)
-            val side = full * (0.30f + 0.70f * e)
-            val rad = side / 2f + (full * 0.22f - side / 2f) * e
-            val body = androidx.compose.ui.graphics.lerp(Color.White, pink, e)
-            drawRoundRect(
-                color = body.copy(alpha = e), topLeft = Offset(cx - side / 2f, cy - side / 2f),
-                size = Size(side, side), cornerRadius = CornerRadius(rad, rad),
-            )
-        }
-
-        // 4) Kapak: beyazın içinden piksel piksel belirir
-        if (revealP > 0f) {
-            val left = cx - full / 2f
-            val top = cy - full / 2f
-            val fullPx = full.roundToInt()
-            val ox = left.roundToInt()
-            val oy = top.roundToInt()
-            if (cover != null) {
-                val rr = Path().apply { addRoundRect(RoundRect(left, top, left + full, top + full, CornerRadius(full * 0.22f, full * 0.22f))) }
-                val side = min(cover.width, cover.height)
-                val sx0 = (cover.width - side) / 2
-                val sy0 = (cover.height - side) / 2
-                clipPath(rr) {
-                    if (revealP >= 0.999f) {
+        // Katman 1: kapak + üstündeki beyaz örtü. Birlikte bulanıktan netleşir; dışarıdan yuvarlatılmış kareyle kesilir (kenarlar keskin kalır)
+        Box(
+            Modifier.size(60.dp)
+                .graphicsLayer { alpha = if (progress() < 0.40f) 0f else 1f }
+                .clip(coverShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier.requiredSize(84.dp).graphicsLayer {
+                    val t = progress().coerceIn(0f, 1f)
+                    val s = shzSmooth((t - 0.45f) / 0.55f)
+                    val blurDp = if (t < 0.45f) 3f else 3f + 6f * (1f - s)   // beyaz blok hafif yumuşak, kapak belirirken bulanık -> net
+                    setBlurPx((blurDp * (1f - shzSmooth((s - 0.85f) / 0.15f))).dp.toPx())
+                },
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val t = progress().coerceIn(0f, 1f)
+                    val s = shzSmooth((t - 0.45f) / 0.55f)
+                    val full = 60.dp.toPx()
+                    val c = Offset(size.width / 2f, size.height / 2f)
+                    if (cover != null) {
+                        val side = min(cover.width, cover.height)
+                        val sx0 = (cover.width - side) / 2
+                        val sy0 = (cover.height - side) / 2
+                        val d = (full * (1f + 0.25f * (1f - s))).roundToInt()   // bulanıkken biraz büyük, netleşirken yerine oturur (kenar sızıntısı olmaz)
                         drawImage(
-                            cover, IntOffset(sx0, sy0), IntSize(side, side), IntOffset(ox, oy), IntSize(fullPx, fullPx),
+                            cover, IntOffset(sx0, sy0), IntSize(side, side),
+                            IntOffset((c.x - d / 2f).roundToInt(), (c.y - d / 2f).roundToInt()), IntSize(d, d),
                             filterQuality = FilterQuality.High,
                         )
                     } else {
-                        for (gy in 0 until cells) {
-                            for (gx in 0 until cells) {
-                                val a = ((revealP - thresholds[gy * cells + gx] * 0.55f) / 0.45f).coerceIn(0f, 1f)
-                                if (a <= 0f) continue
-                                val s0x = sx0 + gx * side / cells
-                                val s1x = sx0 + (gx + 1) * side / cells
-                                val s0y = sy0 + gy * side / cells
-                                val s1y = sy0 + (gy + 1) * side / cells
-                                val d0x = ox + gx * fullPx / cells
-                                val d1x = ox + (gx + 1) * fullPx / cells
-                                val d0y = oy + gy * fullPx / cells
-                                val d1y = oy + (gy + 1) * fullPx / cells
-                                drawImage(
-                                    cover, IntOffset(s0x, s0y), IntSize(s1x - s0x, s1y - s0y),
-                                    IntOffset(d0x, d0y), IntSize(d1x - d0x, d1y - d0y),
-                                    alpha = a, filterQuality = FilterQuality.Low,
-                                )
-                            }
-                        }
+                        // Kapak bildirimde yoksa: Shazam logolu mavi kare
+                        drawRect(ShazamBlue)
+                        drawShazamGlyph(Offset(c.x - full * 0.36f, c.y - full * 0.36f), full * 0.72f, Color.White, 1f)
                     }
+                    // Beyaz örtü: kapağı beyazlatır, yavaşça şeffaflaşır
+                    drawRect(Color.White.copy(alpha = (1f - s).coerceIn(0f, 1f)))
                 }
-            } else {
-                // Kapak bildirimde yoksa: Shazam logolu mavi kare
-                drawRoundRect(
-                    color = ShazamBlue,
-                    topLeft = Offset(left, top), size = Size(full, full),
-                    cornerRadius = CornerRadius(full * 0.22f, full * 0.22f), alpha = revealP,
-                )
-                drawShazamGlyph(Offset(left + full * 0.14f, top + full * 0.14f), full * 0.72f, Color.White, revealP)
             }
         }
 
-        // 5) Kıvılcımlar: merkezden dışarı saçılır, solar
-        for (sp in sparks) {
-            val l = (t - sp.delay) / sp.life
-            if (l <= 0f || l >= 1f) continue
-            val eo = 1f - (1f - l) * (1f - l) * (1f - l)
-            val r = full * 0.16f + sp.speed * full * 0.36f * eo
-            val pos = Offset(cx + r * cos(sp.angle), cy + r * sin(sp.angle))
-            drawCircle(Color.White.copy(alpha = (1f - l) * 0.95f), radius = sp.rad.dp.toPx() * (1f - 0.5f * l), center = pos)
+        // Katman 2: kıvılcımlar ve tanecikler (keskin çizilir, 0.72'de tamamen biter)
+        Canvas(Modifier.fillMaxSize()) {
+            val t = progress().coerceIn(0f, 1f)
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val full = size.width * (60f / 72f)
+            for (sp in sparks) {
+                val l = (t - sp.delay) / sp.life
+                if (l <= 0f || l >= 1f) continue
+                val eo = 1f - (1f - l) * (1f - l) * (1f - l)
+                val r = full * 0.16f + sp.speed * full * 0.36f * eo
+                val pos = Offset(cx + r * cos(sp.angle), cy + r * sin(sp.angle))
+                drawCircle(Color.White.copy(alpha = (1f - l) * 0.95f), radius = sp.rad.dp.toPx() * (1f - 0.5f * l), center = pos)
+            }
+            val s = shzSmooth((t - 0.45f) / 0.55f)
+            val ga = 0.8f * sin(3.1415927f * s)
+            if (ga > 0.02f) {
+                for ((gx, gy, gv) in grain) {
+                    val a = ga * (0.35f + 0.65f * gv)
+                    drawCircle(
+                        Color.White.copy(alpha = a), radius = (0.7f + gv * 0.9f).dp.toPx(),
+                        center = Offset(cx - full * 0.45f + gx * full * 0.9f, cy - full * 0.45f + gy * full * 0.9f),
+                    )
+                }
+            }
         }
     }
 }

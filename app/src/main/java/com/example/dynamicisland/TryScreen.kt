@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -100,6 +101,7 @@ private val TryItems = listOf(
     TryItem("Ekran Kaydı", "Geri sayım, kayıt, işleniyor ve kaydedildi aşamaları.", Color(0xFFE8334A), 7),
     TryItem("Asistan", "Asistan animasyonu ve ekran kenarı parıltısı.", Color(0xFFAF52DE), 8),
     TryItem("Favoriler", "Favori uygulamalar paneli. Ayarlardan favori uygulama seçili olmalı.", Color(0xFF5E5CE6), 9),
+    TryItem("Shazam", "Şarkı tanıma. Önce dinler, sonra şarkıyı bulup adayı genişletir ve albüm kapağını animasyonla gösterir.", Color(0xFF1E9BFF), 10),
 )
 
 /** Dönme açısı (derece). Fazla dönmesin diye küçük; ters yöne dönerse eksi yap. */
@@ -126,6 +128,38 @@ private fun runRecDemo() {
         IslandBus.post(IslandEvent.ScreenRecGone(key, RecPhase.Recording))
         delay(1800)
         IslandBus.post(IslandEvent.ScreenRec(RecPhase.Saved, key, t0, 0, null, null, null))
+    }
+}
+
+private var shazamDemoJob: Job? = null
+
+/** Demo albüm kapağı: gün batımı renkleri + güneş (gerçek kapak yerine). */
+private fun makeDemoCover(): androidx.compose.ui.graphics.ImageBitmap {
+    val n = 400
+    val bmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+    val cv = android.graphics.Canvas(bmp)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    paint.shader = android.graphics.LinearGradient(
+        0f, 0f, 0f, n.toFloat(),
+        intArrayOf(0xFFFF5E3A.toInt(), 0xFFFF9A44.toInt(), 0xFFFFD36B.toInt(), 0xFF2E8B57.toInt()),
+        floatArrayOf(0f, 0.45f, 0.7f, 0.72f), android.graphics.Shader.TileMode.CLAMP,
+    )
+    cv.drawRect(0f, 0f, n.toFloat(), n.toFloat(), paint)
+    paint.shader = null
+    paint.color = 0xFFFFF1B8.toInt()
+    cv.drawCircle(n * 0.5f, n * 0.42f, n * 0.16f, paint)
+    paint.color = 0xFF1F5E3A.toInt()
+    cv.drawRect(0f, n * 0.82f, n.toFloat(), n.toFloat(), paint)
+    return bmp.asImageBitmap()
+}
+
+private fun runShazamDemo() {
+    shazamDemoJob?.cancel()
+    shazamDemoJob = demoScope.launch {
+        val key = "demo_shazam"
+        IslandBus.post(IslandEvent.ShazamListening(key))
+        delay(3000)
+        IslandBus.post(IslandEvent.ShazamFound("Sweater Weather", "The Neighbourhood", makeDemoCover(), null, key))
     }
 }
 
@@ -163,7 +197,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
         }
     }
     val holdFor: (Int) -> Long = { idx ->
-        when (idx) { 7 -> 8500L; 4 -> 6000L; 8 -> 4500L; 3, 5 -> 4200L; else -> 3000L }
+        when (idx) { 7 -> 8500L; 10 -> 9500L; 4 -> 6000L; 8 -> 4500L; 3, 5 -> 4200L; else -> 3000L }
     }
     val pressScale by animateFloatAsState(if (pressed) 0.96f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "tryPress")
     // Tuşun fiziksel olarak içeri batması (0 = yukarıda, 1 = tamamen basılı)
@@ -241,6 +275,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
             7 -> runRecDemo()
             8 -> runAssistantDemo()
             9 -> IslandBus.post(IslandEvent.ShowFavorites)
+            10 -> runShazamDemo()
             else -> Unit
         }
     }
@@ -765,6 +800,16 @@ private fun DrawScope.drawGlyph(kind: Int, c: Color, gap: Color) {
                     close()
                 }, c,
             )
+        }
+        10 -> { // shazam: S işareti
+            val sPath = Path().apply {
+                moveTo(16f, 8.2f)
+                cubicTo(15f, 6f, 9f, 6f, 8.6f, 9.2f)
+                cubicTo(8.3f, 11.8f, 11.5f, 12f, 13.2f, 12.6f)
+                cubicTo(15.4f, 13.4f, 16f, 14.8f, 15.6f, 15.8f)
+                cubicTo(15f, 17.8f, 9.2f, 18f, 8f, 15.8f)
+            }
+            drawPath(sPath, c, style = Stroke(width = 2.8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
         9 -> { // favoriler: 2x2 uygulama ızgarası
             val cr = CornerRadius(2.4f, 2.4f)
