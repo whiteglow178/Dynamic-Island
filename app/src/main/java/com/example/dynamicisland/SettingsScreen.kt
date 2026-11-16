@@ -124,14 +124,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
     LaunchedEffect(draft) { delay(250); onSave(draft) }
 
     // ---- Ayar sayfaları: her kart tek bir "sayfa"dır; sayfalar arası yapışarak (snap) geçilir
-    val pages = buildList<SettingsPage> {
-        var pendingGroup: String? = null
-        fun page(title: String, body: @Composable () -> Unit) {
-            add(SettingsPage(title, pendingGroup, body)); pendingGroup = null
-        }
-        fun sec(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) =
-            page(title) { SectionCard(title, subtitle, content) }
-
+    val pages = if (lyricsPage) lyricsPages(draft, version, { draft = it }) { draft = draft.withLyricsDefaults(); version++ } else buildPages {
         // ---- Yerleşim
         pendingGroup = "Yerleşim"
         sec("Kapalı ada", "Kamera çevresindeki küçük hal") {
@@ -414,23 +407,24 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
         // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
         PreviewCard(draft, mode, { mode = it }, expanded) { expanded = !expanded }
 
-        if (lyricsPage) {
-            Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                LyricsSections(draft, version) { draft = it }
-                IslandActionButton("Söz ayarlarını varsayılana döndür", { draft = draft.withLyricsDefaults(); version++ })
-                Spacer(Modifier.height(28.dp))
-            }
-        } else {
-            SnapSettingsPager(pages, Modifier.weight(1f))
-        }
+        SnapSettingsPager(pages, Modifier.weight(1f))
     }
 }
 
 // ---------------------------------------------------------------- Yapışan (snap) ayar sayfaları
 private class SettingsPage(val title: String, val group: String?, val body: @Composable () -> Unit)
+
+private class PageBuilder {
+    val list = mutableListOf<SettingsPage>()
+    var pendingGroup: String? = null
+    fun page(title: String, body: @Composable () -> Unit) {
+        list.add(SettingsPage(title, pendingGroup, body)); pendingGroup = null
+    }
+    fun sec(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) =
+        page(title) { SectionCard(title, subtitle, content) }
+}
+
+private inline fun buildPages(block: PageBuilder.() -> Unit): List<SettingsPage> = PageBuilder().apply(block).list
 
 /** Üstte/altta komşu ayarların yalnızca başlığı görünür. Sayfa değiştirmek için biraz daha fazla kaydırmak gerekir. */
 @Composable
@@ -438,12 +432,11 @@ private fun SnapSettingsPager(pages: List<SettingsPage>, modifier: Modifier = Mo
     val cs = MaterialTheme.colorScheme
     val pager = rememberPagerState { pages.size }
     val scope = rememberCoroutineScope()
-    // Eşik: sayfanın %60'ı. Varsayılan %50 idi, bu yüzden değiştirmek için biraz daha fazla kaydırmak gerekir.
-    // (Daha da zorlaştırmak için 0.7f, kolaylaştırmak için 0.5f yap.)
+    // Eşik: sayfanın %50'si (zorlaştırmak için 0.6f, kolaylaştırmak için 0.4f yap)
     val fling = PagerDefaults.flingBehavior(
         state = pager,
         pagerSnapDistance = PagerSnapDistance.atMost(1),
-        snapPositionalThreshold = 0.6f,
+        snapPositionalThreshold = 0.5f,
     )
     val cur = pager.currentPage
 
@@ -668,9 +661,10 @@ private fun MockStatusBar() {
 
 // ---------------------------------------------------------------- Şarkı sözü ayarları
 @Composable
-private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSettings) -> Unit) {
+private fun lyricsPages(draft: IslandSettings, version: Int, set: (IslandSettings) -> Unit, onReset: () -> Unit): List<SettingsPage> {
     val cs = MaterialTheme.colorScheme
-    SectionCard("Şarkı sözleri", "Önce LRCLIB, bulunamazsa NetEase'te aranır") {
+    return buildPages {
+    sec("Şarkı sözleri", "Önce LRCLIB, bulunamazsa NetEase'te aranır") {
         SwitchRow("Şarkı sözleri",
             "Başlık, sanatçı ve süre sunucuya gönderilir. Bildirimi olan her oynatıcıyla çalışır (Spotify, YouTube Music, Yandex Müzik, VK…).",
             draft.lyricsEnabled) { set(draft.copy(lyricsEnabled = it)) }
@@ -679,7 +673,7 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
                 color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
     }
-    SectionCard("Müzik uygulamasını aç", "Ada üzerinden çalan müziğin uygulamasına geç") {
+    sec("Müzik uygulamasını aç", "Ada üzerinden çalan müziğin uygulamasına geç") {
         SubHeader("Ada genişletilmişken")
         SwitchRow("Albüm kapağına basınca", null, draft.openExpArt) { set(draft.copy(openExpArt = it)) }
         SwitchRow("Şarkı ismine basınca", null, draft.openExpTitle) { set(draft.copy(openExpTitle = it)) }
@@ -700,16 +694,16 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
             set(draft.copy(longPressMs = (it / 50f).toInt() * 50))
         }
     }
-    SectionCard("Kaydırma hareketleri", "Müzik adada görünürken") {
+    sec("Kaydırma hareketleri", "Müzik adada görünürken") {
         SwitchRow("Aşağı kaydırınca genişlesin", "Küçük adayı aşağı çekince açılır", draft.swipeDownExpand) { set(draft.copy(swipeDownExpand = it)) }
         SwitchRow("Yukarı kaydırınca küçülsün", "Açık adayı yukarı kaydırınca küçülür", draft.swipeUpCollapse) { set(draft.copy(swipeUpCollapse = it)) }
         SwitchRow("Yana kaydırınca şarkı değişsin", "Müzik çalarken ada küçükken de açıkken de: sağdan sola kaydır = sonraki şarkı, soldan sağa = önceki şarkı", draft.swipeTrackChange) { set(draft.copy(swipeTrackChange = it)) }
     }
-    SectionCard("Müzik uygulamasındayken", "Çalan müziğin uygulamasını açıkken adada şarkı gösterilmesin") {
+    sec("Müzik uygulamasındayken", "Çalan müziğin uygulamasını açıkken adada şarkı gösterilmesin") {
         SwitchRow("Müzik uygulamasında adayı gizle", "Çalan müziğin uygulamasındayken ada müziği göstermez. \"Müzikten çıkış animasyonu\" da açıksa çıkınca önce panel adaya girip yutulur, sonra şarkı görünür",
             draft.hideInMusicApp) { set(draft.copy(hideInMusicApp = it)) }
     }
-    SectionCard("Müzikten çıkış", "Müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı yutup gösterir") {
+    sec("Müzikten çıkış", "Müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı yutup gösterir") {
         SwitchRow("Müzikten çıkış animasyonu", "Müzik çalarken o uygulamadan çıkınca çalışır",
             draft.musicExitAnim) { set(draft.copy(musicExitAnim = it)) }
         if (draft.musicExitAnim) {
@@ -732,9 +726,9 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
     }
-    if (!draft.lyricsEnabled) return
+    if (!draft.lyricsEnabled) { sec("Sıfırla", "Söz ayarlarını başlangıç değerine döndür") { IslandActionButton("Söz ayarlarını varsayılana döndür", onReset) }; return@buildPages }
 
-    SectionCard("Nerede görünsün", "İstediğin kadarını aynı anda açabilirsin") {
+    sec("Nerede görünsün", "İstediğin kadarını aynı anda açabilirsin") {
         SwitchRow("Genişletilmiş adada", "Şarkı adı ile ilerleme çubuğu arasında", draft.lyricsInPanel) { set(draft.copy(lyricsInPanel = it)) }
         SectionDivider()
         SwitchRow("Kapalı adada (ortada)", "Albüm kapağı ile equalizer arasındaki boşlukta; ada sözler için genişler", draft.lyricsCompact) { set(draft.copy(lyricsCompact = it)) }
@@ -742,19 +736,19 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         SwitchRow("Adanın dışında", "Adayı açmadan, ekranın üstünde ayrı görünür", draft.lyricsOutside) { set(draft.copy(lyricsOutside = it)) }
     }
 
-    if (draft.lyricsInPanel) SectionCard("Genişletilmiş ada", "Panelin içindeki sözler") {
+    if (draft.lyricsInPanel) sec("Genişletilmiş ada", "Panelin içindeki sözler") {
         SliderRow("Yazı boyutu", draft.lyricsPanelSizeSp, 12f..26f, "${draft.lyricsPanelSizeSp.toInt()} sp") { set(draft.copy(lyricsPanelSizeSp = it)) }
         SliderRow("En fazla satır", draft.lyricsPanelLines.toFloat(), 1f..3f, "${draft.lyricsPanelLines}") { set(draft.copy(lyricsPanelLines = it.roundToInt().coerceIn(1, 3))) }
     }
 
-    if (draft.lyricsCompact) SectionCard("Kapalı ada", "Tek satır; sığmazsa söylendikçe yana kayar") {
+    if (draft.lyricsCompact) sec("Kapalı ada", "Tek satır; sığmazsa söylendikçe yana kayar") {
         SliderRow("Yazı boyutu", draft.lyricsCompactSizeSp, 8f..18f, "${draft.lyricsCompactSizeSp.toInt()} sp") { set(draft.copy(lyricsCompactSizeSp = it)) }
         SliderRow("Ada genişliği (sözler varken)", draft.lyricsCompactWidthDp, 120f..300f, "${draft.lyricsCompactWidthDp.toInt()} dp") { set(draft.copy(lyricsCompactWidthDp = it)) }
         Text("Not: Kamera deliği adanın tam ortasında olduğu için orta kısımdaki harfler deliğin arkasında kalabilir; genişlik arttıkça okunabilirlik artar.",
             color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
     }
 
-    if (draft.lyricsOutside) SectionCard("Adanın dışı", "Ayrı, dokunulmaz söz katmanı (ada genişleyince gizlenir)") {
+    if (draft.lyricsOutside) sec("Adanın dışı", "Ayrı, dokunulmaz söz katmanı (ada genişleyince gizlenir)") {
         SliderRow("Yazı boyutu", draft.lyricsOutsideSizeSp, 12f..40f, "${draft.lyricsOutsideSizeSp.toInt()} sp") { set(draft.copy(lyricsOutsideSizeSp = it)) }
         SliderRow("En fazla satır", draft.lyricsOutsideLines.toFloat(), 1f..3f, "${draft.lyricsOutsideLines}") { set(draft.copy(lyricsOutsideLines = it.roundToInt().coerceIn(1, 3))) }
         SliderRow("Genişlik", draft.lyricsOutsideWidthDp, 180f..420f, "${draft.lyricsOutsideWidthDp.toInt()} dp") { set(draft.copy(lyricsOutsideWidthDp = it)) }
@@ -762,7 +756,7 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         SliderRow("Yatay konum", draft.lyricsOutsideXDp, -150f..150f, "${draft.lyricsOutsideXDp.toInt()} dp") { set(draft.copy(lyricsOutsideXDp = it)) }
     }
 
-    SectionCard("Renk", "Üç yerde de ortak") {
+    sec("Renk", "Üç yerde de ortak") {
         SwitchRow("Albüm kapağı rengi", "Söz rengi, çalan şarkının kapağına göre değişir",
             draft.lyricsDynamicColor) { set(draft.copy(lyricsDynamicColor = it)) }
         SectionDivider()
@@ -771,7 +765,7 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         SliderRow("Söylenmemiş kısım", draft.lyricsDimAlpha, 0.1f..0.8f, "%${(draft.lyricsDimAlpha * 100).toInt()}") { set(draft.copy(lyricsDimAlpha = it)) }
     }
 
-    SectionCard("Dolum ve senkron", "Satır şarkıyla birlikte soldan sağa dolar") {
+    sec("Dolum ve senkron", "Satır şarkıyla birlikte soldan sağa dolar") {
         SwitchRow("Söylendikçe dolsun", "Kapatırsan satırın tamamı parlak görünür", draft.lyricsFillEnabled) { set(draft.copy(lyricsFillEnabled = it)) }
         SectionDivider()
         val off = draft.lyricsOffsetMs
@@ -781,14 +775,14 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         Text("+ değer sözleri daha erken, − değer daha geç gösterir.", color = cs.onSurfaceVariant, fontSize = 12.sp)
     }
 
-    SectionCard("Parıltı (Glow)", "Söylenen kısmın etrafında") {
+    sec("Parıltı (Glow)", "Söylenen kısmın etrafında") {
         SwitchRow("Parıltı efekti", null, draft.lyricsGlowEnabled) { set(draft.copy(lyricsGlowEnabled = it)) }
         if (draft.lyricsGlowEnabled) {
             SliderRow("Seviye", draft.lyricsGlowLevel, 0.1f..1f, "%${(draft.lyricsGlowLevel * 100).toInt()}") { set(draft.copy(lyricsGlowLevel = it)) }
         }
     }
 
-    SectionCard("Satır geçiş animasyonu", "Bir satırdan diğerine geçerken") {
+    sec("Satır geçiş animasyonu", "Bir satırdan diğerine geçerken") {
         SwitchRow("Geçiş animasyonları", "Kapatırsan satırlar anında değişir", draft.lyricsAnimEnabled) { set(draft.copy(lyricsAnimEnabled = it)) }
         if (draft.lyricsAnimEnabled) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -806,6 +800,8 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
                 SliderRow("Süre", draft.lyricsAnimMs.toFloat(), 120f..900f, "${draft.lyricsAnimMs} ms") { set(draft.copy(lyricsAnimMs = it.toInt())) }
             }
         }
+    }
+    sec("Sıfırla", "Söz ayarlarını başlangıç değerine döndür") { IslandActionButton("Söz ayarlarını varsayılana döndür", onReset) }
     }
 }
 
