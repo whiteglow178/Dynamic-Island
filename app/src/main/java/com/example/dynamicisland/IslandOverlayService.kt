@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -111,7 +112,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         density = resources.displayMetrics.density
+        // Üç nokta modunda kapalı ada, ortadaki noktanın çapında daire olur (kaydedilen ayarlar değişmez, yalnızca bu kopya)
         settings = SettingsRepository(applicationContext).flow
+            .map { it.effective() }
             .stateIn(scope, SharingStarted.Eagerly, IslandSettings())
         // Arka plandan (örn. sistem START_STICKY ile yeniden başlatınca) foreground'a geçiş reddedilebilir;
         // istisna yakalanmazsa süreç çöker ve erişilebilirlik servisi "hatalı çalışıyor" olarak işaretlenir.
@@ -1924,7 +1927,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private suspend fun syncWindow(k: WinKey) {
         val s = k.s
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
-        val cw = dp(if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
+        val cw = dp(if (s.dotMode) s.compactWidthDp else if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val music = k.kind == 2
         val assistant = k.kind == 3
         val ew = dp(
@@ -1957,7 +1960,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val settle = s.settleMs()
         // Yan baloncuklar varsa pencere iki yanda (simetrik) baloncuk payı kadar genişler; ada pencerenin ortasında kalır
         // Genişlemişken de baloncuk varsa pencere iki yanda pay ayırır (baloncuk genişleyen panelin yanında durur)
-        val sideExtra = if (k.side > 0 && k.kind != 0) dp(sideExtraDp(s)) else 0
+        // Üç nokta modunda yan noktalar her zaman görünür: pencere iki yanda her zaman pay ayırır (boştayken de)
+        val sideExtra = if (s.dotMode || (k.side > 0 && k.kind != 0)) dp(sideExtraDp(s)) else 0
         val blurOk = pad == 0 && sideExtra == 0   // pay / yan baloncuk varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
@@ -1966,8 +1970,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             k.kind == 0 && s.showIdle -> {
                 // Boşta da görünür: küçük ada boyutunda, dokunuşsuz
                 setBlur(false, s)
-                if (curW > cw + 2 * pad || curH > ch + 2 * pad) delay(settle)
-                setGeometry(cw + 2 * pad, ch + 2 * pad, baseX, y)
+                if (curW > cw + 2 * pad + 2 * sideExtra || curH > ch + 2 * pad) delay(settle)
+                setGeometry(cw + 2 * pad + 2 * sideExtra, ch + 2 * pad, baseX, y)
                 if (blurOk) setBlur(true, s)
             }
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
@@ -2006,7 +2010,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (blurOk) setBlur(true, s)
             }
         }
-        if (k.kind == 0 || (k.expanded && sideExtra == 0)) winSide = 0
+        if ((k.kind == 0 && !s.dotMode) || (k.expanded && sideExtra == 0)) winSide = 0
     }
 
     private fun startAsForeground() {

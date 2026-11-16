@@ -129,7 +129,14 @@ const val CALL_COMPACT_W_DP = 160f
 const val SIDE_GAP_DP = 8f
 
 /** Yan baloncuklar için pencerenin her iki yanda ayıracağı pay (dp): boşluk + baloncuk çapı + yay taşması. Servis kullanır. */
-fun sideExtraDp(cfg: IslandSettings): Float = SIDE_GAP_DP + cfg.compactHeightDp + 6f
+fun sideExtraDp(cfg: IslandSettings): Float = sideGapDp(cfg) + max(sideSizeDp(cfg, 1), sideSizeDp(cfg, -1)) + 6f
+
+/** Ada ile yan baloncuk arasındaki boşluk (dp). Üç nokta modunda ayardan gelir. */
+fun sideGapDp(cfg: IslandSettings): Float = if (cfg.dotMode) cfg.dotGapDp else SIDE_GAP_DP
+
+/** Yan baloncuğun çapı (dp). [dir]: +1 sağ, -1 sol. Üç nokta modunda sağ / sol nokta ayrı ayrı ayarlanır. */
+fun sideSizeDp(cfg: IslandSettings, dir: Int): Float =
+    if (cfg.dotMode) (if (dir > 0) cfg.dotRightDp else cfg.dotLeftDp) else min(72f, cfg.compactHeightDp)
 
 /** Açık haldeki ada genişliği (dp). Servis, genişleyen panelin yanına baloncuk sığıp sığmadığını buradan hesaplar. */
 fun expandedWidthDpFor(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = when (c) {
@@ -139,7 +146,7 @@ fun expandedWidthDpFor(c: IslandContent, cfg: IslandSettings, screenWDp: Float):
 
 /** Ada genişlemişken iki yanına baloncuk (çap + boşluk) sığıyor mu? Dar ekranda sığmazsa baloncuk gösterilmez. */
 fun sideFitsWhenExpanded(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Boolean =
-    expandedWidthDpFor(c, cfg, screenWDp) + 2f * (SIDE_GAP_DP + cfg.compactHeightDp + 4f) <= screenWDp
+    expandedWidthDpFor(c, cfg, screenWDp) + 2f * (sideGapDp(cfg) + max(sideSizeDp(cfg, 1), sideSizeDp(cfg, -1)) + 4f) <= screenWDp
 
 private class SideHold { var c: IslandContent? = null }
 
@@ -187,13 +194,14 @@ private fun metaballPath(c1: Offset, r1: Float, c2: Offset, r2: Float, maxDist: 
     }
 }
 
-/** Baloncuk merkezinin pencere ortasına göre yatay konumu: sep = 0 adanın ucunun içinde, sep = 1 son konumunda. */
-private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, sep: Float): Float {
-    val ch = geo.ch.toPx()
-    val r = min(36.dp.toPx(), ch / 2f)
+/**
+ * Baloncuk merkezinin pencere ortasına göre yatay konumu: sep = 0 adanın ucunun içinde, sep = 1 son konumunda.
+ * [rs] baloncuğun yarıçapı, [gap] adayla arasındaki boşluk (px).
+ */
+private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, sep: Float, rs: Float, gap: Float): Float {
     val pillW = lerp(geo.cw, geo.ew, progress.w.value).toPx()
-    val capX = pillW / 2f - r
-    return dir * (capX + (2f * r + SIDE_GAP_DP.dp.toPx()) * sep.coerceAtLeast(0f))
+    val capX = pillW / 2f - rs
+    return dir * (capX + (2f * rs + gap) * sep.coerceAtLeast(0f))
 }
 
 /** Ortadaki adanın yanındaki baloncuklar: [0] sağda, [1] solda. Her biri adadan sıvı gibi bölünüp ayrılır, birleşirken geri girer. */
@@ -202,8 +210,31 @@ private fun IslandSides(
     sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, fromSide: Int,
     animExpanded: Boolean, wantExpanded: Boolean, onPress: (Int) -> Unit, onTap: (Int) -> Unit,
 ) {
+    // Üç nokta modu: boştaki yuvalar da siyah nokta olarak görünür (ada genişleyince solar)
+    if (cfg.dotMode) {
+        DotPlaceholder(1, sides.getOrNull(0) != null, geo, progress, cfg, color)
+        DotPlaceholder(-1, sides.getOrNull(1) != null, geo, progress, cfg, color)
+    }
     SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color, fromSide == 1, animExpanded, wantExpanded, { onPress(0) }) { onTap(0) }
     SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color, fromSide == -1, animExpanded, wantExpanded, { onPress(1) }) { onTap(1) }
+}
+
+/** Üç nokta modunda yan noktanın boş hali (olay yokken de nokta görünür). */
+@Composable
+private fun DotPlaceholder(dir: Int, hasTarget: Boolean, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>) {
+    Canvas(Modifier.fillMaxSize()) {
+        val k = (1f - progress.mean * 2f).coerceIn(0f, 1f)
+        if (k <= 0f) return@Canvas
+        if (hasTarget && cfg.glassEnabled) return@Canvas      // cam modunda üst üste binen yarı saydam daire koyulaşmasın
+        val rs = sideSizeDp(cfg, dir).dp.toPx() / 2f
+        val gap = sideGapDp(cfg).dp.toPx()
+        val c = Offset(size.width / 2f + sideCenterX(dir, geo, progress, 1f, rs, gap), geo.ch.toPx() / 2f)
+        drawCircle(color.value.let { it.copy(alpha = it.alpha * k) }, rs, c)
+        if (cfg.borderEnabled) {
+            val bw = cfg.borderWidthDp.dp.toPx()
+            drawCircle(Color(cfg.borderColorArgb).copy(alpha = k), rs - bw / 2f, c, style = Stroke(bw))
+        }
+    }
 }
 
 @Composable
@@ -245,26 +276,32 @@ private fun SideSlot(
             if (!present && k <= 0f) gone[0] = true
             if (k <= 0f) return@Canvas
             val ch = geo.ch.toPx()
-            val r = min(36.dp.toPx(), ch / 2f)
+            val rm = min(36.dp.toPx(), ch / 2f)                      // ortadaki adanın uç yarıçapı
+            val rs = sideSizeDp(cfg, dir).dp.toPx() / 2f             // bu baloncuğun yarıçapı (üç nokta modunda ayrı ayarlı)
+            val gap = sideGapDp(cfg).dp.toPx()
             val cx = size.width / 2f
             val cy = ch / 2f
-            val a = Offset(cx + sideCenterX(dir, geo, progress, 0f), cy)            // adanın bu yandaki ucu (yuvarlak kısım)
-            val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value), cy)     // baloncuk
+            val pillHalf = lerp(geo.cw, geo.ew, progress.w.value).toPx() / 2f
+            val a = Offset(cx + dir * (pillHalf - rm), cy)           // adanın bu yandaki ucu (yuvarlak kısım)
+            val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value, rs, gap), cy)     // baloncuk
             val col = color.value.let { it.copy(alpha = it.alpha * k) }
-            drawCircle(col, r, b)
+            drawCircle(col, rs, b)
             // Neck: daireler birbirinden uzaklaştıkça incelir, belli bir noktada kopar
-            metaballPath(a, r, b, r, 2f * r + SIDE_GAP_DP.dp.toPx() * 0.55f)?.let { drawPath(it, col) }
+            metaballPath(a, rm, b, rs, rm + rs + gap * 0.55f)?.let { drawPath(it, col) }
             if (cfg.borderEnabled) {
                 val bw = cfg.borderWidthDp.dp.toPx()
-                drawCircle(Color(cfg.borderColorArgb).copy(alpha = k), r - bw / 2f, b, style = Stroke(bw))
+                drawCircle(Color(cfg.borderColorArgb).copy(alpha = k), rs - bw / 2f, b, style = Stroke(bw))
             }
         }
         // İçerik: baloncuk ayrıldıkça görünür (albüm kapağı / kırmızı nokta / telefon simgesi)
+        val sizeDp = sideSizeDp(cfg, dir).dp
         Box(
-            Modifier.align(Alignment.TopCenter).requiredSize(geo.ch)
+            Modifier.align(Alignment.TopCenter)
+                .offset { IntOffset(0, ((geo.ch.toPx() - sizeDp.toPx()) / 2f).roundToInt()) }
+                .requiredSize(sizeDp)
                 .graphicsLayer {
                     val s = sep.value
-                    translationX = sideCenterX(dir, geo, progress, s)
+                    translationX = sideCenterX(dir, geo, progress, s, sizeDp.toPx() / 2f, sideGapDp(cfg).dp.toPx())
                     // Dokunulan baloncuğun yerinde, ada genişlemeye başlayana kadar yeni (genişleyen) adanın dairesi durur: altındaki simge görünmesin
                     val hide = tappedOpen && !animExpanded
                     alpha = if (hide) 0f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present) 1f else if (gone[0]) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
@@ -273,7 +310,7 @@ private fun SideSlot(
                 .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); onPress() } }
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (present) onTap() },
             contentAlignment = Alignment.Center,
-        ) { SideGlyph(shown, geo.ch) }
+        ) { SideGlyph(shown, sizeDp) }
     }
 }
 
@@ -292,9 +329,46 @@ private fun SideGlyph(c: IslandContent, ch: Dp) {
                 Text("♪", color = Color.White.copy(alpha = 0.8f), fontSize = 16.sp)
             }
         }
-        is IslandContent.ScreenRec ->
-            if (c.phase == RecPhase.Processing) RecSpinner(14.dp) else RecDot(true, 10.dp)
+        is IslandContent.ScreenRec -> when (c.phase) {
+            RecPhase.Processing -> RecSpinner(14.dp)
+            RecPhase.Countdown -> Text(c.count.toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            else -> RecDot(true, 10.dp)
+        }
         is IslandContent.Call -> PhoneIcon(0f, Modifier.size(14.dp), CallGreen)
+        // Aşağıdakiler üç nokta modunda ortadaki noktada görünür (kapalı ada daire olduğu için)
+        is IslandContent.Notif -> {
+            val sz = ch * 0.62f
+            val ic = c.icon
+            if (ic != null) {
+                Image(
+                    bitmap = ic, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium,
+                    modifier = Modifier.size(sz).clip(RoundedCornerShape(sz * 0.28f)),
+                )
+            } else {
+                Text(c.title.trim().take(1).uppercase().ifEmpty { "•" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
+        is IslandContent.Shazam -> {
+            val sz = ch * 0.60f
+            val cover = c.cover
+            if (c.phase == ShazamPhase.Found && cover != null) {
+                Image(
+                    bitmap = cover, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium,
+                    modifier = Modifier.size(sz).clip(RoundedCornerShape(sz * 0.28f)),
+                )
+            } else {
+                Canvas(Modifier.size(sz)) { drawShazamGlyph(Offset.Zero, size.minDimension, ShazamBlue, 1f) }
+            }
+        }
+        is IslandContent.Status -> Text(
+            when (c.kind) {
+                StatusKind.Ringer -> if (c.silent) "🔕" else "🔔"
+                StatusKind.Charging -> "⚡"
+                StatusKind.Timer -> "⏱"
+                StatusKind.Alarm -> "⏰"
+            },
+            fontSize = 13.sp,
+        )
         else -> Unit
     }
 }
@@ -557,12 +631,12 @@ fun IslandRoot(
             var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
-            if (content is IslandContent.Call) geo = geo.copy(cw = maxOf(cw, CALL_COMPACT_W_DP.dp), eh = if (content.isIncoming) 74.dp else 88.dp)
+            if (content is IslandContent.Call) geo = geo.copy(cw = if (cfg.dotMode) cw else maxOf(cw, CALL_COMPACT_W_DP.dp), eh = if (content.isIncoming) 74.dp else 88.dp)
             if (content is IslandContent.Status && content.kind == StatusKind.Charging) {
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
             // Ekran kaydı: geri sayım / işleniyor aşamasında kapalı ada biraz genişler (sağda rakam / halka için)
-            val recWide = content is IslandContent.ScreenRec &&
+            val recWide = !cfg.dotMode && content is IslandContent.ScreenRec &&
                 (content.phase == RecPhase.Countdown || content.phase == RecPhase.Processing)
             val recCw by animateDpAsState(
                 if (recWide) maxOf(cw, CALL_COMPACT_W_DP.dp) else cw,
@@ -581,8 +655,8 @@ fun IslandRoot(
             // Önceki ortadaki adanın kapalı genişliği: yan baloncuğun konumu buna göre hesaplanmıştı (animasyonun çıkış noktası)
             if (s.fromSide == 0 && !s.expanded) SideEffect { prevCw.value = geo.cw.value }
             val fromX = if (s.fromSide == 0) 0.dp else run {
-                val r = min(36f, geo.ch.value / 2f)
-                (s.fromSide * ((prevCw.value / 2f - r) + (2f * r + SIDE_GAP_DP))).dp
+                val r = sideSizeDp(cfg, s.fromSide) / 2f
+                (s.fromSide * (prevCw.value / 2f + r + sideGapDp(cfg))).dp
             }
             // Eski ortadaki olayın son görüntüsü: baloncuğa basılınca, yeni ada genişlemeye başlayana kadar ortada kalır (boşluk olmasın)
             val ghostWanted = s.fromSide != 0 && s.expanded && !animExpanded
@@ -1028,7 +1102,16 @@ fun IslandPill(
             ) { SideGlyph(content, geo.ch) }
         }
 
-        if (content is IslandContent.Call && !content.isIncoming && compactVisible) {
+        if (cfg.dotMode && compactVisible && !swallow && content !is IslandContent.Idle) {
+            // Üç nokta modu: kapalı hal bir daire (nokta); olay simgesi ortada, ada açılırken solar
+            Box(
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                    .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
+                contentAlignment = Alignment.Center,
+            ) { SideGlyph(content, geo.ch) }
+        }
+
+        if (content is IslandContent.Call && !content.isIncoming && compactVisible && !cfg.dotMode) {
             // Küçültülmüş aktif arama: solda yeşil telefon + süre, sağda renkli ses dalgası
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
@@ -1048,7 +1131,7 @@ fun IslandPill(
             }
         }
 
-        if (content is IslandContent.Notif && compactVisible) {
+        if (content is IslandContent.Notif && compactVisible && !cfg.dotMode) {
             // Küçültülmüş bildirim: solda uygulamanın simgesi (küçülürken görünür)
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val sz = (geo.ch - 12.dp).coerceAtLeast(14.dp)
@@ -1070,7 +1153,7 @@ fun IslandPill(
             }
         }
 
-        if (content is IslandContent.ScreenRec && compactVisible) {
+        if (content is IslandContent.ScreenRec && compactVisible && !cfg.dotMode) {
             // Kapalı ada: kayıtta solda yavaşça yanıp sönen kırmızı nokta; geri sayımda halka + rakam; işlenirken dönen halka
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
@@ -1078,7 +1161,7 @@ fun IslandPill(
             }
         }
 
-        if (content is IslandContent.Shazam && compactVisible) {
+        if (content is IslandContent.Shazam && compactVisible && !cfg.dotMode) {
             // Kapalı ada: solda Shazam logosu, sağda mavi ses dalgası. Ada genişlerken ikisi de bulanıp kaybolur.
             // Bulundu görünümü küçülürken (açıldıktan >1,5 sn sonra) logo yerine şarkının kapağı görünür.
             val shz = remember { ShazamHold() }
@@ -1120,7 +1203,7 @@ fun IslandPill(
             if (swallow) snap() else tween(240, delayMillis = 60),
             label = "swallowAlpha",
         )
-        if (content is IslandContent.Media && compactVisible && !swallow) {
+        if (content is IslandContent.Media && compactVisible && !swallow && !cfg.dotMode) {
             // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val fade = Modifier.graphicsLayer {

@@ -171,7 +171,25 @@ data class IslandSettings(
     val lyricsAnimEnabled: Boolean = true,
     val lyricsAnimStyle: Int = 0,            // 0 Solma, 1 Yukarı kayma, 2 Yakınlaşma, 3 Yaylı zıplama, 4 Yatay kayma, 5 Anında, 6 Adadan çıkış, 7 Adadan tek tek, 8 Soldan açılma, 9 Çevirme, 10 Odak çekme
     val lyricsAnimMs: Int = 380,
+
+    // ---------------------------------------------------------- Üç nokta modu (HarmonyOS tarzı)
+    val dotMode: Boolean = false,            // ada yerine üç nokta; olaylar nokta (baloncuk) olarak görünür
+    val dotMidDp: Float = 28f,               // ortadaki nokta (kameranın üstünde) çapı
+    val dotLeftDp: Float = 24f,              // soldaki nokta çapı
+    val dotRightDp: Float = 24f,             // sağdaki nokta çapı
+    val dotGapDp: Float = 10f,               // noktalar arası boşluk
 ) {
+    /**
+     * Servisin / arayüzün kullandığı etkin ayarlar. Üç nokta modunda kapalı ada, ortadaki noktanın çapında bir daire olur;
+     * kullanıcının kaydedilmiş ada boyutları değişmez (yalnızca bu kopya değişir).
+     */
+    fun effective(): IslandSettings =
+        if (!dotMode) this
+        else copy(
+            compactWidthDp = dotMidDp, compactHeightDp = dotMidDp,
+            showIdle = true, lyricsCompact = false, lyricsOutside = lyricsOutside,
+        )
+
     /** Pencerenin ada etrafında bırakacağı pay (parıltı / zıplama taşması için). */
     fun windowPadDp(): Float = maxOf(
         if (glowEnabled) GLOW_PAD_DP else 0f,
@@ -262,6 +280,8 @@ class SettingsRepository(context: Context) {
         val LY_FILL = booleanPreferencesKey("ly_fill"); val LY_OFF = intPreferencesKey("ly_off")
         val LY_GLOW = booleanPreferencesKey("ly_glow"); val LY_GLOW_L = floatPreferencesKey("ly_glowL")
         val LY_ANIM = booleanPreferencesKey("ly_anim"); val LY_ANIM_S = intPreferencesKey("ly_animS"); val LY_ANIM_MS = intPreferencesKey("ly_animMs")
+        val DOT_ON = booleanPreferencesKey("dot_on"); val DOT_MID = floatPreferencesKey("dot_mid")
+        val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -378,6 +398,11 @@ class SettingsRepository(context: Context) {
             lyricsAnimEnabled = p[K.LY_ANIM] ?: d.lyricsAnimEnabled,
             lyricsAnimStyle = p[K.LY_ANIM_S] ?: d.lyricsAnimStyle,
             lyricsAnimMs = p[K.LY_ANIM_MS] ?: d.lyricsAnimMs,
+            dotMode = p[K.DOT_ON] ?: d.dotMode,
+            dotMidDp = p[K.DOT_MID] ?: d.dotMidDp,
+            dotLeftDp = p[K.DOT_L] ?: d.dotLeftDp,
+            dotRightDp = p[K.DOT_R] ?: d.dotRightDp,
+            dotGapDp = p[K.DOT_GAP] ?: d.dotGapDp,
         )
     }.distinctUntilChanged()
 
@@ -428,6 +453,8 @@ class SettingsRepository(context: Context) {
             it[K.LY_FILL] = s.lyricsFillEnabled; it[K.LY_OFF] = s.lyricsOffsetMs
             it[K.LY_GLOW] = s.lyricsGlowEnabled; it[K.LY_GLOW_L] = s.lyricsGlowLevel
             it[K.LY_ANIM] = s.lyricsAnimEnabled; it[K.LY_ANIM_S] = s.lyricsAnimStyle; it[K.LY_ANIM_MS] = s.lyricsAnimMs
+            it[K.DOT_ON] = s.dotMode; it[K.DOT_MID] = s.dotMidDp
+            it[K.DOT_L] = s.dotLeftDp; it[K.DOT_R] = s.dotRightDp; it[K.DOT_GAP] = s.dotGapDp
         }
     }
 }

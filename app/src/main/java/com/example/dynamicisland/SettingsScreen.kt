@@ -146,6 +146,19 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
             SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
         }
+        sec("Üç nokta modu", "Ada yerine üç nokta; olaylar nokta (baloncuk) olarak görünür") {
+            SwitchRow(
+                "Üç nokta modu",
+                "Ortadaki nokta kameranın üstünde durur. Yeni olay ortadaki noktada, öncekiler yan noktalarda görünür; dokununca ada gibi genişler",
+                draft.dotMode,
+            ) { draft = draft.copy(dotMode = it) }
+            if (draft.dotMode) {
+                SliderRow("Orta nokta (kamera)", draft.dotMidDp, 12f..48f, "${draft.dotMidDp.toInt()} dp") { draft = draft.copy(dotMidDp = it) }
+                SliderRow("Sol nokta", draft.dotLeftDp, 8f..48f, "${draft.dotLeftDp.toInt()} dp") { draft = draft.copy(dotLeftDp = it) }
+                SliderRow("Sağ nokta", draft.dotRightDp, 8f..48f, "${draft.dotRightDp.toInt()} dp") { draft = draft.copy(dotRightDp = it) }
+                SliderRow("Noktalar arası boşluk", draft.dotGapDp, 2f..30f, "${draft.dotGapDp.toInt()} dp") { draft = draft.copy(dotGapDp = it) }
+            }
+        }
         page("Favori uygulamalar", PreviewKind.Favorites) { FavoritesSection(draft) { draft = it } }
 
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
@@ -426,14 +439,14 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
             PreviewCard(
-                draft, mode, { mode = it }, expanded, { expanded = !expanded },
+                draft.effective(), mode, { mode = it }, expanded, { expanded = !expanded },
                 kind = kind, hint = hint, showBig = showBig, onSmallTap = { if (needsBig) bigDismissed = false },
             )
 
             SnapSettingsPager(pages, pager, Modifier.weight(1f))
         }
         if (showBig) {
-            BigPhoneOverlay(draft, kind, hint, { bigDismissed = true }, Modifier.align(Alignment.TopCenter))
+            BigPhoneOverlay(draft.effective(), kind, hint, { bigDismissed = true }, Modifier.align(Alignment.TopCenter))
         }
     }
 }
@@ -693,6 +706,18 @@ private fun PreviewCard(
                                     )
                                 }
                                 // Telefonun içindeki ada: dokununca açılır / kapanır
+                                if (cfg.dotMode && !expanded) {
+                                    // Üç nokta modu önizlemesi: yan noktalar (ortadaki nokta aşağıdaki ada)
+                                    for (dir in intArrayOf(-1, 1)) {
+                                        val d = if (dir > 0) cfg.dotRightDp else cfg.dotLeftDp
+                                        val dx = dir * (cfg.dotMidDp / 2f + cfg.dotGapDp + d / 2f)
+                                        Box(
+                                            Modifier.align(Alignment.TopCenter)
+                                                .offset(x = (cfg.offsetXDp + dx).dp, y = (islandTopV + (cfg.dotMidDp - d) / 2f).dp)
+                                                .size(d.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
+                                        )
+                                    }
+                                }
                                 Box(Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = islandTopV.dp)) {
                                     IslandPill(sample, progress, geo, cfg, SAMPLE_STATE, frame, compactLy, onToggle, {}, {})
                                 }
