@@ -254,7 +254,8 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         // Ekran sabit kalır; yalnızca metalik kenar (hap + simgelerle birlikte) sola kayar
-        val slideMax = with(density) { this@BoxWithConstraints.maxWidth.toPx() } * 0.16f
+        val slideMax = 0f   // yana kayma yok; hareket 3 boyutlu eğilme
+        val camPx = with(density) { 24.dp.toPx() }
 
         Box(Modifier.fillMaxSize().background(TryBg)) {
         // Tüm ölçüler ekran genişliğine göre (ekran görüntüsündeki oranlar)
@@ -265,6 +266,20 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
         val pillHpx = with(density) { pillH.toPx() }
 
         // Ortada gri metalik bant (yanlar siyah); seçili rengin parıltısı bandın içinde yayılır
+        // Metalik kenar (bant + hap + simgeler + yazılar) tek katman: 3 boyutlu eğilir. Ekran ve geri tuşu sabit kalır.
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                val t = tilt.value
+                cameraDistance = camPx
+                rotationZ = -14f * t      // ekran görüntüsünde telefon saat yönünün tersine döner
+                rotationX = 12f * t
+                rotationY = -10f * t
+                translationX = size.width * 0.06f * t
+                translationY = -size.height * 0.01f * t
+                scaleX = 1f + 0.10f * t
+                scaleY = 1f + 0.10f * t
+            },
+        ) {
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -274,22 +289,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                 },
         )
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
-            // Geri tuşu
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp)) {
-                Box(
-                    Modifier.size(46.dp).clip(CircleShape).background(Color(0x33FFFFFF)).clickable(onClick = onClose),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Canvas(Modifier.size(20.dp)) {
-                        val p = Path().apply {
-                            moveTo(size.width * 0.62f, size.height * 0.12f)
-                            lineTo(size.width * 0.28f, size.height * 0.5f)
-                            lineTo(size.width * 0.62f, size.height * 0.88f)
-                        }
-                        drawPath(p, Color.White, style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    }
-                }
-            }
+            Spacer(Modifier.height(58.dp))   // geri tuşunun yeri (tuş en üstte, sabit katmanda)
 
             // Hap + noktalar + başlık + açıklama tek grup olarak dikeyde ortalanır
             Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -324,9 +324,10 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                         Modifier.align(Alignment.Center).size(pillW, pillH)
                             .graphicsLayer {
                                 translationX = -slideMax * tilt.value
-                                scaleX = pressScale; scaleY = pressScale
+                                val pop = 1f + 0.06f * tilt.value   // hap öne doğru çıkar
+                                scaleX = pressScale * pop; scaleY = pressScale * pop
                             }
-                            .drawBehind { drawCapsule(accent) },
+                            .drawBehind { drawCapsule(accent, tilt.value) },
                     )
                     // Simgeler kayar
                     TryItems.forEachIndexed { i, item ->
@@ -342,7 +343,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                                         compositingStrategy = CompositingStrategy.ModulateAlpha
                                         alpha = a
                                         translationX = -slideMax * tilt.value
-                                        val s = if (i == near) pressScale else 1f
+                                        val s = (if (i == near) pressScale else 1f) * (1f + 0.06f * tilt.value)
                                         scaleX = s; scaleY = s
                                     },
                                 contentAlignment = Alignment.Center,
@@ -402,6 +403,26 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                 }
 
                 Spacer(Modifier.weight(1.1f))
+            }
+        }
+        } // eğilen metalik kenar katmanı
+
+        // Geri tuşu (sabit)
+        Column(Modifier.fillMaxSize().systemBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp)) {
+                Box(
+                    Modifier.size(46.dp).clip(CircleShape).background(Color(0x33FFFFFF)).clickable(onClick = onClose),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(Modifier.size(20.dp)) {
+                        val p = Path().apply {
+                            moveTo(size.width * 0.62f, size.height * 0.12f)
+                            lineTo(size.width * 0.28f, size.height * 0.5f)
+                            lineTo(size.width * 0.62f, size.height * 0.88f)
+                        }
+                        drawPath(p, Color.White, style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    }
+                }
             }
         }
         } // telefon
@@ -485,12 +506,29 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
         ),
         blendMode = BlendMode.DstIn,
     )
-    // Kenar sola kayınca bandın sağında önce ince siyah çizgi (ekranın en kenarı), sonra beyaz ekran görünür
+    // Tuşa basınca telefon döner: bandın sağında önce metal yan duvar (kalınlık), sonra ince siyah çerçeve, sonra beyaz ekran
     if (tilt > 0.01f) {
         val edge = left + bw
-        val line = 3.dp.toPx()
-        drawRect(Color(0xFF0A0A0C), topLeft = Offset(edge, 0f), size = Size(line, size.height), alpha = tilt)
-        val wx = edge + line
+        val wall = 10.dp.toPx() * tilt                 // metal çerçevenin kalınlığı
+        val line = 3.dp.toPx() + 2.dp.toPx() * tilt    // ekranın en kenarındaki ince siyah çizgi
+        if (wall > 0.5f) {
+            drawRect(
+                Brush.verticalGradient(
+                    0f to Color.Transparent, 0.22f to Color(0xFFB9BCC3), 0.62f to Color(0xFF8E9197),
+                    0.85f to Color(0xFF4A4B50), 1f to Color.Transparent,
+                    startY = top, endY = bottom,
+                ),
+                topLeft = Offset(edge, top), size = Size(wall, h),
+            )
+            // Yan duvarın ekrana doğru koyulaşması (yuvarlak kenar hissi)
+            drawRect(
+                Brush.horizontalGradient(0f to Color(0x00000000), 1f to Color(0x99000000), startX = edge, endX = edge + wall),
+                topLeft = Offset(edge, top), size = Size(wall, h),
+            )
+        }
+        val bx = edge + wall
+        drawRect(Color(0xFF0A0A0C), topLeft = Offset(bx, 0f), size = Size(line, size.height), alpha = tilt)
+        val wx = bx + line
         val ww = size.width - wx
         if (ww > 0f) {
             drawRect(
@@ -499,6 +537,11 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
                     startX = wx, endX = size.width,
                 ),
                 topLeft = Offset(wx, 0f), size = Size(ww, size.height), alpha = tilt,
+            )
+            // Çerçevenin ekrana düşen gölgesi
+            drawRect(
+                Brush.horizontalGradient(0f to Color(0x66000000), 1f to Color.Transparent, startX = wx, endX = wx + 30.dp.toPx()),
+                topLeft = Offset(wx, 0f), size = Size(min(ww, 30.dp.toPx()), size.height), alpha = tilt,
             )
             // Beyaz ekran aşağı doğru kararır
             drawRect(
@@ -509,15 +552,36 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
     }
 }
 
-private fun DrawScope.drawCapsule(color: Color) {
+private fun DrawScope.drawCapsule(color: Color, depth: Float = 0f) {
     val r = size.width / 2f
     // Yumuşak dış parıltı: büyüyen, sönük halkalar
     for (k in 9 downTo 1) {
         val e = k * 2.5.dp.toPx()
         drawRoundRect(color.copy(alpha = 0.045f), Offset(-e, -e), Size(size.width + 2f * e, size.height + 2f * e), CornerRadius(r + e))
     }
+    // Kalınlık: sağ-aşağıya doğru koyulaşan kopyalar (tuş yüksekliği); yalnızca telefon eğikken görünür
+    if (depth > 0.01f) {
+        val steps = 10
+        val dx = 0.8.dp.toPx() * depth
+        val dy = 1.2.dp.toPx() * depth
+        drawRoundRect(
+            Color(0x66000000), Offset(dx * (steps + 2), dy * (steps + 2)), size, CornerRadius(r),
+        )
+        for (k in steps downTo 1) {
+            drawRoundRect(
+                mix(color, Color.Black, 0.40f + 0.35f * k / steps), Offset(dx * k, dy * k), size, CornerRadius(r),
+            )
+        }
+    }
     drawRoundRect(Brush.verticalGradient(listOf(mix(color, Color.White, 0.22f), color)), cornerRadius = CornerRadius(r))
     drawRoundRect(mix(color, Color.Black, 0.2f), cornerRadius = CornerRadius(r), style = Stroke(size.width * 0.057f))
+    if (depth > 0.01f) {
+        // Sol-üst kenarda ince parlak vurgu
+        drawRoundRect(
+            Color.White.copy(alpha = 0.22f * depth), Offset(size.width * 0.05f, size.width * 0.05f),
+            Size(size.width * 0.9f, size.height - size.width * 0.1f), CornerRadius(r * 0.9f), style = Stroke(1.5.dp.toPx()),
+        )
+    }
 }
 
 // ---------------------------------------------------------------- Simgeler (24x24 birimlik çizim)
