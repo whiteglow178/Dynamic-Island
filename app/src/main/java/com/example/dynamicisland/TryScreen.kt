@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -144,6 +146,20 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     var musicOn by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
     var glowY by remember { mutableFloatStateOf(0f) } // hapın ekrandaki dikey merkezi (bant parıltısı buna göre çizilir)
+    // Telefon eğilme animasyonu: 0 = düz, 1 = yana kaymış ve eğik
+    val tilt = remember { Animatable(0f) }
+    val tiltJob = remember { arrayOfNulls<Job>(1) }
+    val playTilt: (Long) -> Unit = { holdMs ->
+        tiltJob[0]?.cancel()
+        tiltJob[0] = scope.launch {
+            tilt.animateTo(1f, spring(0.72f, 90f))
+            delay(holdMs)
+            tilt.animateTo(0f, spring(0.8f, 110f))
+        }
+    }
+    val holdFor: (Int) -> Long = { idx ->
+        when (idx) { 7 -> 8500L; 4 -> 6000L; 8 -> 4500L; 3, 5 -> 4200L; else -> 3000L }
+    }
     val pressScale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "tryPress")
 
     // Ekrandan çıkarken demo müziği kaldır
@@ -236,7 +252,46 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     val i1 = (i0 + 1).coerceAtMost(last)
     val accent = mix(TryItems[i0].color, TryItems[i1].color, (pos.value - i0).coerceIn(0f, 1f))
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(TryBg)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        val camPx = with(density) { 24.dp.toPx() }
+
+        // Telefon yana kayınca arkada görünen zemin (koyu turkuaz kumaş)
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer { alpha = tilt.value }
+                .background(
+                    Brush.radialGradient(listOf(Color(0xFF1C6670), Color(0xFF0B3A44), Color(0xFF04171C)))
+                ),
+        )
+
+        // "Telefon": içindeki her şey birlikte eğilir ve yana kayar
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer {
+                    val t = tilt.value
+                    cameraDistance = camPx
+                    rotationZ = 16f * t
+                    rotationX = 14f * t
+                    rotationY = -12f * t
+                    translationX = size.width * 0.10f * t
+                    translationY = size.height * 0.06f * t
+                    scaleX = 1f + 0.10f * t
+                    scaleY = 1f + 0.10f * t
+                    shape = RoundedCornerShape((56f * t).dp)
+                    clip = true
+                }
+                .drawWithContent {
+                    drawContent()
+                    val t = tilt.value
+                    if (t > 0.01f) {
+                        drawRoundRect(
+                            Color(0xFF14262B), cornerRadius = CornerRadius(56.dp.toPx() * t),
+                            style = Stroke(7.dp.toPx() * t),
+                        )
+                    }
+                }
+                .background(TryBg),
+        ) {
         // Tüm ölçüler ekran genişliğine göre (ekran görüntüsündeki oranlar)
         val pillW = min(maxWidth.value * 0.227f, maxHeight.value * 0.11f).dp
         val pillH = pillW * 2.03f
@@ -250,7 +305,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawBehind {
                     val cy = if (glowY > 0f) glowY else size.height * 0.4f
-                    drawMetalBand(accent, cy, pillWpx, pillHpx)
+                    drawMetalBand(accent, cy, pillWpx, pillHpx, tilt.value)
                 },
         )
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
@@ -280,7 +335,8 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                     Modifier.fillMaxWidth().height(pillH + 40.dp)
                         .onGloballyPositioned {
                             val y = it.positionInRoot().y + it.size.height / 2f
-                            if (abs(y - glowY) > 0.5f) glowY = y
+                            // Eğilme sırasında konum değişir; parıltı merkezini yalnızca telefon düzken güncelle
+                            if (tilt.value == 0f && abs(y - glowY) > 0.5f) glowY = y
                         }
                         .pointerInput(Unit) {
                             var startPage = 0
@@ -337,7 +393,11 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                         Modifier.align(Alignment.Center).size(pillW + 20.dp, pillH + 20.dp).pointerInput(Unit) {
                             detectTapGestures(
                                 onPress = { pressed = true; tryAwaitRelease(); pressed = false },
-                                onTap = { trigger(pos.value.roundToInt().coerceIn(0, last)) },
+                                onTap = {
+                                    val idx = pos.value.roundToInt().coerceIn(0, last)
+                                    if (isIslandRunning()) playTilt(holdFor(idx))
+                                    trigger(idx)
+                                },
                             )
                         },
                     )
@@ -375,6 +435,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                 Spacer(Modifier.weight(1.1f))
             }
         }
+        } // telefon
     }
 }
 
@@ -382,7 +443,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
  * iPhone Eylem Düğmesi ekranındaki gibi: ortada gri metalik dikey bant, üstte ve altta siyaha solar, yanlar siyah.
  * [cy] hapın dikey merkezi, [pw]/[ph] hapın piksel boyutu; bant hapa göre ölçeklenir (genişlik ≈ 2.4 x hap).
  */
-private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Float) {
+private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Float, tilt: Float) {
     val bw = pw * 2.4f
     val left = (size.width - bw) / 2f
     val top = cy - ph * 1.6f
@@ -419,6 +480,27 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
             topLeft = Offset(x - 7.dp.toPx(), top), size = Size(14.dp.toPx(), h),
         )
     }
+    // Sol alt tarafta yumuşak beyaz ışık (telefon kenarına vuran yansıma)
+    drawRect(
+        Brush.radialGradient(
+            listOf(Color(0x59FFFFFF), Color.Transparent),
+            center = Offset(left + bw * 0.22f, cy + ph * 0.95f), radius = bw * 0.55f,
+        ),
+    )
+    // Altta parmak silueti (düğmeye basan parmak)
+    val archTop = cy + ph * 0.5f + 175.dp.toPx()
+    val archH = ph * 1.2f
+    val archW = pw * 1.04f
+    drawRoundRect(
+        Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent), startY = archTop, endY = archTop + archH),
+        topLeft = Offset((size.width - archW) / 2f, archTop), size = Size(archW, archH),
+        cornerRadius = CornerRadius(archW / 2f),
+    )
+    drawRoundRect(
+        Brush.verticalGradient(listOf(Color(0x24FFFFFF), Color.Transparent), startY = archTop, endY = archTop + archH),
+        topLeft = Offset((size.width - archW) / 2f, archTop), size = Size(archW, archH),
+        cornerRadius = CornerRadius(archW / 2f), style = Stroke(2.dp.toPx()),
+    )
     // Seçili rengin parıltısı
     drawRect(
         Brush.radialGradient(
@@ -434,6 +516,22 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
         ),
         blendMode = BlendMode.DstIn,
     )
+    // Telefon eğilince bandın sağında parlayan açık gri yan yüzey görünür
+    if (tilt > 0.01f) {
+        val sx = left + bw * 0.97f
+        val sw = bw * 0.62f
+        drawRect(
+            Brush.horizontalGradient(
+                0f to Color(0xFF3A3F42), 0.18f to Color(0xFFC3CBCC), 0.6f to Color(0xFFE6ECEB), 1f to Color(0xFFBFC8C9),
+                startX = sx, endX = sx + sw,
+            ),
+            topLeft = Offset(sx, 0f), size = Size(sw, size.height), alpha = tilt,
+        )
+        drawRect(
+            Brush.verticalGradient(0.55f to Color.Transparent, 1f to TryBg.copy(alpha = 0.95f)),
+            alpha = tilt,
+        )
+    }
 }
 
 private fun DrawScope.drawCapsule(color: Color) {
