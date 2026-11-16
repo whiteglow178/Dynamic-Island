@@ -52,6 +52,9 @@ class IslandAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var assistantOn = false
+    // Pencere kimliği -> paket adı. Pencerenin paketi değişmez; her kontrolde w.root ile sisteme (binder) sormak
+    // yerine bellekte tutulur. Gemini açılırken sistem yoğunken ana thread'i bloke eden asıl iş buydu.
+    private val winPkgCache = HashMap<Int, String>()
     private var eventSaysOn = false      // pencere listesi alınamazsa olay tabanlı yedek
     private val evLog = ArrayDeque<String>()
 
@@ -95,6 +98,7 @@ class IslandAccessibilityService : AccessibilityService() {
 
     private fun stopAssistantWatch() {
         handler.removeCallbacks(check)
+        winPkgCache.clear()
         eventSaysOn = false
         runCatching { setAssistant(false) }
     }
@@ -183,10 +187,14 @@ class IslandAccessibilityService : AccessibilityService() {
         val ws = runCatching { windows }.getOrNull()
         if (ws.isNullOrEmpty()) return eventSaysOn
         val dm = resources.displayMetrics
+        winPkgCache.keys.retainAll(ws.map { it.id }.toSet())     // kapanan pencereleri bellekten at
         val infos = ws.map { w ->
             val r = Rect()
             runCatching { w.getBoundsInScreen(r) }
-            Win(w, runCatching { w.root?.packageName?.toString() }.getOrNull(), r)
+            // Paketi bilinen pencere için sisteme sorma; bilinmeyen (null) olanlar önceki gibi her seferinde tekrar denenir
+            val pkg = winPkgCache[w.id] ?: runCatching { w.root?.packageName?.toString() }.getOrNull()
+                ?.also { winPkgCache[w.id] = it }
+            Win(w, pkg, r)
         }
         val hasAssistWindow = infos.any { isAssist(it.pkg) }
         // Paket adı okunamayan bir pencere varsa (bar odaksız olabilir) olay bilgisine güven

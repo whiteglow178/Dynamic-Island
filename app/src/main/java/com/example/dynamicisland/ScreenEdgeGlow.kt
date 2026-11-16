@@ -6,9 +6,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -17,6 +15,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,7 +36,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
@@ -70,15 +71,18 @@ fun ScreenEdgeGlow(active: StateFlow<Boolean>, cornerPx: Float) {
     var warm by remember { mutableStateOf(false) }
     val reveal = remember { Animatable(0f) }   // 0 -> 1: sağdan büyüyen dalga
     val fade = remember { Animatable(0f) }     // genel görünürlük
+    val hue = remember { Animatable(0f) }      // renk akışı (yalnızca görünürken çalışır)
+    val pulse = remember { Animatable(0.9f) }  // nefes alma (yalnızca görünürken çalışır)
 
     val lw = max((size.width * RENDER_SCALE).roundToInt(), 2)
     val lh = max((size.height * RENDER_SCALE).roundToInt(), 2)
+    val visible by remember { derivedStateOf { on || fade.value > 0.001f } }
 
     // Parlama resimleri asistan açılmadan ÖNCE (pencere eklenir eklenmez) arka planda hazırlanır
     LaunchedEffect(size, cornerPx) {
         if (size.width > 1 && size.height > 1) {
             glows = withContext(Dispatchers.Default) { buildGlowBitmaps(lw, lh, cornerPx * RENDER_SCALE, density * RENDER_SCALE) }
-            warm = true; delay(350); warm = false     // görünmez ısınma çizimi
+            warm = true; delay(350); warm = false     // görünmez ısınma çizimi (6 resim + shader + katman)
         }
     }
 
@@ -92,16 +96,26 @@ fun ScreenEdgeGlow(active: StateFlow<Boolean>, cornerPx: Float) {
         }
     }
 
+    // Sonsuz animasyonlar yalnızca parlama görünürken çalışır; görünmezken hiçbir kare üretilmez (pil)
+    LaunchedEffect(visible) {
+        if (!visible) return@LaunchedEffect
+        hue.snapTo(0f); pulse.snapTo(0.9f)
+        coroutineScope {
+            launch { hue.animateTo(1f, infiniteRepeatable(tween(9000, easing = LinearEasing))) }
+            launch { pulse.animateTo(1f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse)) }
+        }
+    }
+
     Box(Modifier.fillMaxSize().onSizeChanged { size = it }, contentAlignment = Alignment.Center) {
         val g = glows
-        val visible = on || fade.value > 0.001f
-        // Görünmezken (ve ısınma bitince) hiçbir şey çizilmez, sonsuz animasyon çalışmaz
-        if (g != null && (visible || warm)) {
+        // Katman, resimler hazır olur olmaz bir kez kurulur ve BELLEKTE KALIR (alpha=0 iken çizilmez, maliyeti yok).
+        // Böylece tetik anında katman/kompozisyon oluşturma işi kalmaz.
+        if (g != null) {
             val dens = LocalDensity.current
             val wDp = with(dens) { lw.toDp() }
             val hDp = with(dens) { lh.toDp() }
             EdgeGlowLayer(
-                glows = g, reveal = reveal, fade = fade, warmOnly = warm && !visible,
+                glows = g, reveal = reveal, fade = fade, hue = hue, pulse = pulse, warmOnly = warm && !visible,
                 sx = size.width / lw.toFloat(), sy = size.height / lh.toFloat(),
                 modifier = Modifier.requiredSize(wDp, hDp),
             )
@@ -193,18 +207,16 @@ private fun buildGlowBitmaps(w: Int, h: Int, cornerPx: Float, densityScaled: Flo
             val idx = (((uu[i] + off) % 1f) * 512f).toInt() and 511
             pix[i] = ((a * 255f + 0.5f).toInt() shl 24) or lut[idx]
         }
-        Bitmap.createBitmap(pix, w, h, Bitmap.Config.ARGB_8888).asImageBitmap()
+        Bitmap.createBitmap(pix, w, h, Bitmap.Config.ARGB_8888).also { it.prepareToDraw() }.asImageBitmap()   // GPU'ya önceden yükle
     }
 }
 
 @Composable
 private fun EdgeGlowLayer(
-    glows: List<ImageBitmap>, reveal: Animatable<Float, *>, fade: Animatable<Float, *>, warmOnly: Boolean,
+    glows: List<ImageBitmap>, reveal: Animatable<Float, *>, fade: Animatable<Float, *>,
+    hue: Animatable<Float, *>, pulse: Animatable<Float, *>, warmOnly: Boolean,
     sx: Float, sy: Float, modifier: Modifier,
 ) {
-    val t = rememberInfiniteTransition(label = "edgeGlow")
-    val hue = t.animateFloat(0f, 1f, infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "hue")
-    val pulse = t.animateFloat(0.9f, 1f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "pulse")
     val k = glows.size
 
     Canvas(
@@ -219,12 +231,17 @@ private fun EdgeGlowLayer(
         val a = pulse.value
 
         // 1) Renk akışı: iki komşu kaydırılmış paleti toplamsal olarak karıştır
-        val x = hue.value * k
-        val i0 = x.toInt().coerceIn(0, k - 1)
-        val tt = x - i0
-        val i1 = (i0 + 1) % k
-        drawImage(glows[i0], alpha = (1f - tt) * a, blendMode = BlendMode.Plus)
-        drawImage(glows[i1], alpha = tt * a, blendMode = BlendMode.Plus)
+        if (warmOnly) {
+            // Isınma: 6 resmin hepsini bir kez çiz ki GPU dokuları önceden yüklensin (animasyon sırasında yükleme takılması olmasın)
+            for (img in glows) drawImage(img, alpha = 0.05f, blendMode = BlendMode.Plus)
+        } else {
+            val x = hue.value * k
+            val i0 = x.toInt().coerceIn(0, k - 1)
+            val tt = x - i0
+            val i1 = (i0 + 1) % k
+            drawImage(glows[i0], alpha = (1f - tt) * a, blendMode = BlendMode.Plus)
+            drawImage(glows[i1], alpha = tt * a, blendMode = BlendMode.Plus)
+        }
 
         if (p < 1f) {
             // 2) Dalga: merkezi sağ kenarın ortası olan büyüyen daire. Yumuşak cephe: içi görünür, dışı gizli
