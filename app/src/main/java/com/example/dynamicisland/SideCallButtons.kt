@@ -217,16 +217,16 @@ class SideCallOverlay(
 }
 
 /** Kapsülün boyutu, kenardan boşluğu ve ekrandaki dikey konumu (ekran yüksekliğinin oranı). */
-private const val SIDE_W_DP = 58f
-private const val SIDE_H_DP = 116f
-private const val SIDE_MARGIN_DP = 6f
-private const val SIDE_Y_FRACTION = 0.58f
+internal const val SIDE_W_DP = 58f
+internal const val SIDE_H_DP = 116f
+internal const val SIDE_MARGIN_DP = 6f
+internal const val SIDE_Y_FRACTION = 0.58f
 
 private val SideGreen = Color(0xFF34C759)
 private val SideRed = Color(0xFFFF3B30)
 
 @Composable
-private fun SideCallPill(p: SideCallPrefs, onAnswer: () -> Unit, onDecline: () -> Unit) {
+internal fun SideCallPill(p: SideCallPrefs, onAnswer: () -> Unit, onDecline: () -> Unit) {
     Column(
         Modifier.fillMaxSize()
             .clip(RoundedCornerShape(50))

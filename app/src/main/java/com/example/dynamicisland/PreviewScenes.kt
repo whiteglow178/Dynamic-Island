@@ -1,44 +1,27 @@
 package com.example.dynamicisland
 
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -105,12 +88,20 @@ private fun rememberLoopOpen(): Boolean {
     return open
 }
 
-private val ASSIST_COLORS = listOf(
-    Color(0xFF4F8CFF), Color(0xFFB45CFF), Color(0xFFFF5FA2),
-    Color(0xFFFFA24D), Color(0xFF3FD2E8), Color(0xFF4F8CFF),
-)
-
 private fun previewTop(cfg: IslandSettings) = (PHONE_BASE_TOP_DP + cfg.offsetYDp).coerceAtLeast(0f)
+
+/**
+ * Gerçek [IslandPill]'i (asıl adayla aynı bileşen) ayarlarla çizer; önizleme taklit değil, uygulamanın kendisidir.
+ * Açılıp kapanma, şekil, renk, cam, çerçeve, parıltı hep gerçek koddan gelir.
+ */
+@Composable
+private fun PreviewPill(content: IslandContent, open: Boolean, geo: Geo, cfg: IslandSettings, modifier: Modifier) {
+    val progress = rememberIslandProgress(cfg, open)
+    val frame = remember { LyricFrame(mutableIntStateOf(-1), mutableFloatStateOf(0f)) }
+    Box(modifier.offset(x = cfg.offsetXDp.dp, y = previewTop(cfg).dp)) {
+        IslandPill(content, progress, geo, cfg, LyricsState.Idle, frame, false, {}, {}, {})
+    }
+}
 
 /** Telefonun içine (sanal ekrana) çizilen ayar önizlemesi. Island türü SettingsScreen içinde çizilir. */
 @Composable
@@ -138,49 +129,19 @@ internal fun previewHint(kind: PreviewKind, cfg: IslandSettings, bigDismissed: B
 // ---------------------------------------------------------------- Asistan
 @Composable
 private fun AssistantScene(cfg: IslandSettings) {
-    val topV = previewTop(cfg)
     val open = if (cfg.assistantEnabled) rememberLoopOpen() else false
-    val phase by rememberInfiniteTransition(label = "asst").animateFloat(
-        0f, 1f, infiniteRepeatable(tween(2600, easing = LinearEasing)), label = "phase",
-    )
-    val glow by animateFloatAsState(if (open) 1f else 0f, tween(380), label = "glow")
-
     Box(Modifier.fillMaxSize()) {
         if (cfg.assistantEnabled && cfg.assistantFullWidth) {
-            // Ada kutusu yok: renkli animasyon ekranın solundan sağına uzanır
-            val h by animateDpAsState(if (open) cfg.assistantHeightDp.dp else 0.dp, spring(0.8f, Spring.StiffnessLow), label = "barH")
+            // IslandRoot ile aynı: ada kutusu yok, gerçek AssistantOrb ekranın solundan sağına çizilir
+            val barAlpha by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 350 else 250), label = "orbBar")
             Box(
-                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(h)
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen; alpha = glow }
-                    .drawWithContent {
-                        drawContent()
-                        drawRect(Brush.verticalGradient(listOf(Color.Black, Color.Transparent)), blendMode = BlendMode.DstIn)
-                    }
-                    .drawBehind {
-                        val w = size.width
-                        drawRect(Brush.horizontalGradient(ASSIST_COLORS, startX = phase * w, endX = phase * w + w, tileMode = TileMode.Repeated))
-                    },
-            )
+                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(cfg.assistantHeightDp.dp)
+                    .graphicsLayer { alpha = barAlpha },
+            ) { AssistantOrb(fullWidth = true) }
         } else {
-            val w by animateDpAsState(if (open) cfg.assistantWidthDp.dp else cfg.compactWidthDp.dp, spring(0.72f, Spring.StiffnessMediumLow), label = "w")
-            val h by animateDpAsState(if (open) cfg.assistantHeightDp.dp else cfg.compactHeightDp.dp, spring(0.72f, Spring.StiffnessMediumLow), label = "h")
-            val shape = RoundedCornerShape(minOf(h / 2, 44.dp))
-            Box(
-                Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = topV.dp)
-                    .size(w, h).clip(shape).background(Color.Black),
-            ) {
-                Box(
-                    Modifier.fillMaxSize().graphicsLayer { alpha = glow }
-                        .drawBehind {
-                            val ww = size.width
-                            drawRect(Brush.horizontalGradient(ASSIST_COLORS, startX = phase * ww, endX = phase * ww + ww, tileMode = TileMode.Repeated))
-                        },
-                )
-                Box(
-                    Modifier.fillMaxSize().graphicsLayer { alpha = glow }
-                        .background(Brush.radialGradient(listOf(Color.Black.copy(alpha = 0.88f), Color.Transparent))),
-                )
-            }
+            // IslandRoot ile aynı geometri: açık boyut = asistan genişliği / yüksekliği; içerik gerçek AssistantOrb
+            val geo = islandGeo(cfg, false).copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
+            PreviewPill(IslandContent.Assistant, open, geo, cfg, Modifier.align(Alignment.TopCenter))
         }
     }
 }
@@ -190,59 +151,24 @@ private fun AssistantScene(cfg: IslandSettings) {
 private fun FavoritesScene(cfg: IslandSettings) {
     val ctx = LocalContext.current
     val pkgs = cfg.favoritePkgList()
-    val apps by produceState<List<Pair<String, ImageBitmap?>>>(emptyList(), pkgs) {
+    val apps by produceState<List<FavApp>>(emptyList(), pkgs) {
         value = withContext(Dispatchers.Default) {
             val pm = ctx.packageManager
             pkgs.map { pkg ->
                 val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrDefault("")
-                val icon = runCatching { pm.getApplicationIcon(pkg).toBitmap(96, 96).asImageBitmap() }.getOrNull()
-                label to icon
+                val icon: ImageBitmap? = runCatching { pm.getApplicationIcon(pkg).toBitmap(96, 96).asImageBitmap() }.getOrNull()
+                FavApp(pkg, label, icon)
             }
         }
     }
-    val items: List<Pair<String, ImageBitmap?>> = if (apps.isEmpty()) List(FAV_COLUMNS) { "Uygulama" to null } else apps
-    val rows = ((items.size + FAV_COLUMNS - 1) / FAV_COLUMNS).coerceAtLeast(1)
-    val topInset = cfg.compactHeightDp
-    val fullH = topInset + 6f + rows * FAV_ROW_DP + 8f
+    // Hiç uygulama seçilmediyse yer tutucu simgeler
+    val items = if (apps.isEmpty()) List(FAV_COLUMNS) { FavApp("", "Uygulama", null) } else apps
+    val content = remember(items) { IslandContent.Favorites(items) }
+    val geo = islandGeo(cfg, false).copy(eh = cfg.favoritesHeightDp(items.size).dp)
     val open = if (cfg.favoritesEnabled) rememberLoopOpen() else false
-    val w by animateDpAsState(if (open) cfg.expandedWidthDp.dp else cfg.compactWidthDp.dp, spring(0.78f, Spring.StiffnessMediumLow), label = "favW")
-    val h by animateDpAsState(if (open) fullH.dp else cfg.compactHeightDp.dp, spring(0.78f, Spring.StiffnessMediumLow), label = "favH")
-    val content by animateFloatAsState(if (open) 1f else 0f, tween(300), label = "favContent")
-    val shape = RoundedCornerShape(minOf(h / 2, 32.dp))
 
     Box(Modifier.fillMaxSize()) {
-        Box(
-            Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = previewTop(cfg).dp)
-                .size(w, h).clip(shape).background(Color.Black),
-        ) {
-            Column(
-                Modifier.fillMaxSize().padding(top = (topInset + 6f).dp, start = 12.dp, end = 12.dp)
-                    .graphicsLayer { alpha = content },
-            ) {
-                items.chunked(FAV_COLUMNS).forEach { row ->
-                    Row(Modifier.fillMaxWidth().height(FAV_ROW_DP.dp)) {
-                        row.forEach { (label, icon) ->
-                            Column(
-                                Modifier.weight(1f).padding(vertical = 4.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                            ) {
-                                val iconShape = RoundedCornerShape(12.dp)
-                                if (icon != null) Image(icon, null, Modifier.size(48.dp).clip(iconShape), contentScale = ContentScale.Fit)
-                                else Box(Modifier.size(48.dp).clip(iconShape).background(Color.White.copy(alpha = 0.18f)))
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    label, color = Color.White.copy(alpha = 0.85f), fontSize = 10.5.sp, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 2.dp),
-                                )
-                            }
-                        }
-                        repeat(FAV_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-            }
-        }
+        PreviewPill(content, open, geo, cfg, Modifier.align(Alignment.TopCenter))
     }
 }
 
@@ -254,63 +180,29 @@ private fun SideCallScene(cfg: IslandSettings) {
     val open = if (p.enabled) rememberLoopOpen() else false
     val slide by animateDpAsState(if (open) 0.dp else 72.dp, spring(0.8f, Spring.StiffnessLow), label = "sideSlide")
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val pillH = 116.dp
-        val y = maxHeight * 0.58f - pillH / 2
+    // Gelen arama adası: gerçek IslandPill + gerçek CallContent (IslandUi.kt ile aynı geometri: açık yükseklik 74 dp)
+    val call = remember {
+        IslandContent.Call(name = "Ayşe", isIncoming = true, duration = null, avatar = null)
+    }
+    val geo = islandGeo(cfg, false).copy(eh = 74.dp)
 
-        // Gelen arama adası
-        val callShape = RoundedCornerShape(30.dp)
-        val callW = if (p.enabled) minOf(cfg.expandedWidthDp.dp, maxWidth - 24.dp) else cfg.compactWidthDp.dp
-        val callH = if (p.enabled) 60.dp else cfg.compactHeightDp.dp
-        Box(
-            Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = previewTop(cfg).dp)
-                .size(callW, callH).clip(callShape).background(Color.Black),
-        ) {
-            if (p.enabled) {
-                Row(
-                    Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Ayşe", color = Color.White, fontSize = 14.sp, maxLines = 1)
-                        Text("Gelen arama", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp, maxLines = 1)
-                    }
-                    Box(Modifier.size(30.dp).clip(CircleShape).background(SIDE_PREVIEW_RED), contentAlignment = Alignment.Center) {
-                        Text("✆", color = Color.White, fontSize = 15.sp, modifier = Modifier.rotate(135f))
-                    }
-                    Box(Modifier.size(30.dp).clip(CircleShape).background(SIDE_PREVIEW_GREEN), contentAlignment = Alignment.Center) {
-                        Text("✆", color = Color.White, fontSize = 15.sp)
-                    }
-                }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Gerçek pencere: kenardan SIDE_MARGIN_DP boşluk, dikey konum ekran yüksekliğinin SIDE_Y_FRACTION'ı
+        val y = maxHeight * SIDE_Y_FRACTION - SIDE_H_DP.dp / 2
+        val m = SIDE_MARGIN_DP.dp
+
+        PreviewPill(call, open, geo, cfg, Modifier.align(Alignment.TopCenter))
+
+        // Gerçek SideCallPill (ayarlardaki şeffaflıkla); servis her kenar için ayrı pencere açar
+        if (p.enabled && (p.side == 0 || p.side == 2)) {
+            Box(Modifier.align(Alignment.TopStart).offset(x = m - slide, y = y).size(SIDE_W_DP.dp, SIDE_H_DP.dp)) {
+                SideCallPill(p, {}, {})
             }
         }
-
-        if (p.enabled && (p.side == 0 || p.side == 2)) {
-            SidePillPreview(p.transparency, Modifier.align(Alignment.TopStart).offset(x = 6.dp - slide, y = y))
-        }
         if (p.enabled && (p.side == 1 || p.side == 2)) {
-            SidePillPreview(p.transparency, Modifier.align(Alignment.TopEnd).offset(x = (-6).dp + slide, y = y))
-        }
-    }
-}
-
-private val SIDE_PREVIEW_GREEN = Color(0xFF34C759)
-private val SIDE_PREVIEW_RED = Color(0xFFFF3B30)
-
-@Composable
-private fun SidePillPreview(transparency: Float, modifier: Modifier) {
-    Column(
-        modifier.size(58.dp, 116.dp).clip(RoundedCornerShape(50))
-            .background(Color.Black.copy(alpha = (1f - transparency).coerceIn(0f, 1f))),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
-    ) {
-        Box(Modifier.size(46.dp).clip(CircleShape).background(SIDE_PREVIEW_GREEN), contentAlignment = Alignment.Center) {
-            Text("✆", color = Color.White, fontSize = 22.sp)
-        }
-        Box(Modifier.size(46.dp).clip(CircleShape).background(SIDE_PREVIEW_RED), contentAlignment = Alignment.Center) {
-            Text("✆", color = Color.White, fontSize = 22.sp, modifier = Modifier.rotate(135f))
+            Box(Modifier.align(Alignment.TopEnd).offset(x = -m + slide, y = y).size(SIDE_W_DP.dp, SIDE_H_DP.dp)) {
+                SideCallPill(p, {}, {})
+            }
         }
     }
 }
