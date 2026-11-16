@@ -253,45 +253,10 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     val accent = mix(TryItems[i0].color, TryItems[i1].color, (pos.value - i0).coerceIn(0f, 1f))
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
-        val camPx = with(density) { 24.dp.toPx() }
+        // Ekran sabit kalır; yalnızca metalik kenar (hap + simgelerle birlikte) sola kayar
+        val slideMax = with(density) { this@BoxWithConstraints.maxWidth.toPx() } * 0.16f
 
-        // Telefon yana kayınca arkada görünen zemin (koyu turkuaz kumaş)
-        Box(
-            Modifier.fillMaxSize()
-                .graphicsLayer { alpha = tilt.value }
-                .background(
-                    Brush.radialGradient(listOf(Color(0xFF1C6670), Color(0xFF0B3A44), Color(0xFF04171C)))
-                ),
-        )
-
-        // "Telefon": içindeki her şey birlikte eğilir ve yana kayar
-        Box(
-            Modifier.fillMaxSize()
-                .graphicsLayer {
-                    val t = tilt.value
-                    cameraDistance = camPx
-                    rotationZ = 16f * t
-                    rotationX = 14f * t
-                    rotationY = -12f * t
-                    translationX = size.width * 0.10f * t
-                    translationY = size.height * 0.06f * t
-                    scaleX = 1f + 0.10f * t
-                    scaleY = 1f + 0.10f * t
-                    shape = RoundedCornerShape((56f * t).dp)
-                    clip = true
-                }
-                .drawWithContent {
-                    drawContent()
-                    val t = tilt.value
-                    if (t > 0.01f) {
-                        drawRoundRect(
-                            Color(0xFF14262B), cornerRadius = CornerRadius(56.dp.toPx() * t),
-                            style = Stroke(7.dp.toPx() * t),
-                        )
-                    }
-                }
-                .background(TryBg),
-        ) {
+        Box(Modifier.fillMaxSize().background(TryBg)) {
         // Tüm ölçüler ekran genişliğine göre (ekran görüntüsündeki oranlar)
         val pillW = min(this@BoxWithConstraints.maxWidth.value * 0.227f, this@BoxWithConstraints.maxHeight.value * 0.11f).dp
         val pillH = pillW * 2.03f
@@ -305,7 +270,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawBehind {
                     val cy = if (glowY > 0f) glowY else size.height * 0.4f
-                    drawMetalBand(accent, cy, pillWpx, pillHpx, tilt.value)
+                    drawMetalBand(accent, cy, pillWpx, pillHpx, tilt.value, -slideMax * tilt.value)
                 },
         )
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
@@ -357,7 +322,10 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                     // Renkli hap sabit: yerinde durur, kaydırınca yalnızca rengi karışarak değişir
                     Box(
                         Modifier.align(Alignment.Center).size(pillW, pillH)
-                            .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+                            .graphicsLayer {
+                                translationX = -slideMax * tilt.value
+                                scaleX = pressScale; scaleY = pressScale
+                            }
                             .drawBehind { drawCapsule(accent) },
                     )
                     // Simgeler kayar
@@ -373,6 +341,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                                     .graphicsLayer {
                                         compositingStrategy = CompositingStrategy.ModulateAlpha
                                         alpha = a
+                                        translationX = -slideMax * tilt.value
                                         val s = if (i == near) pressScale else 1f
                                         scaleX = s; scaleY = s
                                     },
@@ -443,9 +412,9 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
  * iPhone Eylem Düğmesi ekranındaki gibi: ortada gri metalik dikey bant, üstte ve altta siyaha solar, yanlar siyah.
  * [cy] hapın dikey merkezi, [pw]/[ph] hapın piksel boyutu; bant hapa göre ölçeklenir (genişlik ≈ 2.4 x hap).
  */
-private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Float, tilt: Float) {
+private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Float, tilt: Float, shift: Float) {
     val bw = pw * 2.4f
-    val left = (size.width - bw) / 2f
+    val left = (size.width - bw) / 2f + shift
     val top = cy - ph * 1.6f
     val h = ph * 3.9f
     val bottom = top + h
@@ -493,19 +462,19 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
     val archW = pw * 1.04f
     drawRoundRect(
         Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent), startY = archTop, endY = archTop + archH),
-        topLeft = Offset((size.width - archW) / 2f, archTop), size = Size(archW, archH),
+        topLeft = Offset((size.width - archW) / 2f + shift, archTop), size = Size(archW, archH),
         cornerRadius = CornerRadius(archW / 2f),
     )
     drawRoundRect(
         Brush.verticalGradient(listOf(Color(0x24FFFFFF), Color.Transparent), startY = archTop, endY = archTop + archH),
-        topLeft = Offset((size.width - archW) / 2f, archTop), size = Size(archW, archH),
+        topLeft = Offset((size.width - archW) / 2f + shift, archTop), size = Size(archW, archH),
         cornerRadius = CornerRadius(archW / 2f), style = Stroke(2.dp.toPx()),
     )
     // Seçili rengin parıltısı
     drawRect(
         Brush.radialGradient(
             listOf(accent.copy(alpha = 0.80f), accent.copy(alpha = 0.32f), Color.Transparent),
-            center = Offset(size.width / 2f, cy), radius = bw * 0.75f,
+            center = Offset(size.width / 2f + shift, cy), radius = bw * 0.75f,
         ),
     )
     // Yan kenarları siyaha yumuşakça söndür
@@ -516,21 +485,27 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
         ),
         blendMode = BlendMode.DstIn,
     )
-    // Telefon eğilince bandın sağında parlayan açık gri yan yüzey görünür
+    // Kenar sola kayınca bandın sağında önce ince siyah çizgi (ekranın en kenarı), sonra beyaz ekran görünür
     if (tilt > 0.01f) {
-        val sx = left + bw * 0.97f
-        val sw = bw * 0.62f
-        drawRect(
-            Brush.horizontalGradient(
-                0f to Color(0xFF3A3F42), 0.18f to Color(0xFFC3CBCC), 0.6f to Color(0xFFE6ECEB), 1f to Color(0xFFBFC8C9),
-                startX = sx, endX = sx + sw,
-            ),
-            topLeft = Offset(sx, 0f), size = Size(sw, size.height), alpha = tilt,
-        )
-        drawRect(
-            Brush.verticalGradient(0.55f to Color.Transparent, 1f to TryBg.copy(alpha = 0.95f)),
-            alpha = tilt,
-        )
+        val edge = left + bw
+        val line = 3.dp.toPx()
+        drawRect(Color(0xFF0A0A0C), topLeft = Offset(edge, 0f), size = Size(line, size.height), alpha = tilt)
+        val wx = edge + line
+        val ww = size.width - wx
+        if (ww > 0f) {
+            drawRect(
+                Brush.horizontalGradient(
+                    0f to Color(0xFF9AA3A5), 0.2f to Color(0xFFE9EEEE), 1f to Color(0xFFD9E0E0),
+                    startX = wx, endX = size.width,
+                ),
+                topLeft = Offset(wx, 0f), size = Size(ww, size.height), alpha = tilt,
+            )
+            // Beyaz ekran aşağı doğru kararır
+            drawRect(
+                Brush.verticalGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 0.95f to TryBg),
+                topLeft = Offset(wx, 0f), size = Size(ww, size.height), alpha = tilt,
+            )
+        }
     }
 }
 
