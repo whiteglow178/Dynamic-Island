@@ -2,6 +2,7 @@ package com.example.dynamicisland
 
 import android.graphics.Bitmap
 import android.os.SystemClock
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -16,6 +17,10 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +32,7 @@ import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -117,297 +123,374 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
     // Slider sürüklenirken değil, 250 ms sakinleşince kaydet
     LaunchedEffect(draft) { delay(250); onSave(draft) }
 
+    // ---- Ayar sayfaları: her kart tek bir "sayfa"dır; sayfalar arası yapışarak (snap) geçilir
+    val pages = buildList<SettingsPage> {
+        var pendingGroup: String? = null
+        fun page(title: String, body: @Composable () -> Unit) {
+            add(SettingsPage(title, pendingGroup, body)); pendingGroup = null
+        }
+        fun sec(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) =
+            page(title) { SectionCard(title, subtitle, content) }
+
+        // ---- Yerleşim
+        pendingGroup = "Yerleşim"
+        sec("Kapalı ada", "Kamera çevresindeki küçük hal") {
+            SliderRow("Genişlik", draft.compactWidthDp, 60f..220f, "${draft.compactWidthDp.toInt()} dp") { draft = draft.copy(compactWidthDp = it) }
+            SliderRow("Yükseklik", draft.compactHeightDp, 20f..60f, "${draft.compactHeightDp.toInt()} dp") { draft = draft.copy(compactHeightDp = it) }
+        }
+        sec("Açık ada", "Dokununca açılan genişletilmiş panel") {
+            SliderRow("Genişlik", draft.expandedWidthDp, 260f..400f, "${draft.expandedWidthDp.toInt()} dp") { draft = draft.copy(expandedWidthDp = it) }
+            SliderRow("Yükseklik", draft.expandedHeightDp, 72f..120f, "${draft.expandedHeightDp.toInt()} dp") { draft = draft.copy(expandedHeightDp = it) }
+        }
+        sec("Konum", "Kamera deliğine göre ince ayar") {
+            SliderRow("Yatay", draft.offsetXDp, -60f..60f, "${draft.offsetXDp.toInt()} dp") { draft = draft.copy(offsetXDp = it) }
+            SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
+        }
+        sec("Görünürlük", "Ada ne zaman görünsün") {
+            SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
+            SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
+        }
+        page("Favori uygulamalar") { FavoritesSection(draft) { draft = it } }
+
+        sec("Bildirimler", "Adada görünen bildirim için hareketler") {
+            Text("Aynı hareket hem açmaya / küçültmeye hem silmeye atanırsa, en son açtığın seçenek kalır; çakışan diğeri otomatik kapanır.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SubHeader("Uygulamayı aç")
+            SwitchRow("Dokununca", "Bildirimin geldiği uygulama açılır (mümkünse ilgili sohbet / ekran)",
+                draft.notifTapOpens) { on -> draft = draft.copy(notifTapOpens = on, notifCollapseTap = if (on) false else draft.notifCollapseTap) }
+            SwitchRow("Basılı tutunca", null,
+                draft.notifOpenLong) { on -> draft = draft.copy(notifOpenLong = on, notifCollapseLong = if (on) false else draft.notifCollapseLong) }
+            SwitchRow("Aşağı kaydırınca", null,
+                draft.notifOpenSwipeDown) { draft = draft.copy(notifOpenSwipeDown = it) }
+            if (draft.notifTapOpens || draft.notifOpenLong || draft.notifOpenSwipeDown) {
+                SwitchRow("Açılış animasyonu", "Adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır. Hız ve stil: Hareket bölümü",
+                    draft.notifLaunchAnim) { draft = draft.copy(notifLaunchAnim = it) }
+            }
+            SectionDivider()
+            SubHeader("Bildirimi küçült")
+            SwitchRow("Dokununca", "Bildirim açılmadan adaya küçülür",
+                draft.notifCollapseTap) { on -> draft = draft.copy(notifCollapseTap = on, notifTapOpens = if (on) false else draft.notifTapOpens) }
+            SwitchRow("Basılı tutunca", null,
+                draft.notifCollapseLong) { on -> draft = draft.copy(notifCollapseLong = on, notifOpenLong = if (on) false else draft.notifOpenLong) }
+            SwitchRow("Yukarı kaydırınca", null,
+                draft.notifCollapseSwipeUp) { on -> draft = draft.copy(notifCollapseSwipeUp = on, notifDeleteSwipeUp = if (on) false else draft.notifDeleteSwipeUp) }
+            SectionDivider()
+            SubHeader("Bildirimi sil")
+            SwitchRow("Sağa veya sola kaydırınca", "Bildirim hem adadan hem bildirim panelinden silinir (bildirim erişimi açık olmalı)",
+                draft.notifDeleteSwipeSide) { draft = draft.copy(notifDeleteSwipeSide = it) }
+            SwitchRow("Yukarı kaydırınca", null,
+                draft.notifDeleteSwipeUp) { on -> draft = draft.copy(notifDeleteSwipeUp = on, notifCollapseSwipeUp = if (on) false else draft.notifCollapseSwipeUp) }
+        }
+
+        sec("Yan baloncuklar", "Adanın yanında ayrılan baloncuklar (müzik, ekran kaydı, arama)") {
+            SwitchRow("Dokununca olay ortaya geçsin", "Kapalıyken baloncuğa dokununca o uygulamanın paneli genişler ama olay ortaya geçmez; panel kapanınca eski düzen döner. Açıkken olay kalıcı olarak ortaya geçer",
+                draft.sideTapPromote) { draft = draft.copy(sideTapPromote = it) }
+        }
+
+        sec("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)") {
+            SwitchRow("Ekran kaydı adası", "Bildirim erişimi açık olmalı. Kayıt sırasında kırmızı nokta, dokununca süre ve durdur düğmesi", draft.screenRecEnabled) { draft = draft.copy(screenRecEnabled = it) }
+            if (draft.screenRecEnabled) {
+                SubHeader("Açık ada genişliği")
+                SegmentedTabs(listOf("Normal", "Tam genişlik"), if (draft.screenRecWide) 1 else 0) {
+                    draft = draft.copy(screenRecWide = it == 1)
+                }
+                Text("Tam genişlikte ada durum çubuğunun sağ ve soluna kadar uzanır, köşelere değmez. Kayda dokununca ve kayıt bitince bu boyut kullanılır.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                RecPreviewPermissionRow()
+            }
+        }
+
+        sec("Google Asistan / Gemini", "Asistan açılınca ada Siri benzeri renkli animasyona dönüşür") {
+            SwitchRow("Asistan animasyonu", "Erişilebilirlik servisi açık olmalı", draft.assistantEnabled) { draft = draft.copy(assistantEnabled = it) }
+            if (draft.assistantEnabled) {
+                SwitchRow("Tam genişlik animasyon", "Ada kutusu olmadan, renkli animasyon ekranın solundan sağına uzanır",
+                    draft.assistantFullWidth) { draft = draft.copy(assistantFullWidth = it) }
+                if (!draft.assistantFullWidth) {
+                    SliderRow("Genişlik", draft.assistantWidthDp, 100f..300f, "${draft.assistantWidthDp.toInt()} dp") { draft = draft.copy(assistantWidthDp = it) }
+                }
+                SliderRow("Yükseklik", draft.assistantHeightDp, 60f..180f, "${draft.assistantHeightDp.toInt()} dp") { draft = draft.copy(assistantHeightDp = it) }
+            }
+        }
+
+        page("Kenar tuşları") { SideCallSettingsSection() }
+
+        // ---- Görünüm
+        pendingGroup = "Görünüm"
+
+        sec("Gökkuşağı modu", "Ada, müzik paneli, mesaj ve şarkı sözleri gökkuşağı renklerinde akar") {
+            SwitchRow("Gökkuşağı modu", "Açıkken ilgili öğelerde diğer renk ayarları yerine gökkuşağı kullanılır",
+                draft.rainbowEnabled) { draft = draft.copy(rainbowEnabled = it) }
+            if (draft.rainbowEnabled) {
+                SliderRow("Saydamlık", draft.rainbowAlpha, 0.2f..1f, "%${(draft.rainbowAlpha * 100).toInt()}") { draft = draft.copy(rainbowAlpha = it) }
+            }
+        }
+        sec("Renk", "Adanın genel renk davranışı") {
+            SwitchRow("Albüm kapağı rengi", "Ada rengi, çalan şarkının kapağına göre değişir",
+                draft.dynamicColor) { draft = draft.copy(dynamicColor = it) }
+            SectionDivider()
+            SubHeader("Ada rengi / cam rengi")
+            Text("Albüm kapağı rengi kapalıyken (ya da kapak yokken) ada bu renge boyanır; panel animasyonu da aynı rengi kullanır. Varsayılan: siyah.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            key(version) { ColorPicker(draft.islandColorArgb) { draft = draft.copy(islandColorArgb = it) } }
+            SectionDivider()
+            SubHeader("Vurgu rengi")
+            key(version) { ColorPicker(draft.accentArgb) { draft = draft.copy(accentArgb = it) } }
+        }
+        sec("Ekolayzır rengi", "Müzik çalarken adadaki ses çubukları") {
+            SwitchRow("Albüm kapağı rengi", "Ekolayzır, çalan şarkının kapağına göre renklenir",
+                draft.eqDynamicColor) { draft = draft.copy(eqDynamicColor = it) }
+            SectionDivider()
+            SubHeader(if (draft.eqDynamicColor) "Kapak yoksa kullanılacak renk" else "Ekolayzır rengi")
+            key(version) { ColorPicker(draft.eqColorArgb) { draft = draft.copy(eqColorArgb = it) } }
+        }
+
+        sec("Albüm arka planı", "Müzik çalarken adanın içi kapak görseliyle dolar") {
+            SwitchRow("Albüm kapağı arka planı", "Kapak bulanık ve hafif karartılmış olarak adanın içine yayılır",
+                draft.artBgEnabled) { draft = draft.copy(artBgEnabled = it) }
+            if (draft.artBgEnabled) {
+                SwitchRow("Kapalı adada da göster", "Kapatırsan arka plan yalnızca açılmış adada görünür",
+                    draft.artBgCompact) { draft = draft.copy(artBgCompact = it) }
+            }
+        }
+
+        sec("Özel arka plan", "Adanın içini galeriden seçtiğin fotoğrafla doldur") {
+            SwitchRow("Galeriden arka plan", "Fotoğraf adanın içini kaplar; yazıların okunması için hafif karartılır",
+                draft.customBgEnabled) { draft = draft.copy(customBgEnabled = it) }
+            if (draft.customBgEnabled) {
+                SubHeader("Fotoğraf nereye uygulansın")
+                SegmentedTabs(listOf("İkisine de aynı", "Ayrı fotoğraflar"), if (draft.customBgSeparate) 1 else 0) {
+                    draft = draft.copy(customBgSeparate = it == 1)
+                }
+                SectionDivider()
+                if (!draft.customBgSeparate) {
+                    ImagePickRow("Kapalı ve açık ada", "Aynı fotoğraf iki halde de görünür",
+                        CustomImages.Slot.BG_BOTH, draft.customBgBothUri, pick, remove)
+                } else {
+                    ImagePickRow("Kapalı ada", "Seçmezsen kapalı adada özel arka plan olmaz",
+                        CustomImages.Slot.BG_COMPACT, draft.customBgCompactUri, pick, remove)
+                    SectionDivider()
+                    ImagePickRow("Açık ada", "Seçmezsen açık adada özel arka plan olmaz",
+                        CustomImages.Slot.BG_EXPANDED, draft.customBgExpandedUri, pick, remove)
+                }
+                SectionDivider()
+                SliderRow("Karartma", draft.customBgDim, 0f..0.8f, "%${(draft.customBgDim * 100).toInt()}") { draft = draft.copy(customBgDim = it) }
+                Text("Özel arka plan, albüm kapağı arka planının üstünde görünür.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        }
+
+        sec("Özel albüm kapağı", "Adanın içindeki kapak yerine galeriden fotoğraf göster") {
+            SwitchRow("Galeriden kapak fotoğrafı", "Kapalı ve açık adadaki küçük albüm kapağı yerine seçtiğin fotoğraf görünür",
+                draft.customArtEnabled) { draft = draft.copy(customArtEnabled = it) }
+            if (draft.customArtEnabled) {
+                ImagePickRow("Kapak fotoğrafı", "Her şarkıda bu fotoğraf gösterilir",
+                    CustomImages.Slot.ART, draft.customArtUri, pick, remove)
+                Text("Fotoğraf seçilmezse gerçek albüm kapağı gösterilir. Ada rengi ve parıltılar yine çalan şarkının kapağından alınır.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        }
+
+        sec("Liquid Glass", "Kapalıyken ada düz, opak siyahtır") {
+            SwitchRow("Cam efekti", null, draft.glassEnabled) { draft = draft.copy(glassEnabled = it) }
+            if (draft.glassEnabled) {
+                SliderRow("Şeffaflık", draft.glassAlpha, 0.10f..0.90f, "%${(draft.glassAlpha * 100).toInt()}") { draft = draft.copy(glassAlpha = it) }
+                SliderRow("Arka plan bulanıklığı", draft.blurRadiusPx.toFloat(), 0f..80f, "${draft.blurRadiusPx} px") { draft = draft.copy(blurRadiusPx = it.toInt()) }
+                SectionDivider()
+                SwitchRow("Sıvı cam (kırılma)", "Kenarlarda içeriği büken, renk ayıran ve derinlik / parlama ekleyen gerçekçi cam",
+                    draft.liquidEnabled) { draft = draft.copy(liquidEnabled = it) }
+                if (draft.liquidEnabled) {
+                    if (liquidRefractionSupported()) {
+                        SliderRow("Kırılma", draft.liquidRefraction, 0f..1.5f, "%${(draft.liquidRefraction * 100).toInt()}") { draft = draft.copy(liquidRefraction = it) }
+                        SliderRow("Renk ayrışması", draft.liquidDispersion, 0f..1f, "%${(draft.liquidDispersion * 100).toInt()}") { draft = draft.copy(liquidDispersion = it) }
+                        Text("Gerçek zamanlı kırılma için ekran yakalama izni gerekir (Android her açılışta sorar; \"Tüm ekran\" seç).",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                        if (!LiquidCapture.running) {
+                            Button(onClick = {
+                                ctx.startActivity(android.content.Intent(ctx, CapturePermissionActivity::class.java)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }) { Text("Gerçek zamanlı modu başlat") }
+                        } else {
+                            OutlinedButton(onClick = {
+                                ctx.startService(android.content.Intent(ctx, ScreenCaptureService::class.java)
+                                    .setAction(ScreenCaptureService.ACTION_STOP))
+                            }) { Text("Gerçek zamanlı modu durdur") }
+                        }
+                    } else {
+                        Text("Kırılma shader'ı Android 13+ gerektirir; bu cihazda yalnızca derinlik ve parlama çizilir.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                    }
+                    SliderRow("Parlama", draft.liquidSpecular, 0f..1.5f, "%${(draft.liquidSpecular * 100).toInt()}") { draft = draft.copy(liquidSpecular = it) }
+                }
+                if (draft.windowPadDp() > 0f) {
+                    Text("Not: Parıltı veya Zıplamalı animasyon açıkken bulanıklık devre dışı kalır.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
+        }
+
+        sec("Parıltı (Glow)", "Renk, çalan şarkının kapağından alınır") {
+            SwitchRow("Parıltı efekti", "Kapalı ve açık halde adanın etrafında", draft.glowEnabled) { draft = draft.copy(glowEnabled = it) }
+            if (draft.glowEnabled) {
+                SliderRow("Yoğunluk", draft.glowIntensity, 0.2f..1f, "%${(draft.glowIntensity * 100).toInt()}") { draft = draft.copy(glowIntensity = it) }
+            }
+        }
+
+        sec("İlerleme çubuğu parıltısı", "Açık adadaki müzik panelinde, şarkı çubuğunda") {
+            SwitchRow("Parıltı efekti", "Şarkı ilerleme çubuğu ışık yayar", draft.progressGlowEnabled) { draft = draft.copy(progressGlowEnabled = it) }
+            if (draft.progressGlowEnabled) {
+                SubHeader("Parıltı nerede olsun")
+                SegmentedTabs(listOf("Tüm çubuk", "Çubuğun ucu"), if (draft.progressGlowTipOnly) 1 else 0) {
+                    draft = draft.copy(progressGlowTipOnly = it == 1)
+                }
+                if (draft.progressGlowTipOnly) {
+                    Text("Uç parıltısı her zaman çubuğun içinde kalır, dışarı taşmaz.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                } else {
+                    SwitchRow("Parıltı çubuğun içinde kalsın", "Kapalıyken ışık çubuğun dışına yayılır; açıkken dışarı taşmaz",
+                        draft.progressGlowInside) { draft = draft.copy(progressGlowInside = it) }
+                }
+                SliderRow("Yoğunluk", draft.progressGlowIntensity, 0.2f..1f, "%${(draft.progressGlowIntensity * 100).toInt()}") { draft = draft.copy(progressGlowIntensity = it) }
+                SectionDivider()
+                SwitchRow("Albüm kapağı rengi", "Parıltı, çalan şarkının kapağına göre değişir",
+                    draft.progressGlowArtColor) { draft = draft.copy(progressGlowArtColor = it) }
+                SubHeader(if (draft.progressGlowArtColor) "Kapak yoksa kullanılacak renk" else "Parıltı rengi")
+                key(version) { ColorPicker(draft.progressGlowColorArgb) { draft = draft.copy(progressGlowColorArgb = it) } }
+            }
+        }
+
+        sec("Beğeni düğmesi", "Açık adadaki kalp, beğenildiğinde bu renkte olur") {
+            SwitchRow("Albüm kapağı rengi", "Kalp, çalan şarkının kapağıyla aynı renkte olur",
+                draft.likeArtColor) { draft = draft.copy(likeArtColor = it) }
+            SubHeader(if (draft.likeArtColor) "Kapak yoksa kullanılacak renk" else "Kalp rengi")
+            key(version) { ColorPicker(draft.likeColorArgb) { draft = draft.copy(likeColorArgb = it) } }
+        }
+
+        sec("Çerçeve", "İstediğin renk ya da albüm kapağı rengi") {
+            SwitchRow("Çerçeve çizgisi", null, draft.borderEnabled) { draft = draft.copy(borderEnabled = it) }
+            if (draft.borderEnabled) {
+                SliderRow("Kalınlık", draft.borderWidthDp, 0.5f..3f, "${"%.1f".format(draft.borderWidthDp)} dp") { draft = draft.copy(borderWidthDp = it) }
+                SwitchRow("Albüm kapağı rengi", "Çerçeve çizgisi, çalan şarkının kapağına göre renklenir",
+                    draft.borderArtColor) { draft = draft.copy(borderArtColor = it) }
+                SubHeader(if (draft.borderArtColor) "Kapak yoksa kullanılacak renk" else "Çerçeve rengi")
+                key(version) { ColorPicker(draft.borderColorArgb) { draft = draft.copy(borderColorArgb = it) } }
+            }
+        }
+
+        // ---- Hareket
+        pendingGroup = "Hareket"
+        sec("Açılış animasyonu stili", "Bildirime ya da müzik uygulamasına dokununca") {
+            SwitchRow("Klasik", "Adadan siyah ekran çıkıp ekranı kaplar",
+                draft.launchClassic) { draft = draft.copy(launchClassic = it, launchAtomic = if (!it) true else draft.launchAtomic) }
+            SwitchRow("Atom ada", "Adadan açılan siyah kart huni gibi genişleyip ekranı kaplar, ardından uygulama açılır (OriginOS tarzı)",
+                draft.launchAtomic) { draft = draft.copy(launchAtomic = it, launchClassic = if (!it) true else draft.launchClassic) }
+            SliderRow("Hız", draft.launchSpeed, 0.5f..3f, "%.1fx".format(draft.launchSpeed)) { draft = draft.copy(launchSpeed = it) }
+            Text("İkisi de açıksa her açılışta rastgele biri oynar. Hız, hem klasik hem atom ada için geçerlidir (bildirim ve müzik uygulaması açılışı). Bildirim animasyonunun açık olması gerekir.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+
+        sec("Animasyon", "Açılma ve küçülme geçişi") {
+            SwitchRow("Animasyonlar", "Kapatırsan ada anında açılır/kapanır", draft.animEnabled) { draft = draft.copy(animEnabled = it) }
+            if (draft.animEnabled) {
+                SwitchRow("Müzik adası animasyonu", "Müzik çalarken ada genişlerken içerik bulanıktan netleşerek belirir; küçülürken bunun tersi olur (iOS tarzı)",
+                    draft.musicBlurAnim) { draft = draft.copy(musicBlurAnim = it) }
+                SwitchRow("Albüm kapağı dönme animasyonu", "Ada açılırken kapak bir kez 360° döner, küçülürken ters yöne döner. Şarkı değişince kapak dönerek değişir (sonraki: bir yöne, önceki: ters yöne)",
+                    draft.musicArtFlip) { draft = draft.copy(musicArtFlip = it) }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ANIM_STYLES.forEachIndexed { i, (name, desc) ->
+                        RadioRow(name, desc, draft.animStyle == i) { draft = draft.copy(animStyle = i) }
+                    }
+                }
+            }
+        }
+
+        page("Sıfırla") {
+            SectionCard("Sıfırla", "Tüm ayarları başlangıç değerine döndür") {
+                IslandActionButton("Varsayılanlara dön", { CustomImages.releaseAll(ctx, draft); draft = IslandSettings(); version++ })
+            }
+        }
+    }
+
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
         PreviewCard(draft, mode, { mode = it }, expanded) { expanded = !expanded }
 
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            if (lyricsPage) {
+        if (lyricsPage) {
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
                 LyricsSections(draft, version) { draft = it }
                 IslandActionButton("Söz ayarlarını varsayılana döndür", { draft = draft.withLyricsDefaults(); version++ })
                 Spacer(Modifier.height(28.dp))
-                return@Column
             }
-
-            // ---- Yerleşim
-            GroupLabel("Yerleşim")
-            SectionCard("Kapalı ada", "Kamera çevresindeki küçük hal") {
-                SliderRow("Genişlik", draft.compactWidthDp, 60f..220f, "${draft.compactWidthDp.toInt()} dp") { draft = draft.copy(compactWidthDp = it) }
-                SliderRow("Yükseklik", draft.compactHeightDp, 20f..60f, "${draft.compactHeightDp.toInt()} dp") { draft = draft.copy(compactHeightDp = it) }
-            }
-            SectionCard("Açık ada", "Dokununca açılan genişletilmiş panel") {
-                SliderRow("Genişlik", draft.expandedWidthDp, 260f..400f, "${draft.expandedWidthDp.toInt()} dp") { draft = draft.copy(expandedWidthDp = it) }
-                SliderRow("Yükseklik", draft.expandedHeightDp, 72f..120f, "${draft.expandedHeightDp.toInt()} dp") { draft = draft.copy(expandedHeightDp = it) }
-            }
-            SectionCard("Konum", "Kamera deliğine göre ince ayar") {
-                SliderRow("Yatay", draft.offsetXDp, -60f..60f, "${draft.offsetXDp.toInt()} dp") { draft = draft.copy(offsetXDp = it) }
-                SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
-            }
-            SectionCard("Görünürlük", "Ada ne zaman görünsün") {
-                SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
-                SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
-            }
-            FavoritesSection(draft) { draft = it }
-
-            SectionCard("Bildirimler", "Adada görünen bildirim için hareketler") {
-                Text("Aynı hareket hem açmaya / küçültmeye hem silmeye atanırsa, en son açtığın seçenek kalır; çakışan diğeri otomatik kapanır.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                SubHeader("Uygulamayı aç")
-                SwitchRow("Dokununca", "Bildirimin geldiği uygulama açılır (mümkünse ilgili sohbet / ekran)",
-                    draft.notifTapOpens) { on -> draft = draft.copy(notifTapOpens = on, notifCollapseTap = if (on) false else draft.notifCollapseTap) }
-                SwitchRow("Basılı tutunca", null,
-                    draft.notifOpenLong) { on -> draft = draft.copy(notifOpenLong = on, notifCollapseLong = if (on) false else draft.notifCollapseLong) }
-                SwitchRow("Aşağı kaydırınca", null,
-                    draft.notifOpenSwipeDown) { draft = draft.copy(notifOpenSwipeDown = it) }
-                if (draft.notifTapOpens || draft.notifOpenLong || draft.notifOpenSwipeDown) {
-                    SwitchRow("Açılış animasyonu", "Adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır. Hız ve stil: Hareket bölümü",
-                        draft.notifLaunchAnim) { draft = draft.copy(notifLaunchAnim = it) }
-                }
-                SectionDivider()
-                SubHeader("Bildirimi küçült")
-                SwitchRow("Dokununca", "Bildirim açılmadan adaya küçülür",
-                    draft.notifCollapseTap) { on -> draft = draft.copy(notifCollapseTap = on, notifTapOpens = if (on) false else draft.notifTapOpens) }
-                SwitchRow("Basılı tutunca", null,
-                    draft.notifCollapseLong) { on -> draft = draft.copy(notifCollapseLong = on, notifOpenLong = if (on) false else draft.notifOpenLong) }
-                SwitchRow("Yukarı kaydırınca", null,
-                    draft.notifCollapseSwipeUp) { on -> draft = draft.copy(notifCollapseSwipeUp = on, notifDeleteSwipeUp = if (on) false else draft.notifDeleteSwipeUp) }
-                SectionDivider()
-                SubHeader("Bildirimi sil")
-                SwitchRow("Sağa veya sola kaydırınca", "Bildirim hem adadan hem bildirim panelinden silinir (bildirim erişimi açık olmalı)",
-                    draft.notifDeleteSwipeSide) { draft = draft.copy(notifDeleteSwipeSide = it) }
-                SwitchRow("Yukarı kaydırınca", null,
-                    draft.notifDeleteSwipeUp) { on -> draft = draft.copy(notifDeleteSwipeUp = on, notifCollapseSwipeUp = if (on) false else draft.notifCollapseSwipeUp) }
-            }
-
-            SectionCard("Yan baloncuklar", "Adanın yanında ayrılan baloncuklar (müzik, ekran kaydı, arama)") {
-                SwitchRow("Dokununca olay ortaya geçsin", "Kapalıyken baloncuğa dokununca o uygulamanın paneli genişler ama olay ortaya geçmez; panel kapanınca eski düzen döner. Açıkken olay kalıcı olarak ortaya geçer",
-                    draft.sideTapPromote) { draft = draft.copy(sideTapPromote = it) }
-            }
-
-            SectionCard("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)") {
-                SwitchRow("Ekran kaydı adası", "Bildirim erişimi açık olmalı. Kayıt sırasında kırmızı nokta, dokununca süre ve durdur düğmesi", draft.screenRecEnabled) { draft = draft.copy(screenRecEnabled = it) }
-                if (draft.screenRecEnabled) {
-                    SubHeader("Açık ada genişliği")
-                    SegmentedTabs(listOf("Normal", "Tam genişlik"), if (draft.screenRecWide) 1 else 0) {
-                        draft = draft.copy(screenRecWide = it == 1)
-                    }
-                    Text("Tam genişlikte ada durum çubuğunun sağ ve soluna kadar uzanır, köşelere değmez. Kayda dokununca ve kayıt bitince bu boyut kullanılır.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                    RecPreviewPermissionRow()
-                }
-            }
-
-            SectionCard("Google Asistan / Gemini", "Asistan açılınca ada Siri benzeri renkli animasyona dönüşür") {
-                SwitchRow("Asistan animasyonu", "Erişilebilirlik servisi açık olmalı", draft.assistantEnabled) { draft = draft.copy(assistantEnabled = it) }
-                if (draft.assistantEnabled) {
-                    SwitchRow("Tam genişlik animasyon", "Ada kutusu olmadan, renkli animasyon ekranın solundan sağına uzanır",
-                        draft.assistantFullWidth) { draft = draft.copy(assistantFullWidth = it) }
-                    if (!draft.assistantFullWidth) {
-                        SliderRow("Genişlik", draft.assistantWidthDp, 100f..300f, "${draft.assistantWidthDp.toInt()} dp") { draft = draft.copy(assistantWidthDp = it) }
-                    }
-                    SliderRow("Yükseklik", draft.assistantHeightDp, 60f..180f, "${draft.assistantHeightDp.toInt()} dp") { draft = draft.copy(assistantHeightDp = it) }
-                }
-            }
-
-            SideCallSettingsSection()
-
-            // ---- Görünüm
-            GroupLabel("Görünüm")
-
-            SectionCard("Gökkuşağı modu", "Ada, müzik paneli, mesaj ve şarkı sözleri gökkuşağı renklerinde akar") {
-                SwitchRow("Gökkuşağı modu", "Açıkken ilgili öğelerde diğer renk ayarları yerine gökkuşağı kullanılır",
-                    draft.rainbowEnabled) { draft = draft.copy(rainbowEnabled = it) }
-                if (draft.rainbowEnabled) {
-                    SliderRow("Saydamlık", draft.rainbowAlpha, 0.2f..1f, "%${(draft.rainbowAlpha * 100).toInt()}") { draft = draft.copy(rainbowAlpha = it) }
-                }
-            }
-            SectionCard("Renk", "Adanın genel renk davranışı") {
-                SwitchRow("Albüm kapağı rengi", "Ada rengi, çalan şarkının kapağına göre değişir",
-                    draft.dynamicColor) { draft = draft.copy(dynamicColor = it) }
-                SectionDivider()
-                SubHeader("Ada rengi / cam rengi")
-                Text("Albüm kapağı rengi kapalıyken (ya da kapak yokken) ada bu renge boyanır; panel animasyonu da aynı rengi kullanır. Varsayılan: siyah.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                key(version) { ColorPicker(draft.islandColorArgb) { draft = draft.copy(islandColorArgb = it) } }
-                SectionDivider()
-                SubHeader("Vurgu rengi")
-                key(version) { ColorPicker(draft.accentArgb) { draft = draft.copy(accentArgb = it) } }
-            }
-            SectionCard("Ekolayzır rengi", "Müzik çalarken adadaki ses çubukları") {
-                SwitchRow("Albüm kapağı rengi", "Ekolayzır, çalan şarkının kapağına göre renklenir",
-                    draft.eqDynamicColor) { draft = draft.copy(eqDynamicColor = it) }
-                SectionDivider()
-                SubHeader(if (draft.eqDynamicColor) "Kapak yoksa kullanılacak renk" else "Ekolayzır rengi")
-                key(version) { ColorPicker(draft.eqColorArgb) { draft = draft.copy(eqColorArgb = it) } }
-            }
-
-            SectionCard("Albüm arka planı", "Müzik çalarken adanın içi kapak görseliyle dolar") {
-                SwitchRow("Albüm kapağı arka planı", "Kapak bulanık ve hafif karartılmış olarak adanın içine yayılır",
-                    draft.artBgEnabled) { draft = draft.copy(artBgEnabled = it) }
-                if (draft.artBgEnabled) {
-                    SwitchRow("Kapalı adada da göster", "Kapatırsan arka plan yalnızca açılmış adada görünür",
-                        draft.artBgCompact) { draft = draft.copy(artBgCompact = it) }
-                }
-            }
-
-            SectionCard("Özel arka plan", "Adanın içini galeriden seçtiğin fotoğrafla doldur") {
-                SwitchRow("Galeriden arka plan", "Fotoğraf adanın içini kaplar; yazıların okunması için hafif karartılır",
-                    draft.customBgEnabled) { draft = draft.copy(customBgEnabled = it) }
-                if (draft.customBgEnabled) {
-                    SubHeader("Fotoğraf nereye uygulansın")
-                    SegmentedTabs(listOf("İkisine de aynı", "Ayrı fotoğraflar"), if (draft.customBgSeparate) 1 else 0) {
-                        draft = draft.copy(customBgSeparate = it == 1)
-                    }
-                    SectionDivider()
-                    if (!draft.customBgSeparate) {
-                        ImagePickRow("Kapalı ve açık ada", "Aynı fotoğraf iki halde de görünür",
-                            CustomImages.Slot.BG_BOTH, draft.customBgBothUri, pick, remove)
-                    } else {
-                        ImagePickRow("Kapalı ada", "Seçmezsen kapalı adada özel arka plan olmaz",
-                            CustomImages.Slot.BG_COMPACT, draft.customBgCompactUri, pick, remove)
-                        SectionDivider()
-                        ImagePickRow("Açık ada", "Seçmezsen açık adada özel arka plan olmaz",
-                            CustomImages.Slot.BG_EXPANDED, draft.customBgExpandedUri, pick, remove)
-                    }
-                    SectionDivider()
-                    SliderRow("Karartma", draft.customBgDim, 0f..0.8f, "%${(draft.customBgDim * 100).toInt()}") { draft = draft.copy(customBgDim = it) }
-                    Text("Özel arka plan, albüm kapağı arka planının üstünde görünür.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                }
-            }
-
-            SectionCard("Özel albüm kapağı", "Adanın içindeki kapak yerine galeriden fotoğraf göster") {
-                SwitchRow("Galeriden kapak fotoğrafı", "Kapalı ve açık adadaki küçük albüm kapağı yerine seçtiğin fotoğraf görünür",
-                    draft.customArtEnabled) { draft = draft.copy(customArtEnabled = it) }
-                if (draft.customArtEnabled) {
-                    ImagePickRow("Kapak fotoğrafı", "Her şarkıda bu fotoğraf gösterilir",
-                        CustomImages.Slot.ART, draft.customArtUri, pick, remove)
-                    Text("Fotoğraf seçilmezse gerçek albüm kapağı gösterilir. Ada rengi ve parıltılar yine çalan şarkının kapağından alınır.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                }
-            }
-
-            SectionCard("Liquid Glass", "Kapalıyken ada düz, opak siyahtır") {
-                SwitchRow("Cam efekti", null, draft.glassEnabled) { draft = draft.copy(glassEnabled = it) }
-                if (draft.glassEnabled) {
-                    SliderRow("Şeffaflık", draft.glassAlpha, 0.10f..0.90f, "%${(draft.glassAlpha * 100).toInt()}") { draft = draft.copy(glassAlpha = it) }
-                    SliderRow("Arka plan bulanıklığı", draft.blurRadiusPx.toFloat(), 0f..80f, "${draft.blurRadiusPx} px") { draft = draft.copy(blurRadiusPx = it.toInt()) }
-                    SectionDivider()
-                    SwitchRow("Sıvı cam (kırılma)", "Kenarlarda içeriği büken, renk ayıran ve derinlik / parlama ekleyen gerçekçi cam",
-                        draft.liquidEnabled) { draft = draft.copy(liquidEnabled = it) }
-                    if (draft.liquidEnabled) {
-                        if (liquidRefractionSupported()) {
-                            SliderRow("Kırılma", draft.liquidRefraction, 0f..1.5f, "%${(draft.liquidRefraction * 100).toInt()}") { draft = draft.copy(liquidRefraction = it) }
-                            SliderRow("Renk ayrışması", draft.liquidDispersion, 0f..1f, "%${(draft.liquidDispersion * 100).toInt()}") { draft = draft.copy(liquidDispersion = it) }
-                            Text("Gerçek zamanlı kırılma için ekran yakalama izni gerekir (Android her açılışta sorar; \"Tüm ekran\" seç).",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                            if (!LiquidCapture.running) {
-                                Button(onClick = {
-                                    ctx.startActivity(android.content.Intent(ctx, CapturePermissionActivity::class.java)
-                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-                                }) { Text("Gerçek zamanlı modu başlat") }
-                            } else {
-                                OutlinedButton(onClick = {
-                                    ctx.startService(android.content.Intent(ctx, ScreenCaptureService::class.java)
-                                        .setAction(ScreenCaptureService.ACTION_STOP))
-                                }) { Text("Gerçek zamanlı modu durdur") }
-                            }
-                        } else {
-                            Text("Kırılma shader'ı Android 13+ gerektirir; bu cihazda yalnızca derinlik ve parlama çizilir.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                        }
-                        SliderRow("Parlama", draft.liquidSpecular, 0f..1.5f, "%${(draft.liquidSpecular * 100).toInt()}") { draft = draft.copy(liquidSpecular = it) }
-                    }
-                    if (draft.windowPadDp() > 0f) {
-                        Text("Not: Parıltı veya Zıplamalı animasyon açıkken bulanıklık devre dışı kalır.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                    }
-                }
-            }
-
-            SectionCard("Parıltı (Glow)", "Renk, çalan şarkının kapağından alınır") {
-                SwitchRow("Parıltı efekti", "Kapalı ve açık halde adanın etrafında", draft.glowEnabled) { draft = draft.copy(glowEnabled = it) }
-                if (draft.glowEnabled) {
-                    SliderRow("Yoğunluk", draft.glowIntensity, 0.2f..1f, "%${(draft.glowIntensity * 100).toInt()}") { draft = draft.copy(glowIntensity = it) }
-                }
-            }
-
-            SectionCard("İlerleme çubuğu parıltısı", "Açık adadaki müzik panelinde, şarkı çubuğunda") {
-                SwitchRow("Parıltı efekti", "Şarkı ilerleme çubuğu ışık yayar", draft.progressGlowEnabled) { draft = draft.copy(progressGlowEnabled = it) }
-                if (draft.progressGlowEnabled) {
-                    SubHeader("Parıltı nerede olsun")
-                    SegmentedTabs(listOf("Tüm çubuk", "Çubuğun ucu"), if (draft.progressGlowTipOnly) 1 else 0) {
-                        draft = draft.copy(progressGlowTipOnly = it == 1)
-                    }
-                    if (draft.progressGlowTipOnly) {
-                        Text("Uç parıltısı her zaman çubuğun içinde kalır, dışarı taşmaz.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-                    } else {
-                        SwitchRow("Parıltı çubuğun içinde kalsın", "Kapalıyken ışık çubuğun dışına yayılır; açıkken dışarı taşmaz",
-                            draft.progressGlowInside) { draft = draft.copy(progressGlowInside = it) }
-                    }
-                    SliderRow("Yoğunluk", draft.progressGlowIntensity, 0.2f..1f, "%${(draft.progressGlowIntensity * 100).toInt()}") { draft = draft.copy(progressGlowIntensity = it) }
-                    SectionDivider()
-                    SwitchRow("Albüm kapağı rengi", "Parıltı, çalan şarkının kapağına göre değişir",
-                        draft.progressGlowArtColor) { draft = draft.copy(progressGlowArtColor = it) }
-                    SubHeader(if (draft.progressGlowArtColor) "Kapak yoksa kullanılacak renk" else "Parıltı rengi")
-                    key(version) { ColorPicker(draft.progressGlowColorArgb) { draft = draft.copy(progressGlowColorArgb = it) } }
-                }
-            }
-
-            SectionCard("Beğeni düğmesi", "Açık adadaki kalp, beğenildiğinde bu renkte olur") {
-                SwitchRow("Albüm kapağı rengi", "Kalp, çalan şarkının kapağıyla aynı renkte olur",
-                    draft.likeArtColor) { draft = draft.copy(likeArtColor = it) }
-                SubHeader(if (draft.likeArtColor) "Kapak yoksa kullanılacak renk" else "Kalp rengi")
-                key(version) { ColorPicker(draft.likeColorArgb) { draft = draft.copy(likeColorArgb = it) } }
-            }
-
-            SectionCard("Çerçeve", "İstediğin renk ya da albüm kapağı rengi") {
-                SwitchRow("Çerçeve çizgisi", null, draft.borderEnabled) { draft = draft.copy(borderEnabled = it) }
-                if (draft.borderEnabled) {
-                    SliderRow("Kalınlık", draft.borderWidthDp, 0.5f..3f, "${"%.1f".format(draft.borderWidthDp)} dp") { draft = draft.copy(borderWidthDp = it) }
-                    SwitchRow("Albüm kapağı rengi", "Çerçeve çizgisi, çalan şarkının kapağına göre renklenir",
-                        draft.borderArtColor) { draft = draft.copy(borderArtColor = it) }
-                    SubHeader(if (draft.borderArtColor) "Kapak yoksa kullanılacak renk" else "Çerçeve rengi")
-                    key(version) { ColorPicker(draft.borderColorArgb) { draft = draft.copy(borderColorArgb = it) } }
-                }
-            }
-
-            // ---- Hareket
-            GroupLabel("Hareket")
-            SectionCard("Açılış animasyonu stili", "Bildirime ya da müzik uygulamasına dokununca") {
-                SwitchRow("Klasik", "Adadan siyah ekran çıkıp ekranı kaplar",
-                    draft.launchClassic) { draft = draft.copy(launchClassic = it, launchAtomic = if (!it) true else draft.launchAtomic) }
-                SwitchRow("Atom ada", "Adadan açılan siyah kart huni gibi genişleyip ekranı kaplar, ardından uygulama açılır (OriginOS tarzı)",
-                    draft.launchAtomic) { draft = draft.copy(launchAtomic = it, launchClassic = if (!it) true else draft.launchClassic) }
-                SliderRow("Hız", draft.launchSpeed, 0.5f..3f, "%.1fx".format(draft.launchSpeed)) { draft = draft.copy(launchSpeed = it) }
-                Text("İkisi de açıksa her açılışta rastgele biri oynar. Hız, hem klasik hem atom ada için geçerlidir (bildirim ve müzik uygulaması açılışı). Bildirim animasyonunun açık olması gerekir.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-            }
-
-            SectionCard("Animasyon", "Açılma ve küçülme geçişi") {
-                SwitchRow("Animasyonlar", "Kapatırsan ada anında açılır/kapanır", draft.animEnabled) { draft = draft.copy(animEnabled = it) }
-                if (draft.animEnabled) {
-                    SwitchRow("Müzik adası animasyonu", "Müzik çalarken ada genişlerken içerik bulanıktan netleşerek belirir; küçülürken bunun tersi olur (iOS tarzı)",
-                        draft.musicBlurAnim) { draft = draft.copy(musicBlurAnim = it) }
-                    SwitchRow("Albüm kapağı dönme animasyonu", "Ada açılırken kapak bir kez 360° döner, küçülürken ters yöne döner. Şarkı değişince kapak dönerek değişir (sonraki: bir yöne, önceki: ters yöne)",
-                        draft.musicArtFlip) { draft = draft.copy(musicArtFlip = it) }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ANIM_STYLES.forEachIndexed { i, (name, desc) ->
-                            RadioRow(name, desc, draft.animStyle == i) { draft = draft.copy(animStyle = i) }
-                        }
-                    }
-                }
-            }
-
-            IslandActionButton("Varsayılanlara dön", { CustomImages.releaseAll(ctx, draft); draft = IslandSettings(); version++ })
-            Spacer(Modifier.height(28.dp))
+        } else {
+            SnapSettingsPager(pages, Modifier.weight(1f))
         }
     }
 }
+
+// ---------------------------------------------------------------- Yapışan (snap) ayar sayfaları
+private class SettingsPage(val title: String, val group: String?, val body: @Composable () -> Unit)
+
+/** Üstte/altta komşu ayarların yalnızca başlığı görünür. Sayfa değiştirmek için biraz daha fazla kaydırmak gerekir. */
+@Composable
+private fun SnapSettingsPager(pages: List<SettingsPage>, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val pager = rememberPagerState { pages.size }
+    val scope = rememberCoroutineScope()
+    // Eşik: sayfanın %60'ı. Varsayılan %50 idi, bu yüzden değiştirmek için biraz daha fazla kaydırmak gerekir.
+    // (Daha da zorlaştırmak için 0.7f, kolaylaştırmak için 0.5f yap.)
+    val fling = PagerDefaults.flingBehavior(
+        state = pager,
+        pagerSnapDistance = PagerSnapDistance.atMost(1),
+        snapPositionalThreshold = 0.6f,
+    )
+    val cur = pager.currentPage
+
+    @Composable
+    fun Neighbor(index: Int, alignBottom: Boolean) {
+        Box(
+            Modifier.fillMaxWidth().height(44.dp)
+                .clickable(enabled = index in pages.indices, role = Role.Button) {
+                    scope.launch { pager.animateScrollToPage(index) }
+                }
+                .padding(horizontal = 8.dp),
+            contentAlignment = if (alignBottom) Alignment.BottomStart else Alignment.TopStart,
+        ) {
+            if (index in pages.indices) {
+                Text(
+                    pages[index].title, color = cs.onSurfaceVariant.copy(alpha = 0.7f),
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                    modifier = Modifier.padding(vertical = 10.dp),
+                )
+            }
+        }
+    }
+
+    Column(modifier) {
+        Crossfade(cur - 1, animationSpec = tween(180), label = "prevTitle") { Neighbor(it, alignBottom = true) }
+        VerticalPager(
+            state = pager,
+            modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds(),
+            flingBehavior = fling,
+            beyondViewportPageCount = 0,
+            key = { it },
+        ) { i ->
+            val page = pages[i]
+            // Sayfa ekrandan uzunsa kendi içinde kayar; sonuna gelince bir sonraki sayfaya geçilir
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                page.group?.let { GroupLabel(it) }
+                page.body()
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+        Crossfade(cur + 1, animationSpec = tween(180), label = "nextTitle") { Neighbor(it, alignBottom = false) }
+    }
+}
+
 
 // ---------------------------------------------------------------- Fotoğraf seçme satırı
 @Composable
