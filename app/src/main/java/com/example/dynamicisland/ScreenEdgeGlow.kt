@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -119,6 +120,11 @@ fun ScreenEdgeGlow(active: StateFlow<Boolean>, cornerPx: Float) {
                 sx = size.width / lw.toFloat(), sy = size.height / lh.toFloat(),
                 modifier = Modifier.requiredSize(wDp, hDp),
             )
+        }
+        // Isınma: asistan adasındaki orb'u (path + 9 duraklı gradyan + Plus karışımı) görünmez bir kez çizer.
+        // Shader programları aynı süreçte paylaşıldığı için ada penceresi ilk kez çizdiğinde derleme takılması olmaz.
+        if (warm && !visible) {
+            Box(Modifier.requiredSize(160.dp, 56.dp).graphicsLayer { alpha = 0.02f }) { AssistantOrb(false) }
         }
     }
 }
