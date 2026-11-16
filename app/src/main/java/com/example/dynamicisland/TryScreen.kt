@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,6 +55,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +77,11 @@ import kotlin.math.roundToInt
 // ---------------------------------------------------------------- Dene ekranı
 // iPhone "Eylem Düğmesi" seçicisi gibi: ortada parlayan büyük hap, yanlarda soluk komşu simgeler,
 // altta sayfa noktaları + başlık + açıklama. Yatay kaydırınca sonraki olay; hapa dokununca ada o olayı gösterir.
+//
+// ÖLÇÜLER (ekran görüntüsünden, ekran genişliği = 1.0):
+//   hap genişliği  ≈ 0.227   hap yüksekliği ≈ 2.03 x hap genişliği
+//   gri bant genişliği ≈ 2.4 x hap genişliği (≈ 0.55)
+//   yan simgelerin merkezi ≈ ±0.28   ortadaki simge ≈ 0.52 x hap genişliği
 
 private class TryItem(val title: String, val desc: String, val color: Color, val kind: Int)
 
@@ -134,6 +143,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     var silentDemo by remember { mutableStateOf(true) }
     var musicOn by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
+    var glowY by remember { mutableFloatStateOf(0f) } // hapın ekrandaki dikey merkezi (bant parıltısı buna göre çizilir)
     val pressScale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "tryPress")
 
     // Ekrandan çıkarken demo müziği kaldır
@@ -226,12 +236,22 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     val i1 = (i0 + 1).coerceAtMost(last)
     val accent = mix(TryItems[i0].color, TryItems[i1].color, (pos.value - i0).coerceIn(0f, 1f))
 
-    Box(Modifier.fillMaxSize().background(TryBg)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(TryBg)) {
+        // Tüm ölçüler ekran genişliğine göre (ekran görüntüsündeki oranlar)
+        val pillW = min(maxWidth.value * 0.227f, maxHeight.value * 0.11f).dp
+        val pillH = pillW * 2.03f
+        val sideXpx = with(density) { (maxWidth * 0.28f).toPx() }
+        val pillWpx = with(density) { pillW.toPx() }
+        val pillHpx = with(density) { pillH.toPx() }
+
         // Ortada gri metalik bant (yanlar siyah); seçili rengin parıltısı bandın içinde yayılır
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawBehind { drawMetalBand(accent) },
+                .drawBehind {
+                    val cy = if (glowY > 0f) glowY else size.height * 0.4f
+                    drawMetalBand(accent, cy, pillWpx, pillHpx)
+                },
         )
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
             // Geri tuşu
@@ -251,147 +271,170 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                 }
             }
 
-            // Hap sahnesi
-            BoxWithConstraints(
-                Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) {
-                    var startPage = 0
-                    var lastD = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { scope.launch { pos.stop() }; startPage = pos.value.roundToInt(); lastD = 0f },
-                        onDragEnd = { settle(startPage, lastD) },
-                        onDragCancel = { settle(startPage, 0f) },
-                        onHorizontalDrag = { change, d ->
-                            change.consume()
-                            lastD = d
-                            val stepPx = size.width * 0.3f
-                            scope.launch { pos.snapTo((pos.value - d / stepPx).coerceIn(-0.25f, last + 0.25f)) }
-                        },
-                    )
-                },
-            ) {
-                val pillH = min(330f, maxHeight.value * 0.82f).dp
-                val pillW = pillH * 0.58f
-                val sideXpx = with(density) { (maxWidth * 0.23f).toPx() }
+            // Hap + noktalar + başlık + açıklama tek grup olarak dikeyde ortalanır
+            Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.weight(0.9f))
 
-                TryItems.forEachIndexed { i, item ->
-                    val rel = i - pos.value
-                    val d = abs(rel)
-                    if (d < 1.7f) {
-                        val dn = d.coerceAtMost(1f)
-                        val a = if (d < 1f) 1f - 0.45f * d else 0.55f * ((1.7f - d) / 0.7f)
-                        val isCenter = i == near
-                        Box(
-                            Modifier.align(Alignment.Center).size(pillW, pillH)
-                                .offset { IntOffset((rel * sideXpx).roundToInt(), 0) }
-                                .graphicsLayer {
-                                    compositingStrategy = CompositingStrategy.ModulateAlpha
-                                    alpha = a
-                                    val s = if (isCenter) pressScale else 1f
-                                    scaleX = s; scaleY = s
+                // Hap sahnesi
+                Box(
+                    Modifier.fillMaxWidth().height(pillH + 40.dp)
+                        .onGloballyPositioned {
+                            val y = it.positionInRoot().y + it.size.height / 2f
+                            if (abs(y - glowY) > 0.5f) glowY = y
+                        }
+                        .pointerInput(Unit) {
+                            var startPage = 0
+                            var lastD = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { scope.launch { pos.stop() }; startPage = pos.value.roundToInt(); lastD = 0f },
+                                onDragEnd = { settle(startPage, lastD) },
+                                onDragCancel = { settle(startPage, 0f) },
+                                onHorizontalDrag = { change, d ->
+                                    change.consume()
+                                    lastD = d
+                                    val stepPx = size.width * 0.28f
+                                    scope.launch { pos.snapTo((pos.value - d / stepPx).coerceIn(-0.25f, last + 0.25f)) }
                                 },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            val capA = 1f - dn
+                            )
+                        },
+                ) {
+                    TryItems.forEachIndexed { i, item ->
+                        val rel = i - pos.value
+                        val d = abs(rel)
+                        if (d < 1.7f) {
+                            val dn = d.coerceAtMost(1f)
+                            val a = if (d < 1f) 1f - 0.45f * d else 0.55f * ((1.7f - d) / 0.7f)
+                            val isCenter = i == near
                             Box(
-                                Modifier.fillMaxSize()
+                                Modifier.align(Alignment.Center).size(pillW, pillH)
+                                    .offset { IntOffset((rel * sideXpx).roundToInt(), 0) }
                                     .graphicsLayer {
                                         compositingStrategy = CompositingStrategy.ModulateAlpha
-                                        alpha = capA
-                                        val sc = 0.6f + 0.4f * capA
-                                        scaleX = sc; scaleY = sc
-                                    }
-                                    .drawBehind { drawCapsule(item.color) },
+                                        alpha = a
+                                        val s = if (isCenter) pressScale else 1f
+                                        scaleX = s; scaleY = s
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val capA = 1f - dn
+                                Box(
+                                    Modifier.fillMaxSize()
+                                        .graphicsLayer {
+                                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                                            alpha = capA
+                                            val sc = 0.6f + 0.4f * capA
+                                            scaleX = sc; scaleY = sc
+                                        }
+                                        .drawBehind { drawCapsule(item.color) },
+                                )
+                                TryGlyph(
+                                    kind = item.kind,
+                                    tint = mix(Color.White, TrySideTint, dn),
+                                    gap = mix(item.color, TryBg, dn),
+                                    modifier = Modifier.size(pillW * fl(0.52f, 0.42f, dn)),
+                                )
+                            }
+                        }
+                    }
+
+                    // Ortadaki hapa dokunma: ada o olayı gösterir
+                    Box(
+                        Modifier.align(Alignment.Center).size(pillW + 20.dp, pillH + 20.dp).pointerInput(Unit) {
+                            detectTapGestures(
+                                onPress = { pressed = true; tryAwaitRelease(); pressed = false },
+                                onTap = { trigger(pos.value.roundToInt().coerceIn(0, last)) },
                             )
-                            TryGlyph(
-                                kind = item.kind,
-                                tint = mix(Color.White, TrySideTint, dn),
-                                gap = mix(item.color, TryBg, dn),
-                                modifier = Modifier.size(fl(64f, 38f, dn).dp),
+                        },
+                    )
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // Noktalar + başlık + açıklama
+                val fade = (1f - 2f * abs(pos.value - near)).coerceIn(0f, 1f)
+                val cur = TryItems[near]
+                Column(
+                    Modifier.fillMaxWidth().height(150.dp).padding(horizontal = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TryItems.forEachIndexed { i, _ ->
+                            val on = i == near
+                            Box(
+                                Modifier.size(if (on) 7.dp else 6.dp).clip(CircleShape)
+                                    .background(Color.White.copy(alpha = if (on) 1f else 0.35f)),
                             )
                         }
                     }
-                }
-
-                // Ortadaki hapa dokunma: ada o olayı gösterir
-                Box(
-                    Modifier.align(Alignment.Center).size(pillW, pillH).pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = { pressed = true; tryAwaitRelease(); pressed = false },
-                            onTap = { trigger(pos.value.roundToInt().coerceIn(0, last)) },
-                        )
-                    },
-                )
-            }
-
-            // Noktalar + başlık + açıklama
-            val fade = (1f - 2f * abs(pos.value - near)).coerceIn(0f, 1f)
-            val cur = TryItems[near]
-            Column(
-                Modifier.fillMaxWidth().height(200.dp).padding(horizontal = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TryItems.forEachIndexed { i, _ ->
-                        val on = i == near
-                        Box(
-                            Modifier.size(if (on) 8.dp else 6.dp).clip(CircleShape)
-                                .background(Color.White.copy(alpha = if (on) 1f else 0.35f)),
-                        )
+                    Column(
+                        Modifier.padding(top = 22.dp).graphicsLayer { alpha = fade },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(cur.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        Text(cur.desc, color = Color(0xFFC4C8D2), fontSize = 13.sp, lineHeight = 17.sp, textAlign = TextAlign.Center)
+                        Text("Denemek için simgeye dokun", color = Color(0xFF7E8494), fontSize = 11.sp, textAlign = TextAlign.Center)
                     }
                 }
-                Column(
-                    Modifier.padding(top = 26.dp).graphicsLayer { alpha = fade },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(cur.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                    Text(cur.desc, color = Color(0xFFC4C8D2), fontSize = 14.sp, lineHeight = 19.sp, textAlign = TextAlign.Center)
-                    Text("Denemek için simgeye dokun", color = Color(0xFF7E8494), fontSize = 12.sp, textAlign = TextAlign.Center)
-                }
+
+                Spacer(Modifier.weight(1.1f))
             }
         }
     }
 }
 
-/** iPhone Eylem Düğmesi ekranındaki gibi: ortada gri metalik dikey bant, üstte ve altta siyaha solar, yanlar siyah. */
-private fun DrawScope.drawMetalBand(accent: Color) {
-    val bw = size.width * 0.72f
+/**
+ * iPhone Eylem Düğmesi ekranındaki gibi: ortada gri metalik dikey bant, üstte ve altta siyaha solar, yanlar siyah.
+ * [cy] hapın dikey merkezi, [pw]/[ph] hapın piksel boyutu; bant hapa göre ölçeklenir (genişlik ≈ 2.4 x hap).
+ */
+private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Float) {
+    val bw = pw * 2.4f
     val left = (size.width - bw) / 2f
-    val h = size.height
+    val top = cy - ph * 1.6f
+    val h = ph * 3.9f
+    val bottom = top + h
     // Gri metalik dolgu
     drawRect(
         Brush.verticalGradient(
             0f to Color(0x00808088),
-            0.10f to Color(0x66707078),
-            0.38f to Color(0xFFA2A2A8),
-            0.62f to Color(0xFF68686E),
-            0.88f to Color(0x00404046),
+            0.14f to Color(0x55707078),
+            0.40f to Color(0xCC8A8A90),
+            0.58f to Color(0xFFA2A2A8),
+            0.74f to Color(0xFF68686E),
+            0.90f to Color(0x00404046),
             1f to Color.Transparent,
+            startY = top, endY = bottom,
         ),
-        topLeft = Offset(left, 0f), size = Size(bw, h),
+        topLeft = Offset(left, top), size = Size(bw, h),
     )
     // İki yanda parlak dikey kenar çizgileri
-    for (x in listOf(left + bw * 0.12f, left + bw * 0.88f)) {
+    for (x in listOf(left + bw * 0.04f, left + bw * 0.96f)) {
         drawRect(
-            Brush.verticalGradient(0f to Color.Transparent, 0.3f to Color(0x99FFFFFF), 0.7f to Color(0x40FFFFFF), 1f to Color.Transparent),
-            topLeft = Offset(x - 1.5.dp.toPx(), 0f), size = Size(3.dp.toPx(), h),
+            Brush.verticalGradient(
+                0f to Color.Transparent, 0.3f to Color(0x99FFFFFF), 0.7f to Color(0x40FFFFFF), 1f to Color.Transparent,
+                startY = top, endY = bottom,
+            ),
+            topLeft = Offset(x - 1.dp.toPx(), top), size = Size(2.dp.toPx(), h),
         )
         drawRect(
-            Brush.verticalGradient(0f to Color.Transparent, 0.35f to Color(0x24FFFFFF), 0.75f to Color(0x10FFFFFF), 1f to Color.Transparent),
-            topLeft = Offset(x - 9.dp.toPx(), 0f), size = Size(18.dp.toPx(), h),
+            Brush.verticalGradient(
+                0f to Color.Transparent, 0.35f to Color(0x24FFFFFF), 0.75f to Color(0x10FFFFFF), 1f to Color.Transparent,
+                startY = top, endY = bottom,
+            ),
+            topLeft = Offset(x - 7.dp.toPx(), top), size = Size(14.dp.toPx(), h),
         )
     }
     // Seçili rengin parıltısı
     drawRect(
         Brush.radialGradient(
             listOf(accent.copy(alpha = 0.80f), accent.copy(alpha = 0.32f), Color.Transparent),
-            center = Offset(size.width / 2f, h * 0.40f), radius = bw * 0.95f,
+            center = Offset(size.width / 2f, cy), radius = bw * 0.75f,
         ),
     )
     // Yan kenarları siyaha yumuşakça söndür
     drawRect(
         Brush.horizontalGradient(
-            0f to Color.Transparent, 0.16f to Color.Black, 0.84f to Color.Black, 1f to Color.Transparent,
+            0f to Color.Transparent, 0.07f to Color.Black, 0.93f to Color.Black, 1f to Color.Transparent,
             startX = left, endX = left + bw,
         ),
         blendMode = BlendMode.DstIn,
@@ -402,11 +445,11 @@ private fun DrawScope.drawCapsule(color: Color) {
     val r = size.width / 2f
     // Yumuşak dış parıltı: büyüyen, sönük halkalar
     for (k in 9 downTo 1) {
-        val e = k * 4.dp.toPx()
+        val e = k * 2.5.dp.toPx()
         drawRoundRect(color.copy(alpha = 0.045f), Offset(-e, -e), Size(size.width + 2f * e, size.height + 2f * e), CornerRadius(r + e))
     }
     drawRoundRect(Brush.verticalGradient(listOf(mix(color, Color.White, 0.22f), color)), cornerRadius = CornerRadius(r))
-    drawRoundRect(mix(color, Color.Black, 0.2f), cornerRadius = CornerRadius(r), style = Stroke(5.dp.toPx()))
+    drawRoundRect(mix(color, Color.Black, 0.2f), cornerRadius = CornerRadius(r), style = Stroke(size.width * 0.057f))
 }
 
 // ---------------------------------------------------------------- Simgeler (24x24 birimlik çizim)
