@@ -103,7 +103,7 @@ private val TryItems = listOf(
 )
 
 /** Dönme açısı (derece). Fazla dönmesin diye küçük; ters yöne dönerse eksi yap. */
-private const val TryTurnDeg = 18f
+private const val TryTurnDeg = 32f
 
 private val TryBg = Color(0xFF050507)
 private val TrySideTint = Color(0xFFB4B8C2)
@@ -465,19 +465,17 @@ private fun DrawScope.drawMetalBand(
     val h = ph * 3.9f
     val bottom = top + h
     // Gri metalik dolgu
-    drawRect(
-        Brush.verticalGradient(
-            0f to Color(0x00808088),
-            0.14f to Color(0x55707078),
-            0.40f to Color(0xCC8A8A90),
-            0.58f to Color(0xFFA2A2A8),
-            0.74f to Color(0xFF68686E),
-            0.90f to Color(0x00404046),
-            1f to Color.Transparent,
-            startY = top, endY = bottom,
-        ),
-        topLeft = Offset(left, top), size = Size(bw, h),
+    val bandBrush = Brush.verticalGradient(
+        0f to Color(0x00808088),
+        0.14f to Color(0x55707078),
+        0.40f to Color(0xCC8A8A90),
+        0.58f to Color(0xFFA2A2A8),
+        0.74f to Color(0xFF68686E),
+        0.90f to Color(0x00404046),
+        1f to Color.Transparent,
+        startY = top, endY = bottom,
     )
+    drawRect(bandBrush, topLeft = Offset(left, top), size = Size(bw, h))
     // İki yanda parlak dikey kenar çizgileri
     for (x in listOf(left + bw * 0.04f, left + bw * 0.96f)) {
         drawRect(
@@ -506,15 +504,18 @@ private fun DrawScope.drawMetalBand(
     val archTop = cy + ph * 0.5f + 175.dp.toPx()
     val archH = ph * 1.2f
     val archW = pw * 1.04f
+    // Alttaki tuş: metalik bantla aynı renk, kenarında ince siyah çizgi
     drawRoundRect(
-        Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent), startY = archTop, endY = archTop + archH),
+        bandBrush,
         topLeft = Offset((size.width - archW) / 2f + shift, archTop), size = Size(archW, archH),
         cornerRadius = CornerRadius(archW / 2f),
     )
     drawRoundRect(
-        Brush.verticalGradient(listOf(Color(0x24FFFFFF), Color.Transparent), startY = archTop, endY = archTop + archH),
+        Brush.verticalGradient(
+            listOf(Color.Black, Color.Black, Color.Transparent), startY = archTop, endY = archTop + archH,
+        ),
         topLeft = Offset((size.width - archW) / 2f + shift, archTop), size = Size(archW, archH),
-        cornerRadius = CornerRadius(archW / 2f), style = Stroke(2.dp.toPx()),
+        cornerRadius = CornerRadius(archW / 2f), style = Stroke(1.5.dp.toPx()),
     )
     // Seçili rengin parıltısı
     val pulse = press * 0.20f + (1f - ripple) * 0.25f
@@ -676,14 +677,6 @@ private fun DrawScope.drawCapsule(color: Color, depth: Float = 0f, press: Float 
                 center = Offset(w * 0.38f, h * 0.24f), radius = w * 0.75f,
             ),
             Offset(sw, sw), Size(w - 2f * sw, h - 2f * sw), CornerRadius(r - sw),
-        )
-        // Sol kenarda dikey parlak yansıma çizgisi
-        drawRoundRect(
-            Brush.verticalGradient(
-                0f to Color.Transparent, 0.45f to Color.White.copy(alpha = 0.45f * (1f - 0.5f * press)), 1f to Color.Transparent,
-                startY = w * 0.35f, endY = h - w * 0.35f,
-            ),
-            Offset(w * 0.14f, w * 0.35f), Size(w * 0.07f, h - w * 0.7f), CornerRadius(w * 0.035f),
         )
     }
 }
