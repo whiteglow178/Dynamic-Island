@@ -298,39 +298,34 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                             )
                         },
                 ) {
+                    // Renkli hap sabit: yerinde durur, kaydırınca yalnızca rengi karışarak değişir
+                    Box(
+                        Modifier.align(Alignment.Center).size(pillW, pillH)
+                            .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+                            .drawBehind { drawCapsule(accent) },
+                    )
+                    // Simgeler kayar
                     TryItems.forEachIndexed { i, item ->
                         val rel = i - pos.value
                         val d = abs(rel)
                         if (d < 1.7f) {
                             val dn = d.coerceAtMost(1f)
                             val a = if (d < 1f) 1f - 0.45f * d else 0.55f * ((1.7f - d) / 0.7f)
-                            val isCenter = i == near
                             Box(
                                 Modifier.align(Alignment.Center).size(pillW, pillH)
                                     .offset { IntOffset((rel * sideXpx).roundToInt(), 0) }
                                     .graphicsLayer {
                                         compositingStrategy = CompositingStrategy.ModulateAlpha
                                         alpha = a
-                                        val s = if (isCenter) pressScale else 1f
+                                        val s = if (i == near) pressScale else 1f
                                         scaleX = s; scaleY = s
                                     },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                val capA = 1f - dn
-                                Box(
-                                    Modifier.fillMaxSize()
-                                        .graphicsLayer {
-                                            compositingStrategy = CompositingStrategy.ModulateAlpha
-                                            alpha = capA
-                                            val sc = 0.6f + 0.4f * capA
-                                            scaleX = sc; scaleY = sc
-                                        }
-                                        .drawBehind { drawCapsule(item.color) },
-                                )
                                 TryGlyph(
                                     kind = item.kind,
                                     tint = mix(Color.White, TrySideTint, dn),
-                                    gap = mix(item.color, TryBg, dn),
+                                    gap = mix(accent, TryBg, dn),
                                     modifier = Modifier.size(pillW * fl(0.52f, 0.42f, dn)),
                                 )
                             }
