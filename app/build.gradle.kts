@@ -14,6 +14,17 @@ android {
         versionCode = 2
         versionName = "1.1"
     }
+    buildTypes {
+        release {
+            // Debug derlemede Compose çok yavaş çalışır; release'te R8 + baseline profile ile hızlanır
+            isMinifyEnabled = true
+            isShrinkResources = true
+            isDebuggable = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Kendi anahtarın yok: GitHub'ın debug anahtarıyla imzalanır, telefona direkt kurulabilir
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -34,4 +45,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
+    // Compose'un hazır baseline profile'ını kurulumda derletir (ilk açılış ve kaydırma akıcı olur)
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 }
