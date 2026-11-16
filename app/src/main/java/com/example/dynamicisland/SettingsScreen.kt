@@ -19,6 +19,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerSnapDistance
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -45,10 +46,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -143,7 +146,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
             SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
         }
-        page("Favori uygulamalar") { FavoritesSection(draft) { draft = it } }
+        page("Favori uygulamalar", PreviewKind.Favorites) { FavoritesSection(draft) { draft = it } }
 
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
             Text("Aynı hareket hem açmaya / küçültmeye hem silmeye atanırsa, en son açtığın seçenek kalır; çakışan diğeri otomatik kapanır.",
@@ -193,7 +196,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
         }
 
-        sec("Google Asistan / Gemini", "Asistan açılınca ada Siri benzeri renkli animasyona dönüşür") {
+        sec("Google Asistan / Gemini", "Asistan açılınca ada Siri benzeri renkli animasyona dönüşür", PreviewKind.Assistant) {
             SwitchRow("Asistan animasyonu", "Erişilebilirlik servisi açık olmalı", draft.assistantEnabled) { draft = draft.copy(assistantEnabled = it) }
             if (draft.assistantEnabled) {
                 SwitchRow("Tam genişlik animasyon", "Ada kutusu olmadan, renkli animasyon ekranın solundan sağına uzanır",
@@ -205,7 +208,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
         }
 
-        page("Kenar tuşları") { SideCallSettingsSection() }
+        page("Kenar tuşları", PreviewKind.SideCall) { SideCallSettingsSection() }
 
         // ---- Görünüm
         pendingGroup = "Görünüm"
@@ -403,34 +406,80 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
         }
     }
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
-        PreviewCard(draft, mode, { mode = it }, expanded) { expanded = !expanded }
+    // Pager durumu burada tutulur: görünen sayfanın türüne göre üstteki önizleme değişir
+    val pager = rememberPagerState { pages.size }
+    val kind = if (lyricsPage) PreviewKind.Island else (pages.getOrNull(pager.currentPage)?.kind ?: PreviewKind.Island)
+    val sidePrefs by SideCallStore.flow(ctx).collectAsState()
+    // Geniş ayarlar (tam genişlik asistan, kenar tuşları) için tam telefon gerekir
+    val needsBig = when (kind) {
+        PreviewKind.Assistant -> draft.assistantEnabled && draft.assistantFullWidth
+        PreviewKind.SideCall -> sidePrefs.enabled
+        else -> false
+    }
+    var bigDismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(kind) { bigDismissed = false }
+    val showBig = needsBig && !bigDismissed
+    val hint = previewHint(kind, draft, bigDismissed)
 
-        SnapSettingsPager(pages, Modifier.weight(1f))
+    // Dış Box: büyük telefon ayarlar sayfasının ÜSTÜNE biner, sayfayı daraltmaz / itmez
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
+            PreviewCard(
+                draft, mode, { mode = it }, expanded, { expanded = !expanded },
+                kind = kind, hint = hint, showBig = showBig, onSmallTap = { if (needsBig) bigDismissed = false },
+            )
+
+            SnapSettingsPager(pages, pager, Modifier.weight(1f))
+        }
+        if (showBig) {
+            BigPhoneOverlay(draft, kind, hint, { bigDismissed = true }, Modifier.align(Alignment.TopCenter))
+        }
+    }
+}
+
+/** Ayarlar sayfasının üstüne binen, tamamı görünen telefon. Dokununca kapanır. */
+@Composable
+private fun BigPhoneOverlay(cfg: IslandSettings, kind: PreviewKind, hint: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val cardShape = RoundedCornerShape(28.dp)
+    Column(
+        modifier.fillMaxWidth().zIndex(2f).clip(cardShape)
+            .background(Brush.linearGradient(listOf(Color(0xFF1F4E6B), Color(0xFF3A3A78), Color(0xFF5A3470))))
+            .border(1.dp, Color.White.copy(alpha = 0.10f), cardShape)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
+            .padding(top = 16.dp, bottom = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        PhoneMock(BIG_PHONE_W_DP, BIG_PHONE_H_DP) {
+            MockStatusBar()
+            PreviewScene(kind, cfg)
+        }
+        Text(
+            hint, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 10.dp),
+        )
     }
 }
 
 // ---------------------------------------------------------------- Yapışan (snap) ayar sayfaları
-private class SettingsPage(val title: String, val group: String?, val body: @Composable () -> Unit)
+private class SettingsPage(val title: String, val group: String?, val kind: PreviewKind, val body: @Composable () -> Unit)
 
 private class PageBuilder {
     val list = mutableListOf<SettingsPage>()
     var pendingGroup: String? = null
-    fun page(title: String, body: @Composable () -> Unit) {
-        list.add(SettingsPage(title, pendingGroup, body)); pendingGroup = null
+    fun page(title: String, kind: PreviewKind = PreviewKind.Island, body: @Composable () -> Unit) {
+        list.add(SettingsPage(title, pendingGroup, kind, body)); pendingGroup = null
     }
-    fun sec(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) =
-        page(title) { SectionCard(title, subtitle, content) }
+    fun sec(title: String, subtitle: String? = null, kind: PreviewKind = PreviewKind.Island, content: @Composable ColumnScope.() -> Unit) =
+        page(title, kind) { SectionCard(title, subtitle, content) }
 }
 
 private inline fun buildPages(block: PageBuilder.() -> Unit): List<SettingsPage> = PageBuilder().apply(block).list
 
 /** Üstte/altta komşu ayarların yalnızca başlığı görünür. Sayfa değiştirmek için biraz daha fazla kaydırmak gerekir. */
 @Composable
-private fun SnapSettingsPager(pages: List<SettingsPage>, modifier: Modifier = Modifier) {
+private fun SnapSettingsPager(pages: List<SettingsPage>, pager: PagerState, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
-    val pager = rememberPagerState { pages.size }
     val scope = rememberCoroutineScope()
     // Eşik: sayfanın %50'si (zorlaştırmak için 0.6f, kolaylaştırmak için 0.4f yap)
     val fling = PagerDefaults.flingBehavior(
@@ -544,14 +593,17 @@ private const val SAMPLE_LOOP = 14_000L
 
 // Telefon maketi ölçüleri. İçerik 412 dp genişliğinde "sanal" bir ekranda gerçek dp değerleriyle çizilir,
 // sonra yoğunluk (density) küçültülerek maket ekrana sığdırılır; böylece ada ayarları birebir orantılı görünür.
-private const val PHONE_W_DP = 236f
-private const val PHONE_BEZEL_DP = 6f
-private const val PHONE_VIRTUAL_W_DP = 412f
-private const val PHONE_BASE_TOP_DP = 14f      // sanal ekranda adanın varsayılan üst boşluğu
+internal const val PHONE_W_DP = 236f
+internal const val PHONE_BEZEL_DP = 6f
+internal const val PHONE_VIRTUAL_W_DP = 412f
+internal const val PHONE_BASE_TOP_DP = 14f      // sanal ekranda adanın varsayılan üst boşluğu
 private val PHONE_SCALE = (PHONE_W_DP - 2f * PHONE_BEZEL_DP) / PHONE_VIRTUAL_W_DP
 
 @Composable
-private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, expanded: Boolean, onToggle: () -> Unit) {
+private fun PreviewCard(
+    cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, expanded: Boolean, onToggle: () -> Unit,
+    kind: PreviewKind = PreviewKind.Island, hint: String = "", showBig: Boolean = false, onSmallTap: () -> Unit = {},
+) {
     val art = remember { sampleArt() }
     val music = mode == 1
     val sample = remember(mode) {
@@ -569,9 +621,15 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
 
     // Konum ayarları (Yatay / Dikey) telefondaki adaya da uygulanır
     val islandTopV = (PHONE_BASE_TOP_DP + cfg.offsetYDp).coerceAtLeast(0f)
-    val openNeedDp = (islandTopV + geo.eh.value + 14f) * PHONE_SCALE + 16f + PHONE_BEZEL_DP + 12f
+    val ehForKind = when (kind) {
+        PreviewKind.Island -> geo.eh.value
+        PreviewKind.Assistant -> cfg.assistantHeightDp
+        PreviewKind.Favorites -> cfg.favoritesHeightDp(cfg.favoritePkgList().size)
+        PreviewKind.SideCall -> 64f
+    }
+    val openNeedDp = (islandTopV + ehForKind + 14f) * PHONE_SCALE + 16f + PHONE_BEZEL_DP + 12f
     val boxH by animateDpAsState(
-        (if (expanded) openNeedDp else 150f).coerceAtLeast(150f).dp,
+        (if (expanded || kind != PreviewKind.Island) openNeedDp else 150f).coerceAtLeast(150f).dp,
         tween(320, easing = FastOutSlowInEasing), label = "previewH",
     )
     val cardShape = RoundedCornerShape(28.dp)
@@ -587,7 +645,20 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
             contentAlignment = Alignment.TopCenter,
         ) {
             // Telefon: alt kısmı kart sınırında kesilir (üst bölüm görünür), kamera görseli yok
-            Box(Modifier.padding(top = 16.dp).width(PHONE_W_DP.dp).height(560.dp)) {
+            if (kind != PreviewKind.Island) {
+                // Asistan / Favoriler / Kenar tuşları: telefon o ayarın sahnesini oynatır (büyük telefon açıkken burada çizilmez)
+                if (!showBig) {
+                    Box(
+                        Modifier.padding(top = 16.dp)
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSmallTap() },
+                    ) {
+                        PhoneMock(PHONE_W_DP, 560f) {
+                            MockStatusBar()
+                            PreviewScene(kind, cfg)
+                        }
+                    }
+                }
+            } else Box(Modifier.padding(top = 16.dp).width(PHONE_W_DP.dp).height(560.dp)) {
                 // yan tuşlar
                 Box(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = 90.dp).width(3.dp).height(44.dp)
                     .clip(RoundedCornerShape(2.dp)).background(Color(0xFF2A2D35)))
@@ -631,13 +702,19 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
                 }
             }
         }
-        SegmentedTabs(listOf("Bildirim", "Müzik"), mode, onMode)
+        if (kind == PreviewKind.Island) {
+            SegmentedTabs(listOf("Bildirim", "Müzik"), mode, onMode)
+        } else {
+            Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+                Text(hint, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, textAlign = TextAlign.Center)
+            }
+        }
     }
 }
 
 /** Telefon maketinin durum çubuğu (saat, sinyal, pil). Sanal ekran dp'siyle çizilir. */
 @Composable
-private fun MockStatusBar() {
+internal fun MockStatusBar() {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 30.dp).padding(top = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
