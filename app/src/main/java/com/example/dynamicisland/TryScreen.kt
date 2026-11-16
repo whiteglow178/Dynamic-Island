@@ -293,9 +293,9 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                 .background(TryBg),
         ) {
         // Tüm ölçüler ekran genişliğine göre (ekran görüntüsündeki oranlar)
-        val pillW = min(maxWidth.value * 0.227f, maxHeight.value * 0.11f).dp
+        val pillW = min(this@BoxWithConstraints.maxWidth.value * 0.227f, this@BoxWithConstraints.maxHeight.value * 0.11f).dp
         val pillH = pillW * 2.03f
-        val sideXpx = with(density) { (maxWidth * 0.28f).toPx() }
+        val sideXpx = with(density) { (this@BoxWithConstraints.maxWidth * 0.28f).toPx() }
         val pillWpx = with(density) { pillW.toPx() }
         val pillHpx = with(density) { pillH.toPx() }
 
