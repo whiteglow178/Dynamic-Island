@@ -194,18 +194,24 @@ private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, se
 @Composable
 private fun IslandSides(
     sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, fromSide: Int,
-    animExpanded: Boolean, onPress: (Int) -> Unit, onTap: (Int) -> Unit,
+    animExpanded: Boolean, wantExpanded: Boolean, onPress: (Int) -> Unit, onTap: (Int) -> Unit,
 ) {
-    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color, fromSide == 1, animExpanded, { onPress(0) }) { onTap(0) }
-    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color, fromSide == -1, animExpanded, { onPress(1) }) { onTap(1) }
+    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color, fromSide == 1, animExpanded, wantExpanded, { onPress(0) }) { onTap(0) }
+    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color, fromSide == -1, animExpanded, wantExpanded, { onPress(1) }) { onTap(1) }
 }
 
 @Composable
 private fun SideSlot(
     target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, tappedOpen: Boolean,
-    animExpanded: Boolean, onPress: () -> Unit, onTap: () -> Unit,
+    animExpanded: Boolean, wantExpanded: Boolean, onPress: () -> Unit, onTap: () -> Unit,
 ) {
     val hold = remember { SideHold() }
+    // Ada küçülürken yeni belirecek baloncuk, ada hâlâ büyükken (panelin köşesinden) çıkmaz:
+    // genişlik VE yükseklik neredeyse kapalı hâle gelince kendi yerinde adadan ayrılır.
+    // Ada açıkken gelen baloncuk eskisi gibi hemen çıkar. (Eşik, ortalama değil max: "Sıvı" stilinde biri geç kalabilir.)
+    val gateOpenState = remember { BooleanArray(1) }
+    val nearCompact by remember(progress) { derivedStateOf { max(progress.w.value, progress.h.value) < 0.06f } }
+    val gateOpen = gateOpenState[0] || nearCompact || (wantExpanded && animExpanded)
     val gone = remember { BooleanArray(1) }       // kaldırılan baloncuk ada genişlemesiyle bir kez tamamen solduysa, ada küçülürken geri belirmez
     if (target != null) gone[0] = false
     if (target != null) hold.c = target          // birleşme animasyonu sürerken son içerik çizilmeye devam eder
@@ -216,10 +222,12 @@ private fun SideSlot(
     val snapIn = tapHold[0] && !tappedOpen && present
     SideEffect { if (snapIn) tapHold[0] = false }
     val spec: AnimationSpec<Float> = if (cfg.animEnabled && !snapIn) spring(dampingRatio = 0.72f, stiffness = 150f) else snap()
-    val sep = animateFloatAsState(if (target != null) 1f else 0f, spec, label = "sideSep")
+    val sep = animateFloatAsState(if (target != null && gateOpen) 1f else 0f, spec, label = "sideSep")
+    if (target == null) gateOpenState[0] = false
+    else if (gateOpen || sep.value > 0.5f) gateOpenState[0] = true
     // Dokunulan baloncuk ortadaki adaya dönüşüp büyüyor: eski baloncuk anında çizilmeyi bırakır (çift görüntü olmasın)
     if (!present && tappedOpen) { hold.c = null; return }
-    val alive by remember(present) { derivedStateOf { present || sep.value > 0.004f } }
+    val alive by remember(present, gateOpen) { derivedStateOf { (present && gateOpen) || sep.value > 0.004f } }
     if (!alive) { hold.c = null; return }
     val shown = hold.c ?: return
 
@@ -576,7 +584,7 @@ fun IslandRoot(
             // Baloncuktan açılırken yeni içeriğin kapalı genişliği (cw) animasyonla değişir; baloncuklar buna değil,
             // baloncuğun çıkış noktasını belirleyen sabit genişliğe bağlanır: yerlerinde kayıp oynamazlar.
             val sideGeo = if (s.fromSide != 0) geo.copy(cw = prevCw.value.dp) else geo
-            IslandSides(s.side, sideGeo, progress, cfg, sideBody, s.fromSide, animExpanded, onSidePress, onSideTap)
+            IslandSides(s.side, sideGeo, progress, cfg, sideBody, s.fromSide, animExpanded, s.expanded, onSidePress, onSideTap)
             val ghostC = ghostHold.c
             if (ghostC != null && (ghostWanted || ghostFade.value > 0.01f)) {
                 val ghostGeo = islandGeo(cfg, ghostC is IslandContent.Media).copy(cw = prevCw.value.dp)
