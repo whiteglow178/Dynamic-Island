@@ -35,9 +35,11 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -464,6 +466,14 @@ private val SAMPLE_LINES = listOf(
 private val SAMPLE_STATE = LyricsState.Ready(SAMPLE_LINES, true, "örnek")
 private const val SAMPLE_LOOP = 14_000L
 
+// Telefon maketi ölçüleri. İçerik 412 dp genişliğinde "sanal" bir ekranda gerçek dp değerleriyle çizilir,
+// sonra yoğunluk (density) küçültülerek maket ekrana sığdırılır; böylece ada ayarları birebir orantılı görünür.
+private const val PHONE_W_DP = 236f
+private const val PHONE_BEZEL_DP = 6f
+private const val PHONE_VIRTUAL_W_DP = 412f
+private const val PHONE_BASE_TOP_DP = 14f      // sanal ekranda adanın varsayılan üst boşluğu
+private val PHONE_SCALE = (PHONE_W_DP - 2f * PHONE_BEZEL_DP) / PHONE_VIRTUAL_W_DP
+
 @Composable
 private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, expanded: Boolean, onToggle: () -> Unit) {
     val art = remember { sampleArt() }
@@ -479,38 +489,97 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
     )
     val progress = rememberIslandProgress(cfg, expanded)
     val geo = islandGeo(cfg, music, compactLy)
-    val boxH by animateDpAsState(if (expanded) geo.eh + 64.dp else 160.dp, tween(320, easing = FastOutSlowInEasing), label = "previewH")
     val showOutside = music && !expanded && cfg.lyricsEnabled && cfg.lyricsOutside
-    val shape = RoundedCornerShape(28.dp)
+
+    // Konum ayarları (Yatay / Dikey) telefondaki adaya da uygulanır
+    val islandTopV = (PHONE_BASE_TOP_DP + cfg.offsetYDp).coerceAtLeast(0f)
+    val openNeedDp = (islandTopV + geo.eh.value + 14f) * PHONE_SCALE + 16f + PHONE_BEZEL_DP + 12f
+    val boxH by animateDpAsState(
+        (if (expanded) openNeedDp else 150f).coerceAtLeast(150f).dp,
+        tween(320, easing = FastOutSlowInEasing), label = "previewH",
+    )
+    val cardShape = RoundedCornerShape(28.dp)
+    val phoneShape = RoundedCornerShape(38.dp)
+    val screenShape = RoundedCornerShape(38.dp - PHONE_BEZEL_DP.dp)
+    val dens = LocalDensity.current
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
-            Modifier.fillMaxWidth().height(boxH).clip(shape)
+            Modifier.fillMaxWidth().height(boxH).clip(cardShape)
                 .background(Brush.linearGradient(listOf(Color(0xFF1F4E6B), Color(0xFF3A3A78), Color(0xFF5A3470))))
-                .border(1.dp, Color.White.copy(alpha = 0.10f), shape)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onToggle),
+                .border(1.dp, Color.White.copy(alpha = 0.10f), cardShape),
             contentAlignment = Alignment.TopCenter,
         ) {
-            Box(Modifier.padding(top = 20.dp)) {
-                IslandPill(sample, progress, geo, cfg, SAMPLE_STATE, frame, compactLy, onToggle, {}, {})
+            // Telefon: alt kısmı kart sınırında kesilir (üst bölüm görünür), kamera görseli yok
+            Box(Modifier.padding(top = 16.dp).width(PHONE_W_DP.dp).height(560.dp)) {
+                // yan tuşlar
+                Box(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = 90.dp).width(3.dp).height(44.dp)
+                    .clip(RoundedCornerShape(2.dp)).background(Color(0xFF2A2D35)))
+                Box(Modifier.align(Alignment.TopStart).offset(x = (-2).dp, y = 76.dp).width(3.dp).height(28.dp)
+                    .clip(RoundedCornerShape(2.dp)).background(Color(0xFF2A2D35)))
+                Box(Modifier.align(Alignment.TopStart).offset(x = (-2).dp, y = 112.dp).width(3.dp).height(28.dp)
+                    .clip(RoundedCornerShape(2.dp)).background(Color(0xFF2A2D35)))
+
+                // gövde + çerçeve
+                Box(
+                    Modifier.fillMaxSize().clip(phoneShape)
+                        .background(Color(0xFF08090C))
+                        .border(1.5.dp, Color(0xFF454956), phoneShape)
+                        .padding(PHONE_BEZEL_DP.dp),
+                ) {
+                    // ekran
+                    Box(
+                        Modifier.fillMaxSize().clip(screenShape)
+                            .background(Brush.verticalGradient(listOf(Color(0xFF2E6A93), Color(0xFF5B4496), Color(0xFFB2557F)))),
+                    ) {
+                        // Yoğunluğu küçültüp 412 dp'lik sanal ekranı maket ekrana sığdırır
+                        CompositionLocalProvider(LocalDensity provides Density(dens.density * PHONE_SCALE, dens.fontScale)) {
+                            Box(Modifier.fillMaxSize()) {
+                                MockStatusBar()
+                                if (showOutside) {
+                                    OutsideLyricText(
+                                        cfg, SAMPLE_STATE, frame,
+                                        Modifier.align(Alignment.TopCenter)
+                                            .offset(x = cfg.offsetXDp.dp, y = (islandTopV + geo.ch.value + 10f).dp)
+                                            .width(cfg.lyricsOutsideWidthDp.dp.coerceAtMost(320.dp)),
+                                        artColor = SAMPLE_COLOR,
+                                    )
+                                }
+                                // Telefonun içindeki ada: dokununca açılır / kapanır
+                                Box(Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = islandTopV.dp)) {
+                                    IslandPill(sample, progress, geo, cfg, SAMPLE_STATE, frame, compactLy, onToggle, {}, {})
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            if (showOutside) {
-                OutsideLyricText(
-                    cfg, SAMPLE_STATE, frame,
-                    Modifier.align(Alignment.BottomCenter).padding(bottom = 46.dp)
-                        .width(cfg.lyricsOutsideWidthDp.dp.coerceAtMost(320.dp)),
-                    artColor = SAMPLE_COLOR,
-                )
-            }
-            Text(
-                if (expanded) "Küçültmek için dokun" else "Açmak için dokun",
-                color = Color.White.copy(alpha = 0.78f), fontSize = 11.sp, fontWeight = FontWeight.Medium,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)
-                    .clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.30f))
-                    .padding(horizontal = 12.dp, vertical = 5.dp),
-            )
         }
         SegmentedTabs(listOf("Bildirim", "Müzik"), mode, onMode)
+    }
+}
+
+/** Telefon maketinin durum çubuğu (saat, sinyal, pil). Sanal ekran dp'siyle çizilir. */
+@Composable
+private fun MockStatusBar() {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 30.dp).padding(top = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("9:41", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+            listOf(4, 6, 8, 10).forEach { h ->
+                Box(Modifier.width(3.dp).height(h.dp).clip(RoundedCornerShape(1.dp)).background(Color.White))
+            }
+        }
+        Spacer(Modifier.width(7.dp))
+        Box(
+            Modifier.width(22.dp).height(11.dp)
+                .border(1.dp, Color.White.copy(alpha = 0.65f), RoundedCornerShape(3.dp)).padding(1.5.dp),
+        ) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(0.75f).clip(RoundedCornerShape(1.5.dp)).background(Color.White))
+        }
     }
 }
 
