@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -164,7 +165,11 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     val holdFor: (Int) -> Long = { idx ->
         when (idx) { 7 -> 8500L; 4 -> 6000L; 8 -> 4500L; 3, 5 -> 4200L; else -> 3000L }
     }
-    val pressScale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "tryPress")
+    val pressScale by animateFloatAsState(if (pressed) 0.96f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "tryPress")
+    // Tuşun fiziksel olarak içeri batması (0 = yukarıda, 1 = tamamen basılı)
+    val pressAnim by animateFloatAsState(if (pressed) 1f else 0f, spring(0.7f, 700f), label = "tryPressDepth")
+    // Basınca tuşun renginde dışarı yayılan halka dalgası (1 = bitti / görünmez)
+    val ripple = remember { Animatable(1f) }
 
     // Ekrandan çıkarken demo müziği kaldır
     DisposableEffect(Unit) { onDispose { if (musicOn) IslandBus.post(IslandEvent.MediaChanged(null)) } }
@@ -291,7 +296,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawBehind {
                     val cy = if (glowY > 0f) glowY else size.height * 0.4f
-                    drawMetalBand(accent, cy, pillWpx, pillHpx, tilt.value, -slideMax * tilt.value)
+                    drawMetalBand(accent, cy, pillWpx, pillHpx, tilt.value, -slideMax * tilt.value, pressAnim, ripple.value)
                 },
         )
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
@@ -333,7 +338,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                                 val pop = 1f + 0.06f * tilt.value   // hap öne doğru çıkar
                                 scaleX = pressScale * pop; scaleY = pressScale * pop
                             }
-                            .drawBehind { drawCapsule(accent, tilt.value) },
+                            .drawBehind { drawCapsule(accent, tilt.value, pressAnim, ripple.value) },
                     )
                     // Simgeler kayar
                     TryItems.forEachIndexed { i, item ->
@@ -351,6 +356,12 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                                         translationX = -slideMax * tilt.value
                                         val s = (if (i == near) pressScale else 1f) * (1f + 0.06f * tilt.value)
                                         scaleX = s; scaleY = s
+                                        if (i == near) {
+                                            val th = 5.dp.toPx() + 4.dp.toPx() * tilt.value
+                                            val m = th * 0.8f * pressAnim
+                                            translationX += m * 0.55f
+                                            translationY = m
+                                        }
                                     },
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -368,7 +379,12 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                     Box(
                         Modifier.align(Alignment.Center).size(pillW + 20.dp, pillH + 20.dp).pointerInput(Unit) {
                             detectTapGestures(
-                                onPress = { pressed = true; tryAwaitRelease(); pressed = false },
+                                onPress = {
+                                    pressed = true
+                                    scope.launch { ripple.snapTo(0f); ripple.animateTo(1f, tween(800)) }
+                                    tryAwaitRelease()
+                                    pressed = false
+                                },
                                 onTap = {
                                     val idx = pos.value.roundToInt().coerceIn(0, last)
                                     if (isIslandRunning()) playTilt(holdFor(idx))
@@ -439,7 +455,10 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
  * iPhone Eylem Düğmesi ekranındaki gibi: ortada gri metalik dikey bant, üstte ve altta siyaha solar, yanlar siyah.
  * [cy] hapın dikey merkezi, [pw]/[ph] hapın piksel boyutu; bant hapa göre ölçeklenir (genişlik ≈ 2.4 x hap).
  */
-private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Float, tilt: Float, shift: Float) {
+private fun DrawScope.drawMetalBand(
+    accent: Color, cy: Float, pw: Float, ph: Float, tilt: Float, shift: Float,
+    press: Float = 0f, ripple: Float = 1f,
+) {
     val bw = pw * 2.4f
     val left = (size.width - bw) / 2f + shift
     val top = cy - ph * 1.6f
@@ -498,10 +517,15 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
         cornerRadius = CornerRadius(archW / 2f), style = Stroke(2.dp.toPx()),
     )
     // Seçili rengin parıltısı
+    val pulse = press * 0.20f + (1f - ripple) * 0.25f
     drawRect(
         Brush.radialGradient(
-            listOf(accent.copy(alpha = 0.80f), accent.copy(alpha = 0.32f), Color.Transparent),
-            center = Offset(size.width / 2f + shift, cy), radius = bw * 0.75f,
+            listOf(
+                accent.copy(alpha = (0.80f + pulse).coerceAtMost(1f)),
+                accent.copy(alpha = (0.32f + pulse * 0.8f).coerceAtMost(1f)),
+                Color.Transparent,
+            ),
+            center = Offset(size.width / 2f + shift, cy), radius = bw * (0.75f + 0.12f * press + 0.18f * (1f - ripple)),
         ),
     )
     // Yan kenarları siyaha yumuşakça söndür
@@ -526,7 +550,9 @@ private fun DrawScope.drawPhoneSide(cy: Float, pw: Float, ph: Float, tilt: Float
     val h = ph * 3.9f
     val bottom = top + h
     val wall = 10.dp.toPx() * tilt                 // metal çerçevenin kalınlığı
-    val line = 3.dp.toPx() + 2.dp.toPx() * tilt    // ekranın en kenarındaki ince siyah çizgi
+    // Metal bant ile beyaz ekran arasındaki siyah şerit: ekran görüntüsündeki gibi kalın (ekran genişliğinin ≈ %5'i).
+    // Daha kalın/ince istersen 0.05f değerini değiştir.
+    val line = size.width * 0.05f
     val farY = -size.height
     val farH = size.height * 3f
     drawRect(
@@ -542,7 +568,17 @@ private fun DrawScope.drawPhoneSide(cy: Float, pw: Float, ph: Float, tilt: Float
         topLeft = Offset(edge, top), size = Size(wall, h),
     )
     val bx = edge + wall
-    drawRect(Color(0xFF0A0A0C), topLeft = Offset(bx, farY), size = Size(line, farH), alpha = tilt)
+    drawRect(
+        Brush.horizontalGradient(
+            0f to Color(0xFF16161A), 0.25f to Color(0xFF050507), 0.85f to Color(0xFF020203), 1f to Color(0xFF0C0C0F),
+            startX = bx, endX = bx + line,
+        ),
+        topLeft = Offset(bx, farY), size = Size(line, farH), alpha = tilt,
+    )
+    // Ekran kenarında çok ince parlak dudak
+    drawRect(
+        Color(0x26FFFFFF), topLeft = Offset(bx + line - 1.dp.toPx(), farY), size = Size(1.dp.toPx(), farH), alpha = tilt,
+    )
     val wx = bx + line
     val ww = size.width * 2f - wx
     drawRect(
@@ -564,34 +600,90 @@ private fun DrawScope.drawPhoneSide(cy: Float, pw: Float, ph: Float, tilt: Float
     )
 }
 
-private fun DrawScope.drawCapsule(color: Color, depth: Float = 0f) {
-    val r = size.width / 2f
-    // Yumuşak dış parıltı: büyüyen, sönük halkalar
-    for (k in 9 downTo 1) {
-        val e = k * 2.5.dp.toPx()
-        drawRoundRect(color.copy(alpha = 0.045f), Offset(-e, -e), Size(size.width + 2f * e, size.height + 2f * e), CornerRadius(r + e))
+private fun DrawScope.drawCapsule(color: Color, depth: Float = 0f, press: Float = 0f, ripple: Float = 1f) {
+    val w = size.width
+    val h = size.height
+    val r = w / 2f
+    val dirX = 0.55f
+    val dirY = 1f
+
+    // 1) Dış parıltı: tuşun renginde, basınca güçlenir ve genişler
+    for (k in 12 downTo 1) {
+        val e = k * 2.6.dp.toPx() * (1f + 0.3f * press)
+        drawRoundRect(color.copy(alpha = 0.04f * (1f + 0.5f * press)), Offset(-e, -e), Size(w + 2f * e, h + 2f * e), CornerRadius(r + e))
     }
-    // Kalınlık: sağ-aşağıya doğru koyulaşan kopyalar (tuş yüksekliği); yalnızca telefon eğikken görünür
-    if (depth > 0.01f) {
-        val steps = 10
-        val dx = 0.8.dp.toPx() * depth
-        val dy = 1.2.dp.toPx() * depth
-        drawRoundRect(
-            Color(0x66000000), Offset(dx * (steps + 2), dy * (steps + 2)), size, CornerRadius(r),
-        )
-        for (k in steps downTo 1) {
+    // 2) Basınca tuşun renginde dışarı yayılan, sönen halka dalgaları
+    if (ripple < 0.99f) {
+        val fade = 1f - ripple
+        for (j in 0..3) {
+            val e = 4.dp.toPx() + ripple * 52.dp.toPx()
             drawRoundRect(
-                mix(color, Color.Black, 0.40f + 0.35f * k / steps), Offset(dx * k, dy * k), size, CornerRadius(r),
+                color.copy(alpha = 0.30f * fade * fade / (1f + j * 0.8f)),
+                Offset(-e, -e), Size(w + 2f * e, h + 2f * e), CornerRadius(r + e),
+                style = Stroke((3 + j * 4).dp.toPx()),
             )
         }
     }
-    drawRoundRect(Brush.verticalGradient(listOf(mix(color, Color.White, 0.22f), color)), cornerRadius = CornerRadius(r))
-    drawRoundRect(mix(color, Color.Black, 0.2f), cornerRadius = CornerRadius(r), style = Stroke(size.width * 0.057f))
-    if (depth > 0.01f) {
-        // Sol-üst kenarda ince parlak vurgu
+
+    // 3) Tuşun kalınlığı: basınca yüzey tabana doğru batar, kalınlık azalır
+    val thick = 5.dp.toPx() + 4.dp.toPx() * depth
+    val cur = thick * (1f - 0.8f * press)
+    // Zemine düşen gölge (taban sabit kalır)
+    for (k in 3 downTo 1) {
+        val g = k * 2.dp.toPx()
         drawRoundRect(
-            Color.White.copy(alpha = 0.22f * depth), Offset(size.width * 0.05f, size.width * 0.05f),
-            Size(size.width * 0.9f, size.height - size.width * 0.1f), CornerRadius(r * 0.9f), style = Stroke(1.5.dp.toPx()),
+            Color(0x26000000), Offset(dirX * thick - g, dirY * thick - g + 2.dp.toPx()),
+            Size(w + 2f * g, h + 2f * g), CornerRadius(r + g),
+        )
+    }
+    withTransform({ translate((thick - cur) * dirX, (thick - cur) * dirY) }) {
+        // Yan duvar: yüzeyden tabana doğru koyulaşan katmanlar
+        val steps = 14
+        for (k in steps downTo 1) {
+            val f = k / steps.toFloat()
+            drawRoundRect(
+                mix(color, Color.Black, 0.30f + 0.45f * f),
+                Offset(dirX * cur * f, dirY * cur * f), size, CornerRadius(r),
+            )
+        }
+        // Üst yüzey
+        drawRoundRect(
+            Brush.verticalGradient(
+                0f to mix(color, Color.White, 0.30f), 0.45f to color, 1f to mix(color, Color.Black, 0.20f),
+                startY = 0f, endY = h,
+            ),
+            cornerRadius = CornerRadius(r),
+        )
+        if (press > 0.01f) drawRoundRect(Color.Black.copy(alpha = 0.10f * press), cornerRadius = CornerRadius(r))
+        // Koyu kenar halkası
+        val sw = w * 0.057f
+        drawRoundRect(
+            mix(color, Color.Black, 0.22f), Offset(sw / 2f, sw / 2f), Size(w - sw, h - sw),
+            CornerRadius(r - sw / 2f), style = Stroke(sw),
+        )
+        // İç kenar: sol-üstte parlak, sağ-altta koyu (eğim / bevel)
+        drawRoundRect(
+            Brush.linearGradient(
+                0f to Color.White.copy(alpha = 0.55f * (1f - 0.6f * press)), 0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.28f),
+                start = Offset(0f, 0f), end = Offset(w, h),
+            ),
+            Offset(sw, sw), Size(w - 2f * sw, h - 2f * sw), CornerRadius(r - sw), style = Stroke(1.6.dp.toPx()),
+        )
+        // Kubbe gibi yumuşak ışık (sol-üstten)
+        drawRoundRect(
+            Brush.radialGradient(
+                listOf(Color.White.copy(alpha = 0.34f * (1f - 0.5f * press)), Color.Transparent),
+                center = Offset(w * 0.38f, h * 0.24f), radius = w * 0.75f,
+            ),
+            Offset(sw, sw), Size(w - 2f * sw, h - 2f * sw), CornerRadius(r - sw),
+        )
+        // Sol kenarda dikey parlak yansıma çizgisi
+        drawRoundRect(
+            Brush.verticalGradient(
+                0f to Color.Transparent, 0.45f to Color.White.copy(alpha = 0.45f * (1f - 0.5f * press)), 1f to Color.Transparent,
+                startY = w * 0.35f, endY = h - w * 0.35f,
+            ),
+            Offset(w * 0.14f, w * 0.35f), Size(w * 0.07f, h - w * 0.7f), CornerRadius(w * 0.035f),
         )
     }
 }
