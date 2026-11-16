@@ -193,6 +193,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key), holdMs = 4_000)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
+            is IslandEvent.ShowFavorites -> if (!assistantActive && callKey == null && ui.value.content is IslandContent.Idle) openFavorites()
         }
     }
 

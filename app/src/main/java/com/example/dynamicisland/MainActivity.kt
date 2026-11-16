@@ -234,121 +234,32 @@ private fun Context.islandServiceRunning(): Boolean = runCatching {
         .any { it.service.className == IslandOverlayService::class.java.name }
 }.getOrDefault(false)
 
-/** Ana Sayfa: "Dene" kartı. Açılınca adanın görünümleri seçenek olarak listelenir. */
+/** Ana Sayfa: "Dene" kartı. Dene tuşu tam ekran, kaydırmalı önizleme ekranını açar (TryScreen.kt). */
 @Composable
 private fun HomeScreen() {
     val ctx = LocalContext.current
     var tryOpen by rememberSaveable { mutableStateOf(false) }
-    var silentDemo by remember { mutableStateOf(true) }      // Zil Modu önizlemesi: sessiz <-> zil
-    androidx.activity.compose.BackHandler(enabled = tryOpen) { tryOpen = false }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        if (!tryOpen) {
-            SectionCard("Dene", "Adanın görünümlerini ve animasyonlarını önizle") {
-                IslandActionButton("Dene", { tryOpen = true }, tonal = false)
-            }
-        } else {
-            SectionCard("Dene", "Birine dokun, ada o görünümü gösterir") {
-                // Ada çalışmıyorsa uyar, çalışıyorsa verilen önizlemeyi gönder
-                val guarded: (() -> Unit) -> Unit = { action ->
-                    if (!ctx.islandServiceRunning()) {
-                        Toast.makeText(ctx, "Önce Kurulum sekmesinden adayı başlat", Toast.LENGTH_LONG).show()
-                    } else action()
-                }
-                TryRow("Ara", "Gelen arama tasarımı ve animasyonu. Cevapla / Reddet düğmeleri çalışır") {
-                    guarded {
-                        IslandBus.post(
-                            IslandEvent.Call(
-                                key = DEMO_CALL_KEY, pkg = "demo", name = "Ayşe Yılmaz", incoming = true,
-                                startedAt = 0L, avatar = null, answer = null, decline = null,
-                            )
-                        )
-                    }
-                }
-                SectionDivider()
-                TryRow("Mesaj", "Mesaj bildirimi görünümü") {
-                    guarded {
-                        IslandBus.post(IslandEvent.Notification(ctx.packageName, "Ayşe", "Akşam görüşelim mi? 😊", null))
-                    }
-                }
-                SectionDivider()
-                TryRow("Zil Modu", "Sessiz ve zil görünümü. Her dokunuşta değişir") {
-                    guarded {
-                        IslandBus.post(
-                            IslandEvent.Status(
-                                IslandContent.Status(
-                                    kind = StatusKind.Ringer,
-                                    title = if (silentDemo) "Sessiz" else "Zil",
-                                    subtitle = if (silentDemo) "Zil kapalı" else "Zil açık",
-                                    silent = silentDemo,
-                                ), holdMs = 2_500L,
-                            )
-                        )
-                        silentDemo = !silentDemo
-                    }
-                }
-                SectionDivider()
-                TryRow("Şarj", "Şarj oluyor görünümü") {
-                    guarded {
-                        IslandBus.post(
-                            IslandEvent.Status(
-                                IslandContent.Status(
-                                    kind = StatusKind.Charging, title = "Şarj oluyor", subtitle = "Hızlı şarj",
-                                    value = "%78", progress = 0.78f,
-                                ), holdMs = 4_000L,
-                            )
-                        )
-                    }
-                }
-                SectionDivider()
-                TryRow("Zamanlayıcı", "Geri sayan zamanlayıcı görünümü") {
-                    guarded {
-                        val total = 300_000L
-                        IslandBus.post(
-                            IslandEvent.Status(
-                                IslandContent.Status(
-                                    kind = StatusKind.Timer, title = "Zamanlayıcı", subtitle = "Kalan süre",
-                                    endsAt = System.currentTimeMillis() + total, totalMs = total,
-                                ), holdMs = 6_000L,
-                            )
-                        )
-                    }
-                }
-                SectionDivider()
-                TryRow("Alarm", "Alarm görünümü") {
-                    guarded {
-                        IslandBus.post(
-                            IslandEvent.Status(
-                                IslandContent.Status(
-                                    kind = StatusKind.Alarm, title = "Alarm", subtitle = "Hafta içi", value = "07:30",
-                                ), holdMs = 4_000L,
-                            )
-                        )
-                    }
-                }
-            }
-            IslandActionButton("Geri", { tryOpen = false })
+        SectionCard("Dene", "Adanın görünümlerini ve animasyonlarını önizle") {
+            IslandActionButton("Dene", { tryOpen = true }, tonal = false)
         }
         Spacer(Modifier.height(8.dp))
     }
-}
 
-@Composable
-private fun TryRow(title: String, desc: String, onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(desc, color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp)
+    if (tryOpen) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { tryOpen = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) {
+            TryScreen(isIslandRunning = { ctx.islandServiceRunning() }, onClose = { tryOpen = false })
         }
-        Text("›", color = cs.onSurfaceVariant, fontSize = 22.sp)
     }
 }
 

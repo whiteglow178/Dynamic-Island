@@ -140,6 +140,8 @@ sealed interface IslandEvent {
     data class AssistantChanged(val active: Boolean) : IslandEvent
     /** Ön plandaki uygulama değişti ([from] -> [to]); müzik uygulamasından çıkış animasyonu için. */
     data class AppSwitched(val from: String, val to: String) : IslandEvent
+    /** Ana Sayfa > Dene: favori uygulamalar panelini aç (ayarlarda favoriler açık ve en az bir uygulama seçili olmalı). */
+    data object ShowFavorites : IslandEvent
 }
 
 /** Arayüz -> NotificationListener (medya kontrolü) komutları. */
