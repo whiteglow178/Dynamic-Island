@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -1095,7 +1096,7 @@ fun IslandPill(
                 val cover = content.cover
                 if (expandingNow || cover == null) {
                     Canvas(Modifier.align(Alignment.CenterStart).padding(start = 9.dp).size(sz).then(fade)) {
-                        drawShazamGlyph(Offset.Zero, size.minDimension, 1f, true)
+                        drawShazamGlyph(Offset.Zero, size.minDimension, ShazamBlue, 1f)
                     }
                 } else {
                     Image(
@@ -1598,26 +1599,27 @@ private class ShazamSpark(val angle: Float, val speed: Float, val rad: Float, va
 private val ShazamBlueTop = Color(0xFF33AEFF)
 private val ShazamBlueBottom = Color(0xFF0A68FF)
 
+private val ShazamBlue = Color(0xFF0088FF)
+
 /**
- * Shazam logosu: mavi daire + beyaz "S". Resmi logo yerine yol (Path) ile çizilen yaklaşık bir şekildir;
- * res/drawable'a gerçek logoyu koyarsan bu fonksiyonun yerine Image(painterResource(...)) kullanabilirsin.
+ * Resmi Shazam "S" işareti (gönderdiğin logodan ölçülen geometri): iki kalın, yuvarlak uçlu kanca;
+ * ikincisi birincinin 180° döndürülmüşü. [color] mavi ya da beyaz olabilir; arka daire yok.
  */
-private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, alpha: Float, disc: Boolean) {
-    if (disc) {
-        drawCircle(
-            brush = Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom), startY = topLeft.y, endY = topLeft.y + side),
-            radius = side / 2f, center = Offset(topLeft.x + side / 2f, topLeft.y + side / 2f), alpha = alpha,
-        )
+private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, color: Color, alpha: Float) {
+    fun pt(u: Float, v: Float, flip: Boolean) =
+        if (flip) Offset(topLeft.x + (1f - u) * side, topLeft.y + (1f - v) * side) else Offset(topLeft.x + u * side, topLeft.y + v * side)
+    val r = 0.1759f * side
+    val path = Path()
+    for (rot in 0..1) {
+        val flip = rot == 1
+        val p0 = pt(0.4148f, 0.2130f, flip)       // üst uç (yuvarlak)
+        val c = pt(0.4148f, 0.4630f, flip)        // kancanın yay merkezi
+        val p2 = pt(0.5861f, 0.5398f, flip)       // iç uç (yuvarlak)
+        path.moveTo(p0.x, p0.y)
+        path.arcTo(Rect(c, r), 225f + rot * 180f, -180f, false)   // çizgi + yay (yayın başlangıcına düz çizgiyle inilir)
+        path.lineTo(p2.x, p2.y)
     }
-    val fx = { u: Float -> topLeft.x + u * side }
-    val fy = { v: Float -> topLeft.y + v * side }
-    val path = Path().apply {
-        moveTo(fx(0.69f), fy(0.31f))
-        cubicTo(fx(0.56f), fy(0.19f), fx(0.29f), fy(0.22f), fx(0.30f), fy(0.39f))
-        cubicTo(fx(0.31f), fy(0.54f), fx(0.70f), fy(0.45f), fx(0.70f), fy(0.62f))
-        cubicTo(fx(0.71f), fy(0.79f), fx(0.44f), fy(0.81f), fx(0.31f), fy(0.69f))
-    }
-    drawPath(path, Color.White, alpha = alpha, style = Stroke(width = side * 0.11f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    drawPath(path, color, alpha = alpha, style = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
 /** Küçük adadaki Shazam ses dalgası: mavi, hareketli çubuklar. */
@@ -1638,7 +1640,7 @@ private fun ShazamWave(modifier: Modifier = Modifier) {
             val v: Float = 0.30f + 0.70f * abs(sin(phase + i * 1.15f))
             val h: Float = (size.height * v).coerceAtLeast(bw)
             val x: Float = gap * i + gap / 2f
-            val color = androidx.compose.ui.graphics.lerp(ShazamBlueTop, Color(0xFF7FC6FF), i / (n - 1).toFloat())
+            val color = androidx.compose.ui.graphics.lerp(ShazamBlue, Color(0xFF6BBBFF), i / (n - 1).toFloat())
             drawLine(color, Offset(x, (size.height - h) / 2f), Offset(x, (size.height + h) / 2f), strokeWidth = bw, cap = StrokeCap.Round)
         }
     }
@@ -1759,11 +1761,11 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
             } else {
                 // Kapak bildirimde yoksa: Shazam logolu mavi kare
                 drawRoundRect(
-                    brush = Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom), startY = top, endY = top + full),
+                    color = ShazamBlue,
                     topLeft = Offset(left, top), size = Size(full, full),
                     cornerRadius = CornerRadius(full * 0.22f, full * 0.22f), alpha = revealP,
                 )
-                drawShazamGlyph(Offset(left + full * 0.12f, top + full * 0.12f), full * 0.76f, revealP, false)
+                drawShazamGlyph(Offset(left + full * 0.14f, top + full * 0.14f), full * 0.72f, Color.White, revealP)
             }
         }
 

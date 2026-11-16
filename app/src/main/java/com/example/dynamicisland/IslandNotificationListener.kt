@@ -21,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class IslandNotificationListener : NotificationListenerService() {
 
@@ -301,6 +302,30 @@ class IslandNotificationListener : NotificationListenerService() {
         return if (hasCover || recent) ShazamKind.Result else ShazamKind.None
     }
 
+    /** iTunes Search ile albüm kapağını bulur (anahtarsız, ücretsiz). Bulamazsa null. */
+    private fun fetchCoverOnline(title: String, artist: String): ImageBitmap? = runCatching {
+        val q = java.net.URLEncoder.encode("$title $artist".trim(), "UTF-8")
+        val conn = java.net.URL("https://itunes.apple.com/search?term=$q&media=music&entity=song&limit=5").openConnection() as java.net.HttpURLConnection
+        val body = try {
+            conn.connectTimeout = 3_000; conn.readTimeout = 3_000
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } finally { conn.disconnect() }
+        val arr = org.json.JSONObject(body).optJSONArray("results") ?: return@runCatching null
+        val t = title.lowercase()
+        var first: String? = null
+        var best: String? = null
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val art = o.optString("artworkUrl100")
+            if (art.isBlank()) continue
+            if (first == null) first = art
+            val name = o.optString("trackName").lowercase()
+            if (name.isNotBlank() && (name.contains(t) || t.contains(name))) { best = art; break }
+        }
+        val url = (best ?: first)?.replace("100x100bb", "600x600bb") ?: return@runCatching null
+        decodeUri(url)?.asImageBitmap()
+    }.getOrNull()
+
     /** Shazam bildirimiyse adaya olay gönderir ve true döner (bildirim normal bildirim olarak gösterilmez). */
     private fun handleShazam(sbn: StatusBarNotification): Boolean {
         if (sbn.packageName !in shazamPkgs) return false
@@ -325,7 +350,19 @@ class IslandNotificationListener : NotificationListenerService() {
                 if (sig == lastShazamSig && now - lastShazamAt < 15_000L) return true     // bildirim güncellemesi: tekrar gösterme
                 lastShazamSig = sig; lastShazamAt = now
                 shazamListenAt = 0L
-                IslandBus.post(IslandEvent.ShazamFound(title, artist, recThumbOf(n), n.contentIntent, sbn.key))
+                val notifCover = recThumbOf(n)
+                val open = n.contentIntent
+                val key = sbn.key
+                val sc = scope
+                if ((notifCover != null && notifCover.width >= 200) || title.isBlank() || sc == null) {
+                    IslandBus.post(IslandEvent.ShazamFound(title, artist, notifCover, open, key))
+                } else {
+                    // Bildirimde kapak yok / küçük: şarkı adı + sanatçıyla internetten kapak ara (en fazla 2,5 sn bekler)
+                    sc.launch {
+                        val online = withTimeoutOrNull(2_500L) { withContext(Dispatchers.IO) { fetchCoverOnline(title, artist) } }
+                        IslandBus.post(IslandEvent.ShazamFound(title, artist, online ?: notifCover, open, key))
+                    }
+                }
                 return true
             }
             ShazamKind.NoMatch -> { IslandBus.post(IslandEvent.ShazamGone); return true }
