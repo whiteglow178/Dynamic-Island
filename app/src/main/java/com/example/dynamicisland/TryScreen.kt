@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -99,6 +100,9 @@ private val TryItems = listOf(
     TryItem("Asistan", "Asistan animasyonu ve ekran kenarı parıltısı.", Color(0xFFAF52DE), 8),
     TryItem("Favoriler", "Favori uygulamalar paneli. Ayarlardan favori uygulama seçili olmalı.", Color(0xFF5E5CE6), 9),
 )
+
+/** Dönme açısı (derece). Fazla dönmesin diye küçük; ters yöne dönerse eksi yap. */
+private const val TryTurnDeg = 18f
 
 private val TryBg = Color(0xFF050507)
 private val TrySideTint = Color(0xFFB4B8C2)
@@ -255,7 +259,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         // Ekran sabit kalır; yalnızca metalik kenar (hap + simgelerle birlikte) sola kayar
         val slideMax = 0f   // yana kayma yok; hareket 3 boyutlu eğilme
-        val camPx = with(density) { 24.dp.toPx() }
+        val camPx = with(density) { 32.dp.toPx() }
 
         Box(Modifier.fillMaxSize().background(TryBg)) {
         // Tüm ölçüler ekran genişliğine göre (ekran görüntüsündeki oranlar)
@@ -268,17 +272,19 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
         // Ortada gri metalik bant (yanlar siyah); seçili rengin parıltısı bandın içinde yayılır
         // Metalik kenar (bant + hap + simgeler + yazılar) tek katman: 3 boyutlu eğilir. Ekran ve geri tuşu sabit kalır.
         Box(
-            Modifier.fillMaxSize().graphicsLayer {
-                val t = tilt.value
-                cameraDistance = camPx
-                rotationZ = -14f * t      // ekran görüntüsünde telefon saat yönünün tersine döner
-                rotationX = 12f * t
-                rotationY = -10f * t
-                translationX = size.width * 0.06f * t
-                translationY = -size.height * 0.01f * t
-                scaleX = 1f + 0.10f * t
-                scaleY = 1f + 0.10f * t
-            },
+            Modifier.fillMaxSize()
+                .graphicsLayer {
+                    val t = tilt.value
+                    cameraDistance = camPx
+                    // Telefon, elimizde tutarken ekranına doğru döner: yalnızca dikey eksen etrafında, az bir açıyla.
+                    // Menteşe: metal bandın sağ kenarı. Yön ters görünürse TryTurnDeg değerini eksi yap.
+                    transformOrigin = TransformOrigin((size.width + pillWpx * 2.4f) / 2f / size.width, 0.5f)
+                    rotationY = TryTurnDeg * t
+                }
+                .drawBehind {
+                    val cy = if (glowY > 0f) glowY else size.height * 0.4f
+                    drawPhoneSide(cy, pillWpx, pillHpx, tilt.value)
+                },
         ) {
         Box(
             Modifier.fillMaxSize()
@@ -506,50 +512,56 @@ private fun DrawScope.drawMetalBand(accent: Color, cy: Float, pw: Float, ph: Flo
         ),
         blendMode = BlendMode.DstIn,
     )
-    // Tuşa basınca telefon döner: bandın sağında önce metal yan duvar (kalınlık), sonra ince siyah çerçeve, sonra beyaz ekran
-    if (tilt > 0.01f) {
-        val edge = left + bw
-        val wall = 10.dp.toPx() * tilt                 // metal çerçevenin kalınlığı
-        val line = 3.dp.toPx() + 2.dp.toPx() * tilt    // ekranın en kenarındaki ince siyah çizgi
-        if (wall > 0.5f) {
-            drawRect(
-                Brush.verticalGradient(
-                    0f to Color.Transparent, 0.22f to Color(0xFFB9BCC3), 0.62f to Color(0xFF8E9197),
-                    0.85f to Color(0xFF4A4B50), 1f to Color.Transparent,
-                    startY = top, endY = bottom,
-                ),
-                topLeft = Offset(edge, top), size = Size(wall, h),
-            )
-            // Yan duvarın ekrana doğru koyulaşması (yuvarlak kenar hissi)
-            drawRect(
-                Brush.horizontalGradient(0f to Color(0x00000000), 1f to Color(0x99000000), startX = edge, endX = edge + wall),
-                topLeft = Offset(edge, top), size = Size(wall, h),
-            )
-        }
-        val bx = edge + wall
-        drawRect(Color(0xFF0A0A0C), topLeft = Offset(bx, 0f), size = Size(line, size.height), alpha = tilt)
-        val wx = bx + line
-        val ww = size.width - wx
-        if (ww > 0f) {
-            drawRect(
-                Brush.horizontalGradient(
-                    0f to Color(0xFF9AA3A5), 0.2f to Color(0xFFE9EEEE), 1f to Color(0xFFD9E0E0),
-                    startX = wx, endX = size.width,
-                ),
-                topLeft = Offset(wx, 0f), size = Size(ww, size.height), alpha = tilt,
-            )
-            // Çerçevenin ekrana düşen gölgesi
-            drawRect(
-                Brush.horizontalGradient(0f to Color(0x66000000), 1f to Color.Transparent, startX = wx, endX = wx + 30.dp.toPx()),
-                topLeft = Offset(wx, 0f), size = Size(min(ww, 30.dp.toPx()), size.height), alpha = tilt,
-            )
-            // Beyaz ekran aşağı doğru kararır
-            drawRect(
-                Brush.verticalGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 0.95f to TryBg),
-                topLeft = Offset(wx, 0f), size = Size(ww, size.height), alpha = tilt,
-            )
-        }
-    }
+}
+
+/**
+ * Bandın sağında: metal yan duvar, ince siyah çerçeve, beyaz ekran. Ekran sağa taşar (dönünce görünür kalsın diye),
+ * bu yüzden bant katmanının dışında, dönen katmanın arkasına çizilir.
+ */
+private fun DrawScope.drawPhoneSide(cy: Float, pw: Float, ph: Float, tilt: Float) {
+    if (tilt <= 0.01f) return
+    val bw = pw * 2.4f
+    val edge = (size.width + bw) / 2f
+    val top = cy - ph * 1.6f
+    val h = ph * 3.9f
+    val bottom = top + h
+    val wall = 10.dp.toPx() * tilt                 // metal çerçevenin kalınlığı
+    val line = 3.dp.toPx() + 2.dp.toPx() * tilt    // ekranın en kenarındaki ince siyah çizgi
+    val farY = -size.height
+    val farH = size.height * 3f
+    drawRect(
+        Brush.verticalGradient(
+            0f to Color.Transparent, 0.22f to Color(0xFFB9BCC3), 0.62f to Color(0xFF8E9197),
+            0.85f to Color(0xFF4A4B50), 1f to Color.Transparent,
+            startY = top, endY = bottom,
+        ),
+        topLeft = Offset(edge - 1.dp.toPx(), top), size = Size(wall + 1.dp.toPx(), h),
+    )
+    drawRect(
+        Brush.horizontalGradient(0f to Color(0x00000000), 1f to Color(0x99000000), startX = edge, endX = edge + wall),
+        topLeft = Offset(edge, top), size = Size(wall, h),
+    )
+    val bx = edge + wall
+    drawRect(Color(0xFF0A0A0C), topLeft = Offset(bx, farY), size = Size(line, farH), alpha = tilt)
+    val wx = bx + line
+    val ww = size.width * 2f - wx
+    drawRect(
+        Brush.horizontalGradient(
+            0f to Color(0xFF9AA3A5), 0.05f to Color(0xFFE9EEEE), 1f to Color(0xFFD9E0E0),
+            startX = wx, endX = wx + size.width * 0.8f,
+        ),
+        topLeft = Offset(wx, farY), size = Size(ww, farH), alpha = tilt,
+    )
+    // Çerçevenin ekrana düşen gölgesi
+    drawRect(
+        Brush.horizontalGradient(0f to Color(0x66000000), 1f to Color.Transparent, startX = wx, endX = wx + 30.dp.toPx()),
+        topLeft = Offset(wx, farY), size = Size(30.dp.toPx(), farH), alpha = tilt,
+    )
+    // Beyaz ekran aşağı doğru kararır
+    drawRect(
+        Brush.verticalGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 0.95f to TryBg, startY = 0f, endY = size.height),
+        topLeft = Offset(wx, farY), size = Size(ww, farH), alpha = tilt,
+    )
 }
 
 private fun DrawScope.drawCapsule(color: Color, depth: Float = 0f) {
