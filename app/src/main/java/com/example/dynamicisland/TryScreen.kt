@@ -41,7 +41,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -224,18 +226,13 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     val i1 = (i0 + 1).coerceAtMost(last)
     val accent = mix(TryItems[i0].color, TryItems[i1].color, (pos.value - i0).coerceIn(0f, 1f))
 
-    Box(
-        Modifier.fillMaxSize().background(TryBg).drawBehind {
-            // Seçili rengin arkadan yayılan parıltısı
-            drawRect(
-                Brush.radialGradient(
-                    listOf(accent.copy(alpha = 0.40f), accent.copy(alpha = 0.12f), Color.Transparent),
-                    center = Offset(size.width / 2f, size.height * 0.40f),
-                    radius = size.width * 1.15f,
-                )
-            )
-        },
-    ) {
+    Box(Modifier.fillMaxSize().background(TryBg)) {
+        // Ortada gri metalik bant (yanlar siyah); seçili rengin parıltısı bandın içinde yayılır
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawBehind { drawMetalBand(accent) },
+        )
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
             // Geri tuşu
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp)) {
@@ -287,6 +284,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                             Modifier.align(Alignment.Center).size(pillW, pillH)
                                 .offset { IntOffset((rel * sideXpx).roundToInt(), 0) }
                                 .graphicsLayer {
+                                    compositingStrategy = CompositingStrategy.ModulateAlpha
                                     alpha = a
                                     val s = if (isCenter) pressScale else 1f
                                     scaleX = s; scaleY = s
@@ -297,6 +295,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                             Box(
                                 Modifier.fillMaxSize()
                                     .graphicsLayer {
+                                        compositingStrategy = CompositingStrategy.ModulateAlpha
                                         alpha = capA
                                         val sc = 0.6f + 0.4f * capA
                                         scaleX = sc; scaleY = sc
@@ -354,12 +353,57 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     }
 }
 
+/** iPhone Eylem Düğmesi ekranındaki gibi: ortada gri metalik dikey bant, üstte ve altta siyaha solar, yanlar siyah. */
+private fun DrawScope.drawMetalBand(accent: Color) {
+    val bw = size.width * 0.72f
+    val left = (size.width - bw) / 2f
+    val h = size.height
+    // Gri metalik dolgu
+    drawRect(
+        Brush.verticalGradient(
+            0f to Color(0x00808088),
+            0.10f to Color(0x66707078),
+            0.38f to Color(0xFFA2A2A8),
+            0.62f to Color(0xFF68686E),
+            0.88f to Color(0x00404046),
+            1f to Color.Transparent,
+        ),
+        topLeft = Offset(left, 0f), size = Size(bw, h),
+    )
+    // İki yanda parlak dikey kenar çizgileri
+    for (x in listOf(left + bw * 0.12f, left + bw * 0.88f)) {
+        drawRect(
+            Brush.verticalGradient(0f to Color.Transparent, 0.3f to Color(0x99FFFFFF), 0.7f to Color(0x40FFFFFF), 1f to Color.Transparent),
+            topLeft = Offset(x - 1.5.dp.toPx(), 0f), size = Size(3.dp.toPx(), h),
+        )
+        drawRect(
+            Brush.verticalGradient(0f to Color.Transparent, 0.35f to Color(0x24FFFFFF), 0.75f to Color(0x10FFFFFF), 1f to Color.Transparent),
+            topLeft = Offset(x - 9.dp.toPx(), 0f), size = Size(18.dp.toPx(), h),
+        )
+    }
+    // Seçili rengin parıltısı
+    drawRect(
+        Brush.radialGradient(
+            listOf(accent.copy(alpha = 0.80f), accent.copy(alpha = 0.32f), Color.Transparent),
+            center = Offset(size.width / 2f, h * 0.40f), radius = bw * 0.95f,
+        ),
+    )
+    // Yan kenarları siyaha yumuşakça söndür
+    drawRect(
+        Brush.horizontalGradient(
+            0f to Color.Transparent, 0.16f to Color.Black, 0.84f to Color.Black, 1f to Color.Transparent,
+            startX = left, endX = left + bw,
+        ),
+        blendMode = BlendMode.DstIn,
+    )
+}
+
 private fun DrawScope.drawCapsule(color: Color) {
     val r = size.width / 2f
     // Yumuşak dış parıltı: büyüyen, sönük halkalar
-    for (k in 5 downTo 1) {
-        val e = k * 7.dp.toPx()
-        drawRoundRect(color.copy(alpha = 0.07f), Offset(-e, -e), Size(size.width + 2f * e, size.height + 2f * e), CornerRadius(r + e))
+    for (k in 9 downTo 1) {
+        val e = k * 4.dp.toPx()
+        drawRoundRect(color.copy(alpha = 0.045f), Offset(-e, -e), Size(size.width + 2f * e, size.height + 2f * e), CornerRadius(r + e))
     }
     drawRoundRect(Brush.verticalGradient(listOf(mix(color, Color.White, 0.22f), color)), cornerRadius = CornerRadius(r))
     drawRoundRect(mix(color, Color.Black, 0.2f), cornerRadius = CornerRadius(r), style = Stroke(5.dp.toPx()))
