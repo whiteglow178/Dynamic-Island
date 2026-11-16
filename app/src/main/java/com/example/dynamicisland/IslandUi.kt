@@ -1714,6 +1714,20 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
                 val e = shzSmooth(bloomP)
                 val side = full * (0.30f + 0.70f * e)
                 val rad = side / 2f + (full * 0.22f - side / 2f) * e
+                // Parıltı (glow): beyaz bloğun etrafında yumuşak halo; kapak netleştikçe söner
+                val sGlow = shzSmooth((t - 0.45f) / 0.55f)
+                val glowA = e * (1f - sGlow)
+                if (glowA > 0.01f) {
+                    val layers = 14
+                    for (k in layers downTo 1) {
+                        val g = k * 1.1.dp.toPx()
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = (0.085f * glowA * (1f - k / (layers + 1f))).coerceIn(0f, 1f)),
+                            topLeft = Offset(cx - side / 2f - g, cy - side / 2f - g),
+                            size = Size(side + 2f * g, side + 2f * g), cornerRadius = CornerRadius(rad + g),
+                        )
+                    }
+                }
                 drawRoundRect(
                     color = Color.White.copy(alpha = e), topLeft = Offset(cx - side / 2f, cy - side / 2f),
                     size = Size(side, side), cornerRadius = CornerRadius(rad, rad),

@@ -801,15 +801,19 @@ private fun DrawScope.drawGlyph(kind: Int, c: Color, gap: Color) {
                 }, c,
             )
         }
-        10 -> { // shazam: S işareti
-            val sPath = Path().apply {
-                moveTo(16f, 8.2f)
-                cubicTo(15f, 6f, 9f, 6f, 8.6f, 9.2f)
-                cubicTo(8.3f, 11.8f, 11.5f, 12f, 13.2f, 12.6f)
-                cubicTo(15.4f, 13.4f, 16f, 14.8f, 15.6f, 15.8f)
-                cubicTo(15f, 17.8f, 9.2f, 18f, 8f, 15.8f)
+        10 -> { // shazam: resmi S işareti (logodan ölçüldü): iki kalın, yuvarlak uçlu kanca; ikincisi 180° döndürülmüş
+            val hook = Path().apply {
+                moveTo(447f, 917f)
+                lineTo(313f, 1051f)
+                arcTo(Rect(257f, 995f, 637f, 1375f), 225f, -180f, false)
+                lineTo(633f, 1268f)
             }
-            drawPath(sPath, c, style = Stroke(width = 2.8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            val st = Stroke(width = 125f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            val k = 19f / 745f
+            withTransform({ translate(12f, 12f); scale(k, k, Offset.Zero); translate(-540f, -1224.5f) }) {
+                drawPath(hook, c, style = st)
+                withTransform({ rotate(180f, Offset(540f, 1224.5f)) }) { drawPath(hook, c, style = st) }
+            }
         }
         9 -> { // favoriler: 2x2 uygulama ızgarası
             val cr = CornerRadius(2.4f, 2.4f)
