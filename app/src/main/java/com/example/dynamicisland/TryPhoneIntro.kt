@@ -704,10 +704,14 @@ private const val TILT_SIGN = 1f
 /** Yumuşatma zaman sabiti (saniye): küçük = daha çevik, büyük = daha yumuşak. Kare hızından bağımsızdır. */
 private const val TILT_TAU_S = 0.07f
 
+/** Gyro açısı en fazla bu kadar birikir (derece); sınırın ötesine çevirsen bile geri dönüş hemen başlar. */
+private const val TILT_RAW_LIMIT_DEG = 30f
+
 /**
  * Telefonun uzun ekseni (dikey eksen) etrafındaki dönüşünü ölçer ve [yaw]'a (derece) yazar.
- * Jiroskop + ivmeölçer birleşik "game rotation vector" sensörü kullanılır (izin gerekmez, manyetometre gerekmez).
- * Referans, [enabled] true olduğu andaki duruştur: telefonu nasıl tutuyorsan o an "0 derece" olur.
+ * Ana yöntem: jiroskobun (TYPE_GYROSCOPE) y ekseni dönüş hızı zamanla toplanır. Başlangıç tam olarak 0'dır;
+ * sensör füzyonunun "yerleşmesini" beklemek gerekmez, o yüzden telefon düz dururken 3B telefon da düz durur.
+ * Jiroskop yoksa game rotation vector kullanılır (ilk 0.4 sn yerleşme için atlanır).
  */
 @Composable
 private fun TiltSensorEffect(enabled: Boolean, yaw: MutableState<Float>) {
@@ -734,28 +738,58 @@ private fun TiltSensorEffect(enabled: Boolean, yaw: MutableState<Float>) {
         target[0] = 0f
         if (!enabled) return@DisposableEffect onDispose { }
         val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        val sensor = sm?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
-            ?: sm?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        if (sm == null || sensor == null) return@DisposableEffect onDispose { }
+            ?: return@DisposableEffect onDispose { }
 
-        val listener = object : SensorEventListener {
-            private val r = FloatArray(9)
-            private var ref: FloatArray? = null
-            override fun onSensorChanged(e: SensorEvent) {
-                SensorManager.getRotationMatrixFromVector(r, e.values)
-                val r0 = ref ?: r.copyOf().also { ref = it }
-                // Şimdiki ekran normali (cihaz z ekseni), başlangıç cihaz çatısında: Rrel = R0ᵀ · R, 3. sütun
-                var x = 0f
-                var z = 0f
-                for (k in 0..2) {
-                    x += r0[k * 3] * r[k * 3 + 2]
-                    z += r0[k * 3 + 2] * r[k * 3 + 2]
+        fun publish(deg: Float) {
+            target[0] = TILT_MAX_DEG * tanh(TILT_SIGN * deg * TILT_GAIN / TILT_MAX_DEG)
+        }
+
+        val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val listener: SensorEventListener
+        val sensor: Sensor
+        if (gyro != null) {
+            sensor = gyro
+            listener = object : SensorEventListener {
+                private var lastNs = 0L
+                private var angle = 0f
+                override fun onSensorChanged(e: SensorEvent) {
+                    if (lastNs != 0L) {
+                        val dt = (e.timestamp - lastNs) / 1_000_000_000f
+                        var w = e.values[1]                       // rad/s, cihazın y (uzun) ekseni etrafında
+                        if (abs(w) < 0.012f) w = 0f               // sensör sapmasını (bias) yok say
+                        if (dt in 0f..0.2f) {
+                            angle = (angle + w * dt * (180f / PI.toFloat()))
+                                .coerceIn(-TILT_RAW_LIMIT_DEG, TILT_RAW_LIMIT_DEG)
+                            publish(angle)
+                        }
+                    }
+                    lastNs = e.timestamp
                 }
-                val deg = (atan2(x, z) * 180.0 / PI).toFloat()
-                // Yumuşak sınır: küçük açılarda doğrusal, sınıra yaklaştıkça yavaşlar
-                target[0] = TILT_MAX_DEG * tanh(TILT_SIGN * deg * TILT_GAIN / TILT_MAX_DEG)
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
             }
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        } else {
+            sensor = sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+                ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+                ?: return@DisposableEffect onDispose { }
+            listener = object : SensorEventListener {
+                private val r = FloatArray(9)
+                private var ref: FloatArray? = null
+                private var startNs = 0L
+                override fun onSensorChanged(e: SensorEvent) {
+                    if (startNs == 0L) startNs = e.timestamp
+                    if (e.timestamp - startNs < 400_000_000L) return       // füzyon yerleşsin
+                    SensorManager.getRotationMatrixFromVector(r, e.values)
+                    val r0 = ref ?: r.copyOf().also { ref = it }
+                    var x = 0f
+                    var z = 0f
+                    for (k in 0..2) {
+                        x += r0[k * 3] * r[k * 3 + 2]
+                        z += r0[k * 3 + 2] * r[k * 3 + 2]
+                    }
+                    publish((atan2(x, z) * 180.0 / PI).toFloat())
+                }
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            }
         }
         sm.registerListener(listener, sensor, 10_000)      // ~100 Hz
         onDispose { sm.unregisterListener(listener) }
