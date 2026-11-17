@@ -255,8 +255,7 @@ class IslandNotificationListener : NotificationListenerService() {
     // ---------------------------------------------------------------- Shazam (bildirimden tanıma)
     // Shazam iki bildirim yayınlar: (1) dinlerken "devam eden" bildirim, (2) şarkıyı bulunca sonuç bildirimi
     // (başlık = şarkı adı, metin = sanatçı, büyük simge = albüm kapağı). Bildirim dili / sürümü değişebildiği için
-    // sınıflandırma birkaç ipucuna bakar; tanı kaydı (SHAZAM_DEBUG_LOG) tutmayı unutma: tutmazsa ipuçlarını buradan ayarla.
-    private val SHAZAM_DEBUG_LOG = true      // true: Shazam bildirimlerinin içeriği İndirilenler/ekran_kaydi_log_*.txt dosyasına yazılır (sorun çözülünce false yap)
+    // sınıflandırma birkaç ipucuna bakar.
     private val shazamPkgs = setOf("com.shazam.android", "com.shazam.encore.android")
     private val shazamListenHints = listOf(
         "dinle", "dinli", "listening", "tagging", "identifying", "recognizing", "tanımlan", "tanimlan", "aranıyor",
@@ -329,7 +328,6 @@ class IslandNotificationListener : NotificationListenerService() {
     /** Shazam bildirimiyse adaya olay gönderir ve true döner (bildirim normal bildirim olarak gösterilmez). */
     private fun handleShazam(sbn: StatusBarNotification): Boolean {
         if (sbn.packageName !in shazamPkgs) return false
-        if (SHAZAM_DEBUG_LOG) recLog("SHAZAM", sbn)
         val n = sbn.notification ?: return false
         val now = SystemClock.elapsedRealtime()
         when (classifyShazam(sbn, now)) {
@@ -455,60 +453,6 @@ class IslandNotificationListener : NotificationListenerService() {
             ongoing && hasProg -> RecPhase.Processing
             ongoing -> null          // süre sayacı yok = gerçek kayıt değil (hazır bekleme bildirimi)
             else -> RecPhase.Saved
-        }
-    }
-
-    // ---------------------------------------------------------------- GEÇİCİ TANI KAYDI
-    // Ekran kaydı bildirimlerinin içeriğini İndirilenler/ekran_kaydi_log_*.txt dosyasına yazar (izin gerekmez, Android 10+).
-    // Kayıt algılama sorunu çözülünce bu bölüm ve recLog çağrıları silinebilir.
-    private val recLogBuf = StringBuilder()
-    private var recLogUri: Uri? = null
-
-    private fun recLog(tag: String, sbn: StatusBarNotification) {
-        runCatching {
-            val n = sbn.notification
-            val ex = n.extras
-            fun cs(k: String) = ex.getCharSequence(k)?.toString()?.replace("\n", " / ")
-            val acts = n.actions?.joinToString(" | ") { it.title?.toString().orEmpty() } ?: "-"
-            @Suppress("DEPRECATION")
-            val hasPic = runCatching { ex.getParcelable<Bitmap>(Notification.EXTRA_PICTURE) != null }.getOrDefault(false)
-            val line = buildString {
-                append(java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date()))
-                append(' ').append(tag)
-                append(" pkg=").append(sbn.packageName)
-                append(" ch=").append(if (android.os.Build.VERSION.SDK_INT >= 26) n.channelId else "-")
-                append(" ongoing=").append(sbn.isOngoing)
-                append(" flags=0x").append(Integer.toHexString(n.flags))
-                append(" cat=").append(n.category)
-                append(" title=[").append(cs(Notification.EXTRA_TITLE)).append(']')
-                append(" text=[").append(cs(Notification.EXTRA_TEXT)).append(']')
-                append(" sub=[").append(cs(Notification.EXTRA_SUB_TEXT)).append(']')
-                append(" big=[").append(cs(Notification.EXTRA_BIG_TEXT)).append(']')
-                append(" chrono=").append(ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
-                append(" when=").append(n.`when`)
-                append(" showWhen=").append(ex.getBoolean(Notification.EXTRA_SHOW_WHEN))
-                append(" prog=").append(ex.getInt(Notification.EXTRA_PROGRESS, -1)).append('/').append(ex.getInt(Notification.EXTRA_PROGRESS_MAX, -1))
-                append(" indet=").append(ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
-                append(" actions=[").append(acts).append(']')
-                append(" contentIntent=").append(n.contentIntent != null)
-                append(" largeIcon=").append(n.getLargeIcon() != null)
-                append(" picture=").append(hasPic)
-                append(" extras=").append(ex.keySet().joinToString(","))
-            }
-            recLogBuf.append(line).append('\n')
-            if (recLogBuf.length > 60_000) recLogBuf.delete(0, recLogBuf.length - 60_000)
-            if (android.os.Build.VERSION.SDK_INT >= 29) {
-                val uri = recLogUri ?: contentResolver.insert(
-                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                    android.content.ContentValues().apply {
-                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME,
-                            "ekran_kaydi_log_" + java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date()) + ".txt")
-                        put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
-                        put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
-                    },
-                )?.also { recLogUri = it }
-                if (uri != null) contentResolver.openOutputStream(uri, "wt")?.use { it.write(recLogBuf.toString().toByteArray()) }
-            }
         }
     }
 
