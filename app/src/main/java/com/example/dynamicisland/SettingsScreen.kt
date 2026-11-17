@@ -159,6 +159,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 SliderRow("Sağ nokta", draft.dotRightDp, 8f..48f, "${draft.dotRightDp.toInt()} dp") { draft = draft.copy(dotRightDp = it) }
                 if (draft.dotCount >= 5) SliderRow("Sol dış nokta", draft.dotLeft2Dp, 8f..48f, "${draft.dotLeft2Dp.toInt()} dp") { draft = draft.copy(dotLeft2Dp = it) }
                 if (draft.dotCount >= 4) SliderRow("Sağ dış nokta", draft.dotRight2Dp, 8f..48f, "${draft.dotRight2Dp.toInt()} dp") { draft = draft.copy(dotRight2Dp = it) }
+                SwitchRow(
+                    "Noktaları birleştir",
+                    "Boştayken noktalar birleşip tek bir dinamik ada gibi görünür. Olay gelince ilgili nokta adadan ayrılır; olayların görünümü aynı kalır",
+                    draft.dotMerge,
+                ) { draft = draft.copy(dotMerge = it) }
                 SliderRow("Noktalar arası boşluk", draft.dotGapDp, 2f..30f, "${draft.dotGapDp.toInt()} dp") { draft = draft.copy(dotGapDp = it) }
                 SliderRow("Konum: yatay (sağ +)", draft.dotOffsetXDp, -120f..120f, "${draft.dotOffsetXDp.toInt()} dp") { draft = draft.copy(dotOffsetXDp = it) }
                 SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }
@@ -672,7 +677,16 @@ private fun PreviewCard(
                             )
                         }
                         // Üç nokta modu önizlemesi: yan noktalar (ortadaki nokta aşağıdaki ada)
-                        if (cfg.dotMode && !expanded) {
+                        if (cfg.dotMode && cfg.dotMerge && !expanded) {
+                            // Birleşik mod: tüm noktalar tek bir hap olarak çizilir
+                            val eL = cfg.dotMidDp / 2f + cfg.dotGapDp + dotExtentDp(cfg, -1)
+                            val eR = cfg.dotMidDp / 2f + cfg.dotGapDp + dotExtentDp(cfg, 1)
+                            Box(
+                                Modifier.align(Alignment.TopCenter)
+                                    .offset(x = (cfg.offsetXDp + (eR - eL) / 2f).dp, y = islandTopV.dp)
+                                    .size((eL + eR).dp, cfg.dotMidDp.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
+                            )
+                        } else if (cfg.dotMode && !expanded) {
                             for (dir in intArrayOf(-1, 1)) {
                                 val d = if (dir > 0) cfg.dotRightDp else cfg.dotLeftDp
                                 val dx = dir * (cfg.dotMidDp / 2f + cfg.dotGapDp + d / 2f)

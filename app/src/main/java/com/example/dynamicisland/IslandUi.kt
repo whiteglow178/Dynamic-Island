@@ -46,6 +46,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.GraphicsLayerScope
@@ -227,7 +228,13 @@ private fun IslandSides(
     animExpanded: Boolean, wantExpanded: Boolean, onPress: (Int) -> Unit, onTap: (Int) -> Unit,
 ) {
     // Üç nokta modu: boştaki yuvalar da siyah nokta olarak görünür (ada genişleyince solar)
-    if (cfg.dotMode) {
+    if (cfg.dotMode && cfg.dotMerge) {
+        // Birleşik mod: boş yuvalar tek bir hap olarak çizilir; dolu yuva baloncuğu adadan ayrılır (SideSlot, değişmedi)
+        DotMergePill(sides.getOrNull(0) != null, sides.getOrNull(1) != null, geo, progress, cfg, color)
+        // Dış nokta yalnızca iç noktası doluyken (hapın dışında kaldığında) tek başına nokta olarak durur
+        if (dotHasOuter(cfg, 1) && sides.getOrNull(0) != null) DotPlaceholder(1, 2, sides.getOrNull(2) != null, geo, progress, cfg, color)
+        if (dotHasOuter(cfg, -1) && sides.getOrNull(1) != null) DotPlaceholder(-1, 2, sides.getOrNull(3) != null, geo, progress, cfg, color)
+    } else if (cfg.dotMode) {
         DotPlaceholder(1, 1, sides.getOrNull(0) != null, geo, progress, cfg, color)
         DotPlaceholder(-1, 1, sides.getOrNull(1) != null, geo, progress, cfg, color)
         if (dotHasOuter(cfg, 1)) DotPlaceholder(1, 2, sides.getOrNull(2) != null, geo, progress, cfg, color)     // 4 ve 5 nokta: sağ dış nokta
@@ -238,6 +245,45 @@ private fun IslandSides(
     // 4 ve 5 nokta: dış yuvalar (sağ dış = 3. olay, sol dış = 4. olay); fromSide ±2 dış yuvadan açılışı belirtir
     if (dotHasOuter(cfg, 1)) SideSlot(sides.getOrNull(2), 1, 2, geo, progress, cfg, color, fromSide == 2, animExpanded, wantExpanded, { onPress(2) }) { onTap(2) }
     if (dotHasOuter(cfg, -1)) SideSlot(sides.getOrNull(3), -1, 2, geo, progress, cfg, color, fromSide == -2, animExpanded, wantExpanded, { onPress(3) }) { onTap(3) }
+}
+
+/**
+ * "Noktaları birleştir": ortadaki nokta ile boştaki yan noktalar tek bir hap (ada) olarak görünür.
+ * Bir yanın iç yuvası dolunca o yandaki hap ortadaki noktaya doğru çekilir ve baloncuk adadan ayrılır.
+ */
+@Composable
+private fun DotMergePill(rightBusy: Boolean, leftBusy: Boolean, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>) {
+    val spec: AnimationSpec<Float> = if (cfg.animEnabled) spring(dampingRatio = 0.72f, stiffness = 150f) else snap()
+    val fr by animateFloatAsState(if (rightBusy) 0f else 1f, spec, label = "dotMergeR")
+    val fl by animateFloatAsState(if (leftBusy) 0f else 1f, spec, label = "dotMergeL")
+    Canvas(Modifier.fillMaxSize()) {
+        val k = (1f - progress.mean * 2f).coerceIn(0f, 1f)
+        if (k <= 0f) return@Canvas
+        val h = geo.ch.toPx()
+        val mid = cfg.dotMidDp.dp.toPx()
+        val gap = sideGapDp(cfg).dp.toPx()
+        val cx = size.width / 2f
+        val cy = h / 2f
+        val eR = mid / 2f + fr * (gap + dotExtentDp(cfg, 1).dp.toPx())
+        val eL = mid / 2f + fl * (gap + dotExtentDp(cfg, -1).dp.toPx())
+        val pill = RoundRect(cx - eL, cy - h / 2f, cx + eR, cy + h / 2f, CornerRadius(h / 2f, h / 2f))
+        val col = color.value.let { it.copy(alpha = it.alpha * k) }
+        if (cfg.glassEnabled) {
+            // Cam modunda ortadaki adanın üstüne binip koyulaşmasın: hapın o kısmı çıkarılır
+            val hole = Path().apply { addRoundRect(RoundRect(cx - mid / 2f, cy - h / 2f, cx + mid / 2f, cy + h / 2f, CornerRadius(h / 2f, h / 2f))) }
+            val shape = Path().apply { addRoundRect(pill) }
+            drawPath(Path.combine(PathOperation.Difference, shape, hole), col)
+        } else {
+            drawPath(Path().apply { addRoundRect(pill) }, col)
+        }
+        if (cfg.borderEnabled) {
+            val bw = cfg.borderWidthDp.dp.toPx()
+            drawRoundRect(
+                Color(cfg.borderColorArgb).copy(alpha = k), Offset(cx - eL + bw / 2f, cy - h / 2f + bw / 2f),
+                Size(eL + eR - bw, h - bw), CornerRadius((h - bw) / 2f, (h - bw) / 2f), style = Stroke(bw),
+            )
+        }
+    }
 }
 
 /** Üç nokta modunda yan noktanın boş hali (olay yokken de nokta görünür). */
