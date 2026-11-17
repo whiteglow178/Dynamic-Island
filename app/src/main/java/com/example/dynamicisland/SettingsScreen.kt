@@ -86,11 +86,11 @@ fun SettingsScreen(lyricsPage: Boolean = false) {
     var initial by remember { mutableStateOf<IslandSettings?>(null) }
     LaunchedEffect(Unit) { initial = repo.flow.first() }
     val init = initial ?: return
-    SettingsContent(init, lyricsPage) { repo.save(it) }
+    SettingsContent(init, lyricsPage, repo) { repo.save(it) }
 }
 
 @Composable
-private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: suspend (IslandSettings) -> Unit) {
+private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: SettingsRepository, onSave: suspend (IslandSettings) -> Unit) {
     val ctx = LocalContext.current
     var draft by remember { mutableStateOf(init) }
     var version by remember { mutableIntStateOf(0) }
@@ -121,6 +121,30 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
         val old = draft.imageUri(slot)
         draft = draft.withImageUri(slot, "")
         CustomImages.releaseUnused(ctx, old, draft)
+    }
+
+    SideEffect { UiHaptics.enabled = draft.uiHaptics }
+
+    // Yedekleme: JSON dosyasına aktar / dosyadan geri yükle
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) scope.launch {
+            val ok = runCatching {
+                repo.save(draft)
+                val txt = repo.exportJson()
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(txt.toByteArray(Charsets.UTF_8)) } ?: error("açılamadı")
+            }.isSuccess
+            Toast.makeText(ctx.applicationContext, if (ok) "Ayarlar dışa aktarıldı" else "Dışa aktarılamadı", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val ok = runCatching {
+                val txt = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty()
+                repo.importJson(txt)
+            }.getOrDefault(false)
+            if (ok) { draft = repo.flow.first(); version++ }
+            Toast.makeText(ctx.applicationContext, if (ok) "Ayarlar geri yüklendi" else "Geçerli bir yedek dosyası değil", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // Slider sürüklenirken değil, 250 ms sakinleşince kaydet
@@ -169,12 +193,17 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                     "Olay gelince nokta adadan ayrılmaz; olay simgesi birleşik adanın içinde, kendi yerinde görünür",
                     draft.dotMergeKeep,
                 ) { draft = draft.copy(dotMergeKeep = it) }
+                SwitchRow(
+                    "Kamera / mikrofon göstergesi",
+                    "Bir uygulama kamerayı ya da mikrofonu kullanırken nokta olarak görünür: yeşil = kamera, turuncu = mikrofon. Dokununca ayrıntı açılır",
+                    draft.dotPrivacy,
+                ) { draft = draft.copy(dotPrivacy = it) }
                 SliderRow("Noktalar arası boşluk", draft.dotGapDp, 2f..30f, "${draft.dotGapDp.toInt()} dp") { draft = draft.copy(dotGapDp = it) }
                 SliderRow("Konum: yatay (sağ +)", draft.dotOffsetXDp, -120f..120f, "${draft.dotOffsetXDp.toInt()} dp") { draft = draft.copy(dotOffsetXDp = it) }
                 SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }
             }
         }
-        page("Favori uygulamalar", PreviewKind.Favorites) { FavoritesSection(draft) { draft = it } }
+        page("Favori uygulamalar", PreviewKind.Favorites, "Boştayken adaya dokununca açılan uygulama paneli") { FavoritesSection(draft) { draft = it } }
 
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
             SubHeader("Bildirim türü")
@@ -245,7 +274,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
         }
 
-        page("Kenar tuşları", PreviewKind.SideCall) { SideCallSettingsSection() }
+        page("Kenar tuşları", PreviewKind.SideCall, "Cevapla / Reddet kenar tuşları") { SideCallSettingsSection() }
 
         // ---- Görünüm
         pendingGroup = "Görünüm"
@@ -436,7 +465,26 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
         }
 
-        page("Sıfırla") {
+        // ---- Uygulama
+        pendingGroup = "Uygulama"
+        sec("Uygulamaya özel gizleme", "Seçtiğin uygulamalar ön plandayken ada gizlenir") {
+            SwitchRow("Seçili uygulamalarda gizle", "Oyun, kamera ya da video uygulaması gibi adanın görünmesini istemediğin uygulamaları seç. Ada gizliyken dokunuşları da engellemez",
+                draft.hideInApps) { draft = draft.copy(hideInApps = it) }
+            if (draft.hideInApps) {
+                HiddenAppsPicker(draft.hiddenAppList()) { draft = draft.copy(hiddenAppPkgs = it.joinToString(",")) }
+            }
+        }
+        sec("Yedekleme", "Ayarlarını dosyaya kaydet ya da dosyadan geri yükle") {
+            IslandActionButton("Ayarları dışa aktar", { exportLauncher.launch("dynamic-island-ayarlar.json") })
+            IslandActionButton("Yedekten geri yükle", { importLauncher.launch(arrayOf("*/*")) })
+            Text("Galeriden seçilen fotoğraflar (özel arka plan / kapak) yedeğe girmez; yeni cihazda yeniden seçmen gerekir.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+        sec("Dokunsal geri bildirim", "Ayar ekranındaki anahtar ve kaydırıcılar") {
+            SwitchRow("Titreşim", "Anahtarı çevirince ve kaydırıcıyı sürüklerken hafif titreşim verir", draft.uiHaptics) { draft = draft.copy(uiHaptics = it) }
+        }
+
+        page("Sıfırla", subtitle = "Tüm ayarları başlangıç değerine döndür") {
             SectionCard("Sıfırla", "Tüm ayarları başlangıç değerine döndür") {
                 IslandActionButton("Varsayılanlara dön", { CustomImages.releaseAll(ctx, draft); draft = IslandSettings(); version++ })
             }
@@ -468,25 +516,65 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 onSmallTap = { if (needsBig) bigDismissed = false }, onBigTap = { bigDismissed = true },
             )
 
-            SnapSettingsPager(pages, pager, Modifier.weight(1f))
+            // ---- Ayar arama: başlık / açıklama / grup adına göre sayfa bulur, dokununca o sayfaya gider
+            var query by remember { mutableStateOf("") }
+            var goTo by remember { mutableIntStateOf(-1) }
+            SearchField(query, { query = it })
+            if (query.isBlank()) SnapSettingsPager(pages, pager, Modifier.weight(1f))
+            else SearchResults(pages, query, Modifier.weight(1f)) { idx -> goTo = idx; query = "" }
+            LaunchedEffect(goTo, query) {
+                if (goTo >= 0 && query.isBlank()) { pager.scrollToPage(goTo); goTo = -1 }
+            }
         }
     }
 }
 
 // ---------------------------------------------------------------- Yapışan (snap) ayar sayfaları
-private class SettingsPage(val title: String, val group: String?, val kind: PreviewKind, val body: @Composable () -> Unit)
+private class SettingsPage(val title: String, val group: String?, val kind: PreviewKind, val subtitle: String?, val body: @Composable () -> Unit)
 
 private class PageBuilder {
     val list = mutableListOf<SettingsPage>()
     var pendingGroup: String? = null
-    fun page(title: String, kind: PreviewKind = PreviewKind.Island, body: @Composable () -> Unit) {
-        list.add(SettingsPage(title, pendingGroup, kind, body)); pendingGroup = null
+    fun page(title: String, kind: PreviewKind = PreviewKind.Island, subtitle: String? = null, body: @Composable () -> Unit) {
+        list.add(SettingsPage(title, pendingGroup, kind, subtitle, body)); pendingGroup = null
     }
     fun sec(title: String, subtitle: String? = null, kind: PreviewKind = PreviewKind.Island, content: @Composable ColumnScope.() -> Unit) =
-        page(title, kind) { SectionCard(title, subtitle, content) }
+        page(title, kind, subtitle) { SectionCard(title, subtitle, content) }
 }
 
 private inline fun buildPages(block: PageBuilder.() -> Unit): List<SettingsPage> = PageBuilder().apply(block).list
+
+/** Arama sonuçları: eşleşen ayar sayfaları; dokununca ilgili sayfaya gidilir. */
+@Composable
+private fun SearchResults(pages: List<SettingsPage>, query: String, modifier: Modifier, onGo: (Int) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val tr = remember { java.util.Locale("tr", "TR") }
+    val words = query.trim().lowercase(tr).split(' ').filter { it.isNotEmpty() }
+    // Grup adı yalnızca grubun ilk sayfasında kayıtlı: sonraki sayfalara taşınır
+    var group = ""
+    val rows = pages.mapIndexedNotNull { i, p ->
+        if (p.group != null) group = p.group
+        val hay = "${p.title} ${p.subtitle.orEmpty()} $group".lowercase(tr)
+        if (words.all { hay.contains(it) }) Triple(i, p, group) else null
+    }
+    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (rows.isEmpty()) {
+            Text("Sonuç yok", color = cs.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(16.dp))
+        }
+        rows.forEach { (i, p, g) ->
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surface)
+                    .clickable(role = Role.Button) { onGo(i) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                if (g.isNotEmpty()) Text(g, color = cs.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(p.title, color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                if (!p.subtitle.isNullOrBlank()) Text(p.subtitle, color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+}
 
 /** Üstte/altta komşu ayarların yalnızca başlığı görünür. Sayfa değiştirmek için biraz daha fazla kaydırmak gerekir. */
 @Composable

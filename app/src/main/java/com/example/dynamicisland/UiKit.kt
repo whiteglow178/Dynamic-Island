@@ -12,7 +12,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -56,6 +69,23 @@ private fun softCase(s: String): String =
         s.lowercase(TR).replaceFirstChar { it.titlecase(TR) }
     else s
 
+// ---------------------------------------------------------------- Dokunsal geri bildirim + satır ayırıcı
+/** Ayar ekranındaki anahtar / kaydırıcı titreşimi (Ayarlar > Dokunsal geri bildirim). */
+object UiHaptics { @Volatile var enabled: Boolean = true }
+
+/** SectionCard içindeki satırlar alt kenarlarına iOS tarzı ince ayırıcı çizer (kartın son satırınınki maskelenir). */
+val LocalRowDivider = compositionLocalOf { false }
+
+@Composable
+fun Modifier.rowDivider(): Modifier {
+    if (!LocalRowDivider.current) return this
+    val c = MaterialTheme.colorScheme.outlineVariant
+    return drawBehind {
+        val y = size.height + 7.dp.toPx()          // satırlar arası 14 dp boşluğun ortası
+        drawLine(c, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
+    }
+}
+
 // ---------------------------------------------------------------- Yapı
 /**
  * Ayar grubu: başlık kartın ÜSTÜNDE sakin bir etiket olarak durur, satırlar tek bir yüzey içinde toplanır.
@@ -71,13 +101,21 @@ fun SectionCard(title: String, subtitle: String? = null, content: @Composable Co
             Text(softCase(title), color = cs.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.sp)
             if (subtitle != null) Text(subtitle, color = cs.onSurfaceVariant.copy(alpha = 0.75f), fontSize = 12.sp, lineHeight = 16.sp)
         }
-        Column(
-            Modifier.fillMaxWidth()
-                .animateContentSize(tween(260, easing = FastOutSlowInEasing))
-                .clip(shape).background(cs.surface)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) { content() }
+        CompositionLocalProvider(LocalRowDivider provides true) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .animateContentSize(tween(260, easing = FastOutSlowInEasing))
+                    .clip(shape).background(cs.surface)
+                    // Son satırın altındaki ayırıcı, kartın alt boşluğuna taşar: o şeridi kart rengiyle örter
+                    .drawWithContent {
+                        drawContent()
+                        val strip = 14.dp.toPx()
+                        drawRect(cs.surface, Offset(0f, size.height - strip), Size(size.width, strip))
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) { content() }
+        }
     }
 }
 
@@ -101,6 +139,7 @@ fun SectionDivider() = HorizontalDivider(thickness = 0.5.dp, color = MaterialThe
 @Composable
 fun SwitchRow(title: String, desc: String? = null, checked: Boolean, onChange: (Boolean) -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val haptic = LocalHapticFeedback.current
     val trackColor by animateColorAsState(
         if (checked) Color(0xFF4CD964) else Color(0xFFE4E1DE), tween(200), label = "switchTrack",
     )
@@ -110,8 +149,11 @@ fun SwitchRow(title: String, desc: String? = null, checked: Boolean, onChange: (
         spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium), label = "switchKnob",
     )
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+        Modifier.fillMaxWidth().rowDivider().clip(RoundedCornerShape(12.dp))
+            .toggleable(value = checked, role = Role.Switch, onValueChange = {
+                if (UiHaptics.enabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onChange(it)
+            })
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -161,11 +203,25 @@ fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float
         if (dragging) 1.12f else 1f,
         spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium), label = "sliderThumb",
     )
-    val latestOnChange by rememberUpdatedState(onChange)
+    val rawOnChange by rememberUpdatedState(onChange)
     val latestStart by rememberUpdatedState(start)
     val latestEnd by rememberUpdatedState(end)
+    // Değer aralığı 20 kademeye bölünür; kademe geçince hafif titreşim verilir
+    val haptic = LocalHapticFeedback.current
+    val lastTick = remember { intArrayOf(-1) }
+    val latestOnChange: (Float) -> Unit = remember {
+        { v: Float ->
+            val span = latestEnd - latestStart
+            val tick = if (span > 0f) (((v - latestStart) / span) * 20f).toInt() else 0
+            if (tick != lastTick[0]) {
+                if (lastTick[0] != -1 && UiHaptics.enabled) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                lastTick[0] = tick
+            }
+            rawOnChange(v)
+        }
+    }
 
-    Column {
+    Column(Modifier.rowDivider()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = cs.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f, fill = false))
             Spacer(Modifier.width(12.dp))
@@ -285,5 +341,38 @@ fun IslandActionButton(text: String, onClick: () -> Unit, modifier: Modifier = M
         contentAlignment = Alignment.Center,
     ) {
         Text(text, color = if (tonal) cs.onSurface else cs.onPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+// ---------------------------------------------------------------- Arama kutusu
+@Composable
+fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, hint: String = "Ayarlarda ara") {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier.fillMaxWidth().height(40.dp).clip(shape).background(cs.surfaceVariant).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val tint = cs.onSurfaceVariant
+        Canvas(Modifier.size(16.dp)) {
+            val sw = 1.8.dp.toPx()
+            drawCircle(tint, radius = size.minDimension * 0.34f, center = Offset(size.width * 0.42f, size.height * 0.42f), style = Stroke(sw))
+            drawLine(tint, Offset(size.width * 0.68f, size.height * 0.68f), Offset(size.width * 0.92f, size.height * 0.92f), strokeWidth = sw, cap = StrokeCap.Round)
+        }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (value.isEmpty()) Text(hint, color = tint, fontSize = 15.sp)
+            BasicTextField(
+                value, onChange, singleLine = true,
+                textStyle = TextStyle(color = cs.onSurface, fontSize = 15.sp),
+                cursorBrush = SolidColor(cs.primary), modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (value.isNotEmpty()) {
+            Box(
+                Modifier.size(20.dp).clip(CircleShape).background(tint.copy(alpha = 0.35f)).clickable(role = Role.Button) { onChange("") },
+                contentAlignment = Alignment.Center,
+            ) { Text("✕", color = Color.White, fontSize = 10.sp) }
+        }
     }
 }

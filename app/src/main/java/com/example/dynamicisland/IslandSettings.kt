@@ -6,10 +6,12 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.math.ceil
 
@@ -186,6 +188,10 @@ data class IslandSettings(
     val dotRight2Dp: Float = 20f,            // sağdaki dış nokta çapı (4 ve 5 nokta)
     val dotOffsetXDp: Float = 0f,            // üç nokta konumu: normal Konum ayarına eklenir (+ sağa)
     val dotOffsetYDp: Float = 0f,            // (+ aşağı)
+    val dotPrivacy: Boolean = false,         // nokta modu: kamera / mikrofon kullanılırken yeşil / turuncu nokta olayı
+    val hideInApps: Boolean = false,         // seçili uygulamalar ön plandayken ada gizlensin
+    val hiddenAppPkgs: String = "",          // gizlenecek uygulamaların paket adları (virgülle ayrılmış)
+    val uiHaptics: Boolean = true,           // ayar ekranında anahtar / kaydırıcı titreşimi
     val dotMergeKeep: Boolean = false,       // birleşik modda olaylar adadan ayrılmaz, hapın içinde kalır
     val dotMerge: Boolean = false,           // boştaki noktalar birleşip tek bir ada gibi görünür; olay görünümü değişmez
 ) {
@@ -206,6 +212,9 @@ data class IslandSettings(
         if (glowEnabled) GLOW_PAD_DP else 0f,
         if (animEnabled && animStyle == 3) BOUNCE_PAD_DP else 0f,
     )
+
+    /** Adanın gizleneceği uygulamaların paket adları. */
+    fun hiddenAppList(): List<String> = hiddenAppPkgs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
     /** Seçili favori uygulamaların paket adları (en fazla [MAX_FAV], tekrarsız). */
     fun favoritePkgList(): List<String> = favoritePkgs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_FAV)
@@ -295,7 +304,7 @@ class SettingsRepository(context: Context) {
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
         val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
-        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
+        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val DOT_PRIV = booleanPreferencesKey("dot_priv"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -427,6 +436,10 @@ class SettingsRepository(context: Context) {
             dotOffsetYDp = p[K.DOT_OY] ?: d.dotOffsetYDp,
             dotMerge = p[K.DOT_MERGE] ?: d.dotMerge,
             dotMergeKeep = p[K.DOT_MERGE_KEEP] ?: d.dotMergeKeep,
+            dotPrivacy = p[K.DOT_PRIV] ?: d.dotPrivacy,
+            hideInApps = p[K.HIDE_APPS] ?: d.hideInApps,
+            hiddenAppPkgs = p[K.HIDE_PKGS] ?: d.hiddenAppPkgs,
+            uiHaptics = p[K.UI_HAPTIC] ?: d.uiHaptics,
         )
     }.distinctUntilChanged()
 
@@ -483,8 +496,58 @@ class SettingsRepository(context: Context) {
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
             it[K.NT_EXP_S] = s.notifExpandedSec; it[K.NT_CMP_S] = s.notifCompactSec
             it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
+            it[K.DOT_PRIV] = s.dotPrivacy; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
         }
+    }
+
+    // ---------------------------------------------------------------- Yedekleme
+    /** Galeri adresleri başka cihazda / yeniden kurulumda geçerli olmadığı için yedeğe girmez. */
+    private val exportSkip = setOf("cb_u_both", "cb_u_c", "cb_u_e", "ca_u")
+
+    /** Tüm kayıtlı ayarları JSON metni olarak verir. */
+    suspend fun exportJson(): String {
+        val o = org.json.JSONObject()
+        store.data.first().asMap().forEach { (k, v) ->
+            if (k.name in exportSkip) return@forEach
+            val e = org.json.JSONObject()
+            when (v) {
+                is Boolean -> e.put("t", "b").put("v", v)
+                is Int -> e.put("t", "i").put("v", v)
+                is Long -> e.put("t", "l").put("v", v)
+                is Float -> e.put("t", "f").put("v", v.toDouble())
+                is String -> e.put("t", "s").put("v", v)
+                else -> return@forEach
+            }
+            o.put(k.name, e)
+        }
+        return org.json.JSONObject().put("app", "dynamicisland").put("version", 1).put("settings", o).toString(2)
+    }
+
+    /** Yedek metnini ayarlara yazar. Geçersiz dosyada false döner ve hiçbir şey değişmez. */
+    suspend fun importJson(text: String): Boolean {
+        val root = runCatching { org.json.JSONObject(text) }.getOrNull() ?: return false
+        if (root.optString("app") != "dynamicisland") return false
+        val st = root.optJSONObject("settings") ?: return false
+        store.edit { p ->
+            val names = st.keys()
+            while (names.hasNext()) {
+                val name = names.next()
+                if (name in exportSkip) continue
+                val e = st.optJSONObject(name) ?: continue
+                runCatching {
+                    when (e.getString("t")) {
+                        "b" -> p[booleanPreferencesKey(name)] = e.getBoolean("v")
+                        "i" -> p[intPreferencesKey(name)] = e.getInt("v")
+                        "l" -> p[longPreferencesKey(name)] = e.getLong("v")
+                        "f" -> p[floatPreferencesKey(name)] = e.getDouble("v").toFloat()
+                        "s" -> p[stringPreferencesKey(name)] = e.getString("v")
+                    }
+                    Unit
+                }
+            }
+        }
+        return true
     }
 }
 

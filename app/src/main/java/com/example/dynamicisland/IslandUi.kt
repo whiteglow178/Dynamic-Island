@@ -439,15 +439,21 @@ private fun SideGlyph(c: IslandContent, ch: Dp) {
                 ShazamGlyphSweep(Modifier.size(sz))
             }
         }
-        is IslandContent.Status -> Text(
-            when (c.kind) {
-                StatusKind.Ringer -> if (c.silent) "🔕" else "🔔"
-                StatusKind.Charging -> "⚡"
-                StatusKind.Timer -> "⏱"
-                StatusKind.Alarm -> "⏰"
-            },
-            fontSize = 13.sp,
-        )
+        is IslandContent.Status -> when (c.kind) {
+            // Gizlilik göstergesi: iOS gibi yeşil (kamera) / turuncu (mikrofon) nokta
+            StatusKind.Camera -> Box(Modifier.size(ch * 0.34f).background(Color(0xFF34C759), RoundedCornerShape(50)))
+            StatusKind.Mic -> Box(Modifier.size(ch * 0.34f).background(Color(0xFFFF9F0A), RoundedCornerShape(50)))
+            else -> Text(
+                when (c.kind) {
+                    StatusKind.Ringer -> if (c.silent) "🔕" else "🔔"
+                    StatusKind.Charging -> "⚡"
+                    StatusKind.Timer -> "⏱"
+                    StatusKind.Alarm -> "⏰"
+                    else -> ""
+                },
+                fontSize = 13.sp,
+            )
+        }
         else -> Unit
     }
 }
@@ -1433,6 +1439,8 @@ private fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
     StatusKind.Charging -> Color(0xFF34C759)
     StatusKind.Timer -> Color(0xFF0A84FF)
     StatusKind.Alarm -> Color(0xFFFF9500)
+    StatusKind.Camera -> Color(0xFF34C759)
+    StatusKind.Mic -> Color(0xFFFF9F0A)
 }
 
 @Composable
@@ -1465,6 +1473,16 @@ private fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
                     drawLine(w, Offset(12f, 13f), Offset(14.6f, 14.6f), strokeWidth = 2f, cap = StrokeCap.Round)
                     drawCircle(w, radius = 2.4f, center = Offset(4.6f, 4.8f))
                     drawCircle(w, radius = 2.4f, center = Offset(19.4f, 4.8f))
+                }
+                StatusKind.Camera -> {
+                    drawRoundRect(w, Offset(2.5f, 6f), Size(13f, 12f), CornerRadius(3f, 3f))
+                    val lens = Path().apply { moveTo(16.5f, 10.5f); lineTo(21.5f, 7.5f); lineTo(21.5f, 16.5f); lineTo(16.5f, 13.5f); close() }
+                    drawPath(lens, w)
+                }
+                StatusKind.Mic -> {
+                    drawRoundRect(w, Offset(9f, 2.5f), Size(6f, 11f), CornerRadius(3f, 3f))
+                    drawArc(w, 0f, 180f, false, Offset(5.5f, 6f), Size(13f, 12f), style = st)
+                    drawLine(w, Offset(12f, 18f), Offset(12f, 21.5f), strokeWidth = 2f, cap = StrokeCap.Round)
                 }
             }
         }

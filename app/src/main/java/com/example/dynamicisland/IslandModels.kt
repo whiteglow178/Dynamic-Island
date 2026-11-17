@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 @Immutable
 data class FavApp(val pkg: String, val label: String, val icon: ImageBitmap?)
 
-enum class StatusKind { Ringer, Charging, Timer, Alarm }
+enum class StatusKind { Ringer, Charging, Timer, Alarm, Camera, Mic }
 
 /** Sistem ekran kaydı aşamaları. */
 enum class RecPhase { Countdown, Recording, Processing, Saved }
