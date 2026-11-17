@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -43,7 +44,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -819,10 +820,10 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
 internal const val P3D_W_DP = 236f
 /** Normal önizlemede telefonun karttaki üst boşluğu, dp. */
 internal const val P3D_TOP_DP = 16f
-/** Tam telefon önizlemesinde kartın yüksekliği, dp. Telefonun tamamı bu yüksekliğe sığar. */
-internal const val P3D_FULL_H_DP = 300f
+/** Tam telefon önizlemesinde kart yüksekliği, dp. Normal önizleme kartıyla aynıdır (kart büyümez); telefonun tamamı buna sığar. */
+internal const val P3D_FULL_H_DP = 150f
 /** Tam telefon önizlemesinde telefonun üst/alt boşluğu, dp. */
-internal const val P3D_FULL_PAD_DP = 12f
+internal const val P3D_FULL_PAD_DP = 8f
 
 /** Ekranın telefon kenarından içeri payı (dp), telefon genişliği [wDp] iken. */
 internal fun p3dScreenInsetDp(wDp: Float): Float = SCREEN_INSET_MM * wDp / PH_W
@@ -851,8 +852,8 @@ internal fun Phone3DPreview(phoneWDp: Float, modifier: Modifier = Modifier, cont
     val insetDp = p3dScreenInsetDp(phoneWDp)
     val k = p3dScale(phoneWDp)
 
-    // requiredSize: üst kapsayıcı kısa olsa da telefon tam boyunda ölçülür (taşan kısım kapsayıcıda kesilir)
-    Box(modifier.requiredSize(phoneWDp.dp, phoneHDp.dp)) {
+    // unbounded + Top: üst kapsayıcı kısa olsa da telefon tam boyunda ölçülür, ÜSTTEN hizalanır (taşan alt kısım kapsayıcıda kesilir)
+    Box(modifier.wrapContentHeight(Alignment.Top, unbounded = true).size(phoneWDp.dp, phoneHDp.dp)) {
         Canvas(Modifier.fillMaxSize()) {
             val img = face ?: return@Canvas
             val dist = 330f
