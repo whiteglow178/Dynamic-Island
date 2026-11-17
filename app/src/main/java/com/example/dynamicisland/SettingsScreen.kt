@@ -157,6 +157,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 SliderRow("Sol nokta", draft.dotLeftDp, 8f..48f, "${draft.dotLeftDp.toInt()} dp") { draft = draft.copy(dotLeftDp = it) }
                 SliderRow("Sağ nokta", draft.dotRightDp, 8f..48f, "${draft.dotRightDp.toInt()} dp") { draft = draft.copy(dotRightDp = it) }
                 SliderRow("Noktalar arası boşluk", draft.dotGapDp, 2f..30f, "${draft.dotGapDp.toInt()} dp") { draft = draft.copy(dotGapDp = it) }
+                SliderRow("Konum: yatay (sağ +)", draft.dotOffsetXDp, -120f..120f, "${draft.dotOffsetXDp.toInt()} dp") { draft = draft.copy(dotOffsetXDp = it) }
+                SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }
             }
         }
         page("Favori uygulamalar", PreviewKind.Favorites) { FavoritesSection(draft) { draft = it } }

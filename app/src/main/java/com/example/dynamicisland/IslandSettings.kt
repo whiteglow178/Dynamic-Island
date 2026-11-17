@@ -178,6 +178,8 @@ data class IslandSettings(
     val dotLeftDp: Float = 24f,              // soldaki nokta çapı
     val dotRightDp: Float = 24f,             // sağdaki nokta çapı
     val dotGapDp: Float = 10f,               // noktalar arası boşluk
+    val dotOffsetXDp: Float = 0f,            // üç nokta konumu: normal Konum ayarına eklenir (+ sağa)
+    val dotOffsetYDp: Float = 0f,            // (+ aşağı)
 ) {
     /**
      * Servisin / arayüzün kullandığı etkin ayarlar. Üç nokta modunda kapalı ada, ortadaki noktanın çapında bir daire olur;
@@ -187,6 +189,7 @@ data class IslandSettings(
         if (!dotMode) this
         else copy(
             compactWidthDp = dotMidDp, compactHeightDp = dotMidDp,
+            offsetXDp = offsetXDp + dotOffsetXDp, offsetYDp = offsetYDp + dotOffsetYDp,
             showIdle = true, lyricsCompact = false, lyricsOutside = lyricsOutside,
         )
 
@@ -282,6 +285,7 @@ class SettingsRepository(context: Context) {
         val LY_ANIM = booleanPreferencesKey("ly_anim"); val LY_ANIM_S = intPreferencesKey("ly_animS"); val LY_ANIM_MS = intPreferencesKey("ly_animMs")
         val DOT_ON = booleanPreferencesKey("dot_on"); val DOT_MID = floatPreferencesKey("dot_mid")
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
+        val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -403,6 +407,8 @@ class SettingsRepository(context: Context) {
             dotLeftDp = p[K.DOT_L] ?: d.dotLeftDp,
             dotRightDp = p[K.DOT_R] ?: d.dotRightDp,
             dotGapDp = p[K.DOT_GAP] ?: d.dotGapDp,
+            dotOffsetXDp = p[K.DOT_OX] ?: d.dotOffsetXDp,
+            dotOffsetYDp = p[K.DOT_OY] ?: d.dotOffsetYDp,
         )
     }.distinctUntilChanged()
 
@@ -455,6 +461,7 @@ class SettingsRepository(context: Context) {
             it[K.LY_ANIM] = s.lyricsAnimEnabled; it[K.LY_ANIM_S] = s.lyricsAnimStyle; it[K.LY_ANIM_MS] = s.lyricsAnimMs
             it[K.DOT_ON] = s.dotMode; it[K.DOT_MID] = s.dotMidDp
             it[K.DOT_L] = s.dotLeftDp; it[K.DOT_R] = s.dotRightDp; it[K.DOT_GAP] = s.dotGapDp
+            it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
         }
     }
 }
