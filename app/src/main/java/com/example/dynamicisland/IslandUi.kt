@@ -230,10 +230,11 @@ private fun IslandSides(
     // Üç nokta modu: boştaki yuvalar da siyah nokta olarak görünür (ada genişleyince solar)
     if (cfg.dotMode && cfg.dotMerge) {
         // Birleşik mod: boş yuvalar tek bir hap olarak çizilir; dolu yuva baloncuğu adadan ayrılır (SideSlot, değişmedi)
-        DotMergePill(sides.getOrNull(0) != null, sides.getOrNull(1) != null, geo, progress, cfg, color)
+        val keep = cfg.dotMergeKeep      // olaylar hapın içinde kalır: hap hiç bölünmez
+        DotMergePill(!keep && sides.getOrNull(0) != null, !keep && sides.getOrNull(1) != null, geo, progress, cfg, color)
         // Dış nokta yalnızca iç noktası doluyken (hapın dışında kaldığında) tek başına nokta olarak durur
-        if (dotHasOuter(cfg, 1) && sides.getOrNull(0) != null) DotPlaceholder(1, 2, sides.getOrNull(2) != null, geo, progress, cfg, color)
-        if (dotHasOuter(cfg, -1) && sides.getOrNull(1) != null) DotPlaceholder(-1, 2, sides.getOrNull(3) != null, geo, progress, cfg, color)
+        if (!keep && dotHasOuter(cfg, 1) && sides.getOrNull(0) != null) DotPlaceholder(1, 2, sides.getOrNull(2) != null, geo, progress, cfg, color)
+        if (!keep && dotHasOuter(cfg, -1) && sides.getOrNull(1) != null) DotPlaceholder(-1, 2, sides.getOrNull(3) != null, geo, progress, cfg, color)
     } else if (cfg.dotMode) {
         DotPlaceholder(1, 1, sides.getOrNull(0) != null, geo, progress, cfg, color)
         DotPlaceholder(-1, 1, sides.getOrNull(1) != null, geo, progress, cfg, color)
@@ -317,6 +318,8 @@ private fun SideSlot(
     animExpanded: Boolean, wantExpanded: Boolean, onPress: () -> Unit, onTap: () -> Unit,
 ) {
     val hold = remember { SideHold() }
+    // Birleşik mod + "olaylar içinde kalsın": gövde / köprü çizilmez, yalnızca simge hapın içinde kendi yerinde görünür
+    val inside = cfg.dotMode && cfg.dotMerge && cfg.dotMergeKeep
     // Ada küçülürken yeni belirecek baloncuk, ada hâlâ büyükken (panelin köşesinden) çıkmaz:
     // genişlik VE yükseklik neredeyse kapalı hâle gelince kendi yerinde adadan ayrılır.
     // Ada açıkken gelen baloncuk eskisi gibi hemen çıkar. (Eşik, ortalama değil max: "Sıvı" stilinde biri geç kalabilir.)
@@ -344,7 +347,7 @@ private fun SideSlot(
 
     Box(Modifier.fillMaxSize()) {
         // Köprü + baloncuk gövdesi (ada ile aynı renk)
-        Canvas(Modifier.fillMaxSize()) {
+        if (!inside) Canvas(Modifier.fillMaxSize()) {
             // Baloncuk hâlâ aktifse (genişleyen panelin yanında kalıyorsa) tam görünür; yalnızca kaldırılırken ada genişlemesiyle solar
             val k = if (present) 1f else if (gone[0]) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f)
             if (!present && k <= 0f) gone[0] = true
@@ -380,7 +383,7 @@ private fun SideSlot(
                     translationX = sideCenterX(dir, geo, progress, s, sizeDp.toPx() / 2f, g, if (level == 2) sideSizeDp(cfg, dir).dp.toPx() + g else 0f)
                     // Dokunulan baloncuğun yerinde, ada genişlemeye başlayana kadar yeni (genişleyen) adanın dairesi durur: altındaki simge görünmesin
                     val hide = tappedOpen && !animExpanded
-                    alpha = if (hide) 0f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present) 1f else if (gone[0]) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
+                    alpha = if (hide) 0f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present && !inside) 1f else if (gone[0] && !inside) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
                 }
                 // Parmak değdiği anda haber verilir (dokunuşu tüketmez): servis pencereyi önceden büyütür
                 .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); onPress() } }

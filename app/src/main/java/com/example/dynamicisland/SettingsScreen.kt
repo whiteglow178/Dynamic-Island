@@ -164,6 +164,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                     "Boştayken noktalar birleşip tek bir dinamik ada gibi görünür. Olay gelince ilgili nokta adadan ayrılır; olayların görünümü aynı kalır",
                     draft.dotMerge,
                 ) { draft = draft.copy(dotMerge = it) }
+                if (draft.dotMerge) SwitchRow(
+                    "Olaylar adanın içinde kalsın",
+                    "Olay gelince nokta adadan ayrılmaz; olay simgesi birleşik adanın içinde, kendi yerinde görünür",
+                    draft.dotMergeKeep,
+                ) { draft = draft.copy(dotMergeKeep = it) }
                 SliderRow("Noktalar arası boşluk", draft.dotGapDp, 2f..30f, "${draft.dotGapDp.toInt()} dp") { draft = draft.copy(dotGapDp = it) }
                 SliderRow("Konum: yatay (sağ +)", draft.dotOffsetXDp, -120f..120f, "${draft.dotOffsetXDp.toInt()} dp") { draft = draft.copy(dotOffsetXDp = it) }
                 SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }

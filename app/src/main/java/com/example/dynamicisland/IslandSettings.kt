@@ -186,6 +186,7 @@ data class IslandSettings(
     val dotRight2Dp: Float = 20f,            // sağdaki dış nokta çapı (4 ve 5 nokta)
     val dotOffsetXDp: Float = 0f,            // üç nokta konumu: normal Konum ayarına eklenir (+ sağa)
     val dotOffsetYDp: Float = 0f,            // (+ aşağı)
+    val dotMergeKeep: Boolean = false,       // birleşik modda olaylar adadan ayrılmaz, hapın içinde kalır
     val dotMerge: Boolean = false,           // boştaki noktalar birleşip tek bir ada gibi görünür; olay görünümü değişmez
 ) {
     /**
@@ -294,7 +295,7 @@ class SettingsRepository(context: Context) {
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
         val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
-        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
+        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -425,6 +426,7 @@ class SettingsRepository(context: Context) {
             dotOffsetXDp = p[K.DOT_OX] ?: d.dotOffsetXDp,
             dotOffsetYDp = p[K.DOT_OY] ?: d.dotOffsetYDp,
             dotMerge = p[K.DOT_MERGE] ?: d.dotMerge,
+            dotMergeKeep = p[K.DOT_MERGE_KEEP] ?: d.dotMergeKeep,
         )
     }.distinctUntilChanged()
 
@@ -480,7 +482,7 @@ class SettingsRepository(context: Context) {
             it[K.DOT_L] = s.dotLeftDp; it[K.DOT_R] = s.dotRightDp; it[K.DOT_GAP] = s.dotGapDp
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
             it[K.NT_EXP_S] = s.notifExpandedSec; it[K.NT_CMP_S] = s.notifCompactSec
-            it[K.DOT_MERGE] = s.dotMerge
+            it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
         }
     }
