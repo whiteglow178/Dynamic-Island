@@ -74,6 +74,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
+import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.min
@@ -106,6 +109,9 @@ private val TryItems = listOf(
 
 /** Dönme açısı (derece). Fazla dönmesin diye küçük; ters yöne dönerse eksi yap. */
 private const val TryTurnDeg = 32f
+
+/** true: hapa basınca telefonun adasına ek olarak gerçek telefondaki ada da aynı olayı gösterir. */
+private const val TryAlsoRealIsland = false
 
 private val TryBg = Color(0xFF050507)
 private val TrySideTint = Color(0xFFB4B8C2)
@@ -171,6 +177,114 @@ private fun runAssistantDemo() {
     }
 }
 
+
+// ---------------------------------------------------------------- Telefon maketindeki ada senaryoları
+private suspend fun MutableStateFlow<IslandUiState>.openIsland(c: IslandContent) {
+    value = IslandUiState(content = c, expanded = false)
+    delay(260)
+    value = IslandUiState(content = c, expanded = true)
+}
+
+private suspend fun MutableStateFlow<IslandUiState>.closeIsland() {
+    value = value.copy(expanded = false)
+    delay(900)
+    value = IslandUiState()
+}
+
+private suspend fun loadFavApps(ctx: android.content.Context, cfg: IslandSettings): List<FavApp> = withContext(Dispatchers.Default) {
+    val pm = ctx.packageManager
+    val apps = cfg.favoritePkgList().map { pkg ->
+        val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrDefault("")
+        val icon = runCatching { pm.getApplicationIcon(pkg).toBitmap(96, 96).asImageBitmap() }.getOrNull()
+        FavApp(pkg, label, icon)
+    }
+    if (apps.isEmpty()) List(FAV_COLUMNS) { FavApp("", "Uygulama", null) } else apps
+}
+
+/** Dene listesindeki her olayın telefon maketindeki adada oynayacağı akış. Bitince ada kapanır, telefon geri döner. */
+private fun tryIslandScript(
+    ctx: android.content.Context, idx: Int, silent: Boolean,
+): suspend (MutableStateFlow<IslandUiState>, IslandSettings) -> Unit = { ui, cfg ->
+    when (idx) {
+        0 -> {
+            ui.openIsland(IslandContent.Call(name = "Ayşe Yılmaz", isIncoming = true))
+            delay(4500); ui.closeIsland()
+        }
+        1 -> {
+            ui.openIsland(IslandContent.Notif("demo", "Ayşe", "Akşam görüşelim mi? 😊"))
+            delay(3500); ui.closeIsland()
+        }
+        2 -> {
+            ui.openIsland(
+                IslandContent.Status(
+                    kind = StatusKind.Ringer, title = if (silent) "Sessiz" else "Zil",
+                    subtitle = if (silent) "Zil kapalı" else "Zil açık", silent = silent,
+                )
+            )
+            delay(2800); ui.closeIsland()
+        }
+        3 -> {
+            ui.openIsland(
+                IslandContent.Status(
+                    kind = StatusKind.Charging, title = "Şarj oluyor", subtitle = "Hızlı şarj",
+                    value = "%78", progress = 0.78f,
+                )
+            )
+            delay(4200); ui.closeIsland()
+        }
+        4 -> {
+            val total = 300_000L
+            ui.openIsland(
+                IslandContent.Status(
+                    kind = StatusKind.Timer, title = "Zamanlayıcı", subtitle = "Kalan süre",
+                    endsAt = System.currentTimeMillis() + total, totalMs = total,
+                )
+            )
+            delay(5500); ui.closeIsland()
+        }
+        5 -> {
+            ui.openIsland(IslandContent.Status(kind = StatusKind.Alarm, title = "Alarm", subtitle = "Hafta içi", value = "07:30"))
+            delay(4200); ui.closeIsland()
+        }
+        6 -> {
+            ui.openIsland(
+                IslandContent.Media(
+                    title = "Gece Yarısı", artist = "Demo Sanatçı", playing = true,
+                    durationMs = 215_000L, positionMs = 42_000L, speed = 1f,
+                    updatedAt = SystemClock.elapsedRealtime(), art = null, artColor = 0,
+                )
+            )
+            delay(5000); ui.closeIsland()
+        }
+        7 -> {
+            for (n in 3 downTo 1) {
+                ui.value = IslandUiState(content = IslandContent.ScreenRec(RecPhase.Countdown, count = n), expanded = false)
+                delay(1000)
+            }
+            val t0 = System.currentTimeMillis()
+            ui.openIsland(IslandContent.ScreenRec(RecPhase.Recording, startedAt = t0))
+            delay(4000)
+            ui.value = IslandUiState(content = IslandContent.ScreenRec(RecPhase.Saved, startedAt = t0, frozenMs = 4000L), expanded = true)
+            delay(2200); ui.closeIsland()
+        }
+        8 -> {
+            ui.openIsland(IslandContent.Assistant)
+            delay(4000); ui.closeIsland()
+        }
+        9 -> {
+            val apps = loadFavApps(ctx, cfg)
+            ui.openIsland(IslandContent.Favorites(apps))
+            delay(4000); ui.closeIsland()
+        }
+        10 -> {
+            ui.value = IslandUiState(content = IslandContent.Shazam(ShazamPhase.Listening), expanded = false)
+            delay(3000)
+            ui.openIsland(IslandContent.Shazam(ShazamPhase.Found, "Sweater Weather", "The Neighbourhood", makeDemoCover()))
+            delay(4500); ui.closeIsland()
+        }
+    }
+}
+
 private fun fl(a: Float, b: Float, t: Float) = a + (b - a) * t
 private fun mix(a: Color, b: Color, t: Float) = androidx.compose.ui.graphics.lerp(a, b, t.coerceIn(0f, 1f))
 
@@ -185,20 +299,10 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
     var musicOn by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
     var glowY by remember { mutableFloatStateOf(0f) } // hapın ekrandaki dikey merkezi (bant parıltısı buna göre çizilir)
-    // Telefon eğilme animasyonu: 0 = düz, 1 = yana kaymış ve eğik
+    // Telefon eğilme değeri (eski animasyon kaldırıldı; çizim kodu 0 = düz ile çalışmaya devam eder)
     val tilt = remember { Animatable(0f) }
-    val tiltJob = remember { arrayOfNulls<Job>(1) }
-    val playTilt: (Long) -> Unit = { holdMs ->
-        tiltJob[0]?.cancel()
-        tiltJob[0] = scope.launch {
-            tilt.animateTo(1f, spring(0.72f, 90f))
-            delay(holdMs)
-            tilt.animateTo(0f, spring(0.8f, 110f))
-        }
-    }
-    val holdFor: (Int) -> Long = { idx ->
-        when (idx) { 7 -> 8500L; 10 -> 9500L; 4 -> 6000L; 8 -> 4500L; 3, 5 -> 4200L; else -> 3000L }
-    }
+    // Olay gösterimi: hapa basınca telefon dönüp olayı kendi adasında oynatır
+    var showcase by remember { mutableStateOf<ShowcaseRun?>(null) }
     val pressScale by animateFloatAsState(if (pressed) 0.96f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "tryPress")
     // Tuşun fiziksel olarak içeri batması (0 = yukarıda, 1 = tamamen basılı)
     val pressAnim by animateFloatAsState(if (pressed) 1f else 0f, spring(0.7f, 700f), label = "tryPressDepth")
@@ -421,9 +525,14 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                                     pressed = false
                                 },
                                 onTap = {
-                                    val idx = pos.value.roundToInt().coerceIn(0, last)
-                                    if (isIslandRunning()) playTilt(holdFor(idx))
-                                    trigger(idx)
+                                    if (showcase == null) {
+                                        val idx = pos.value.roundToInt().coerceIn(0, last)
+                                        val silentNow = silentDemo
+                                        // Gerçek ada da tetiklensin istersen TryAlsoRealIsland = true yap
+                                        if (TryAlsoRealIsland && isIslandRunning()) trigger(idx)
+                                        else if (idx == 2) silentDemo = !silentDemo
+                                        showcase = ShowcaseRun(idx, tryIslandScript(ctx, idx, silentNow))
+                                    }
                                 },
                             )
                         },
@@ -468,6 +577,13 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
         // Dokunarak atlanabilir. Geri tuşu bunun üstünde kalır.
         var introActive by remember { mutableStateOf(true) }
         if (introActive) TryPhoneIntro(pillWpx = pillWpx, glowY = { glowY }, onDone = { introActive = false })
+
+        // Hapa basınca: telefon 3 boyutlu dönüp ekranını bize çevirir, olayı kendi Dynamic Island'ında gösterir
+        showcase?.let { run ->
+            androidx.compose.runtime.key(run) {
+                TryPhoneShowcase(pillWpx = pillWpx, glowY = { glowY }, run = run, onDone = { showcase = null })
+            }
+        }
 
         // Geri tuşu (sabit)
         Column(Modifier.fillMaxSize().systemBarsPadding()) {

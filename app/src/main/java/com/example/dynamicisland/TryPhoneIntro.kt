@@ -40,6 +40,23 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
@@ -539,7 +556,7 @@ private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
 @Composable
 internal fun TryPhoneIntro(pillWpx: Float, glowY: () -> Float, onDone: () -> Unit) {
     var face by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(Unit) { face = withContext(Dispatchers.Default) { buildPhoneFace() } }
+    LaunchedEffect(Unit) { face = obtainPhoneFace() }
 
     val p = remember { Animatable(0f) }
     val cover = remember { Animatable(1f) }
@@ -634,3 +651,157 @@ internal fun TryPhoneIntro(pillWpx: Float, glowY: () -> Float, onDone: () -> Uni
 }
 
 private fun min2(a: Float, b: Float) = if (a < b) a else b
+
+
+// ---------------------------------------------------------------- Dene: olay gösterimi
+// Dene ekranında hapa basınca: kamera yandan (Eylem Düğmesi) geri çekilir, telefon 3 boyutlu dönüp ekranı bize bakar,
+// olay telefonun KENDİ Dynamic Island'ında oynar (uygulamadaki gerçek IslandRoot / IslandPill, ayarlarla birebir),
+// bitince telefon tekrar yana dönüp Dene ekranına geçilir. Telefona dokunursan gösterim erken biter.
+
+/** Gösterimin ne oynatacağı: [script] ada durumunu (içerik + açık/kapalı) sırayla değiştirir, bitince geri dönülür. */
+internal class ShowcaseRun(val id: Int, val script: suspend (MutableStateFlow<IslandUiState>, IslandSettings) -> Unit)
+
+private var phoneFaceCache: ImageBitmap? = null
+
+private suspend fun obtainPhoneFace(): ImageBitmap =
+    phoneFaceCache ?: withContext(Dispatchers.Default) { buildPhoneFace() }.also { phoneFaceCache = it }
+
+/** Animasyon zamanı: bu değerde telefon tam karşıdan görünür (giriş animasyonunun 0.10 anı). */
+private const val FRONT_T = 0.10f
+private const val SCREEN_INSET_MM = 2.6f      // buildPhoneFace içindeki ekran payı ile aynı
+private const val SCREEN_CORNER_MM = 8.4f
+
+/** Telefon tam karşıdayken kamera (giriş animasyonunun t = FRONT_T karesiyle aynı). */
+private fun frontCam(w: Float, h: Float): PhoneCam =
+    PhoneCam(0f, 0f, V3(0f, 0f, 0f), min2(h * 0.70f / PH_H, w * 0.78f / PH_W), 330f, w / 2f, h * 0.46f)
+
+@Composable
+internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseRun, onDone: () -> Unit) {
+    val ctx = LocalContext.current
+    var face by remember { mutableStateOf<ImageBitmap?>(phoneFaceCache) }
+    LaunchedEffect(Unit) { if (face == null) face = obtainPhoneFace() }
+
+    // Gerçek ada ayarları (renk, şekil, animasyon stili, konum ...)
+    val repo = remember { SettingsRepository(ctx.applicationContext) }
+    val cfg by repo.flow.collectAsState(initial = IslandSettings())
+    val cfgFlow = remember { MutableStateFlow(cfg.effective()) }
+    LaunchedEffect(cfg) { cfgFlow.value = cfg.effective() }
+    val uiState = remember { MutableStateFlow(IslandUiState()) }
+    val lyricsFlow = remember { MutableStateFlow<LyricsState>(LyricsState.Idle) }
+
+    val p = remember { Animatable(1f) }          // 1 = yandan (Eylem Düğmesi), FRONT_T = karşıdan
+    val cover = remember { Animatable(0f) }
+    val islandA = remember { Animatable(0f) }
+    var skip by remember { mutableStateOf(false) }
+
+    LaunchedEffect(face) {
+        if (face == null) return@LaunchedEffect
+        cover.animateTo(1f, tween(220))
+        p.animateTo(FRONT_T, tween(1700, easing = FastOutSlowInEasing))      // ekran bize döner
+        islandA.animateTo(1f, tween(200))
+        coroutineScope {
+            val job = launch { run.script(uiState, cfgFlow.value) }
+            val watcher = launch { snapshotFlow { skip }.first { it }; job.cancel() }
+            job.join()
+            watcher.cancel()
+        }
+        islandA.animateTo(0f, tween(220))
+        p.animateTo(1f, tween(1200, easing = FastOutSlowInEasing))           // tekrar yana
+        cover.animateTo(0f, tween(320))
+        onDone()
+    }
+
+    val paint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG) }
+    val path = remember { Path() }
+    val matrix = remember { android.graphics.Matrix() }
+
+    BoxWithConstraints(
+        Modifier.fillMaxSize()
+            .graphicsLayer { alpha = cover.value }
+            .pointerInput(Unit) { detectTapGestures(onTap = { skip = true }) },
+    ) {
+        val w = constraints.maxWidth.toFloat()
+        val h = constraints.maxHeight.toFloat()
+
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(Color(0xFF050507))
+            val img = face ?: return@Canvas
+            val t = p.value
+            val a = seg(t, 0.15f, 0.96f)
+            val ye = smooth(a)
+            val zoomT = smooth(seg(t, 0.28f, 1f))
+            val pivT = smooth(seg(t, 0.20f, 1f))
+            val appear = smooth(seg(t, 0f, 0.10f))
+
+            val s0 = min2(h * 0.70f / PH_H, w * 0.78f / PH_W) * (0.90f + 0.10f * appear)
+            val s1 = pillWpx / BTN_T
+            val s = s0 * (s1 / s0).pow(zoomT)
+            val gy = glowY().let { if (it > 0f) it else h * 0.4f }
+            val cy = lerpF(h * 0.46f, gy, pivT)
+            val pivot = V3(lerpF(0f, -(PH_W / 2f + ACTION_PROT), pivT), lerpF(0f, ACTION_Y, pivT), 0f)
+            val cam = PhoneCam(
+                yaw = 90f * ye, pitch = 15f * sin(PI * ye).toFloat(),
+                pivot = pivot, s = s, dist = lerpF(330f, 150f, zoomT), cx = w / 2f, cy = cy,
+            )
+            val glowA = 0.10f * appear * (1f - zoomT)
+            if (glowA > 0.001f) {
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(Color.White.copy(alpha = glowA), Color.Transparent),
+                        center = Offset(w / 2f, h * 0.46f), radius = w * 0.85f,
+                    ),
+                )
+            }
+            drawPhone3D(cam, img, paint, path, matrix)
+
+            // Yandayken: Dene ekranındaki gibi üstte ve altta siyaha sol
+            val fe = smooth(seg(t, 0.78f, 1f))
+            if (fe > 0.001f) {
+                val ph = pillWpx * 2.03f
+                fun f(y: Float) = (y / h).coerceIn(0f, 1f)
+                val st = floatArrayOf(f(gy - 1.6f * ph), f(gy - 0.9f * ph), f(gy + 1.2f * ph), f(gy + 2.0f * ph))
+                for (i in 1 until 4) if (st[i] < st[i - 1]) st[i] = st[i - 1]
+                drawRect(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0f to Color.Black.copy(alpha = fe), st[0] to Color.Black.copy(alpha = fe),
+                            st[1] to Color.Transparent, st[2] to Color.Transparent,
+                            st[3] to Color.Black.copy(alpha = fe), 1f to Color.Black.copy(alpha = fe),
+                        ),
+                    ),
+                )
+            }
+        }
+
+        // Telefon karşıdayken: ekranın üstüne gerçek ada (412 dp'lik sanal ekran, PhoneMock ile aynı yöntem)
+        if (face != null) {
+            val dens = LocalDensity.current
+            val cam = remember(w, h) { frontCam(w, h) }
+            val hz = PH_D / 2f
+            val c0 = cam.scr(-PH_W / 2f + SCREEN_INSET_MM, -PH_H / 2f + SCREEN_INSET_MM, hz)
+            val c2 = cam.scr(PH_W / 2f - SCREEN_INSET_MM, PH_H / 2f - SCREEN_INSET_MM, hz)
+            val sw = c2.x - c0.x
+            val sh = c2.y - c0.y
+            val pxPerMm = sw / (PH_W - 2f * SCREEN_INSET_MM)
+            val k = sw / (PHONE_VIRTUAL_W_DP * dens.density)
+            val c = cfg.effective()
+            val topV = (PHONE_BASE_TOP_DP + c.offsetYDp).coerceAtLeast(0f)
+            Box(
+                Modifier
+                    .offset { IntOffset(c0.x.roundToInt(), c0.y.roundToInt()) }
+                    .size(with(dens) { sw.toDp() }, with(dens) { sh.toDp() })
+                    .graphicsLayer { alpha = islandA.value }
+                    .clip(RoundedCornerShape(with(dens) { (SCREEN_CORNER_MM * pxPerMm).toDp() })),
+            ) {
+                CompositionLocalProvider(LocalDensity provides Density(dens.density * k, dens.fontScale)) {
+                    Box(Modifier.fillMaxSize().offset(x = c.offsetXDp.dp, y = (topV - c.windowPadDp()).dp)) {
+                        IslandRoot(
+                            state = uiState, settingsFlow = cfgFlow, lyricsFlow = lyricsFlow,
+                            onTap = {}, onCommand = {}, onOutput = {},
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
