@@ -798,17 +798,13 @@ private fun TiltSensorEffect(enabled: Boolean, yaw: MutableState<Float>) {
 }
 
 // ---------------------------------------------------------------- Şarj kablosu (Dene > Şarj gösterimi)
-// Beyaz USB-C kablo ekranın altından yükselir, telefonun alt kenarındaki şarj girişine takılır. Kablo, konnektörden aşağı
-// sarkan bir iptir (Verlet simülasyonu); telefon dönerken açısal ivmeye göre sallanır. Tüm koordinatlar telefon uzayında (mm),
-// yani kablo telefonla birlikte 3 boyutlu döner.
+// Beyaz USB-C kablo ekranın altından yükselir, telefonun alt kenarındaki şarj girişine takılır. Kablo düz ve yuvarlaktır
+// (silindir gibi gölgelenir); telefon uzayında çizildiği için telefonla birlikte 3 boyutlu döner.
 
-private const val CABLE_N = 16                     // düğüm sayısı
-private const val CABLE_SEG = 8.5f                 // düğümler arası mm (toplam ≈ 127 mm, çoğu ekran dışında kalır)
 private const val CABLE_R = 1.75f                  // kablo yarıçapı, mm
-private const val CABLE_G = 2600f                  // "yerçekimi" mm/s²: küçük = daha yavaş, salkım salkım sallanma
-private const val CABLE_DAMP = 0.992f              // hız sönümü (alt adım başına)
-private const val CABLE_STIFF = 0.12f              // eğilme sertliği: büyük = daha dik duran kablo
-private const val SWAY_ARM_MM = 140f               // sallanma şiddeti: açısal ivme x bu kol uzunluğu
+private const val CABLE_LEN = 140f                 // konnektörden aşağı; çoğu ekran dışında kalır
+private const val BOOT_R = 2.5f                    // konnektör çıkışındaki kauçuk boğaz
+private const val BOOT_LEN = 9f
 private const val HOUSING_LEN = 17f                // beyaz konnektör gövdesi
 private const val HOUSING_W = 12.5f
 private const val HOUSING_D = 6.4f
@@ -819,96 +815,8 @@ private const val PORT_Y = PH_H / 2f               // telefonun alt kenarı
 private const val PLUG_GAP_END = 0.7f              // takılıyken gövde ile telefon arası
 private const val PLUG_START_GAP = 80f             // takılmadan önce gövde ekranın altında bu kadar aşağıda başlar
 
-private class CableSim {
-    val px = FloatArray(CABLE_N)
-    val py = FloatArray(CABLE_N)
-    val pz = FloatArray(CABLE_N)
-    private val ox = FloatArray(CABLE_N)
-    private val oy = FloatArray(CABLE_N)
-    private val oz = FloatArray(CABLE_N)
-    /** Her adımda artar: çizimi yeniden tetiklemek için. */
-    val tick = mutableStateOf(0)
-    private var prevYaw = 0f
-    private var omega = 0f
-    private var prevOmega = 0f
-    private var time = 0f
-
-    init {
-        val hy = housingTopY(0f) + HOUSING_LEN
-        for (i in 0 until CABLE_N) {
-            px[i] = housingX(0f); py[i] = hy + i * CABLE_SEG; pz[i] = 0f
-            ox[i] = px[i]; oy[i] = py[i]; oz[i] = pz[i]
-        }
-    }
-
-    /** Konnektör gövdesinin telefona bakan ucunun dikey konumu. [e]: takılma ilerlemesi (0 = aşağıda, 1 = takılı). */
-    fun housingTopY(e: Float): Float = PORT_Y + PLUG_GAP_END + (1f - e) * PLUG_START_GAP
-    fun housingX(e: Float): Float = (1f - e) * (1f - e) * 9f
-
-    /** Takılınca küçük bir sarsıntı. */
-    fun kick() { for (i in 1 until CABLE_N) ox[i] -= 0.6f * i / CABLE_N }
-
-    fun step(dtRaw: Float, yawDeg: Float, e: Float) {
-        val dt = dtRaw.coerceIn(0.002f, 0.033f)
-        time += dt
-        // Telefonun dönüş ivmesi (rad/s²) -> kablonun atalet tepkisi
-        val w = (yawDeg - prevYaw) * (PI.toFloat() / 180f) / dt
-        prevYaw = yawDeg
-        omega += (w - omega) * 0.4f
-        val alpha = ((omega - prevOmega) / dt).coerceIn(-30f, 30f)
-        prevOmega = omega
-        val swayAx = -SWAY_ARM_MM * alpha
-
-        val hx = housingX(e)
-        val hy = housingTopY(e) + HOUSING_LEN
-        val sub = 2
-        val h = dt / sub
-        repeat(sub) {
-            for (i in 1 until CABLE_N) {
-                val vx = (px[i] - ox[i]) * CABLE_DAMP
-                val vy = (py[i] - oy[i]) * CABLE_DAMP
-                val vz = (pz[i] - oz[i]) * CABLE_DAMP
-                ox[i] = px[i]; oy[i] = py[i]; oz[i] = pz[i]
-                val breeze = 45f * sin(time * 1.7f + i * 0.5f)           // çok hafif, sürekli kıpırtı
-                px[i] += vx + (swayAx + breeze) * h * h
-                py[i] += vy + CABLE_G * h * h
-                pz[i] += vz - pz[i] * 0.02f
-            }
-            repeat(12) { solve(hx, hy) }
-        }
-        tick.value++
-    }
-
-    private fun solve(hx: Float, hy: Float) {
-        px[0] = hx; py[0] = hy; pz[0] = 0f
-        for (i in 0 until CABLE_N - 1) {
-            val dx = px[i + 1] - px[i]
-            val dy = py[i + 1] - py[i]
-            val dz = pz[i + 1] - pz[i]
-            val d = sqrt(dx * dx + dy * dy + dz * dz).coerceAtLeast(1e-4f)
-            val k = (d - CABLE_SEG) / d
-            if (i == 0) {
-                px[1] -= dx * k; py[1] -= dy * k; pz[1] -= dz * k
-            } else {
-                px[i] += dx * k * 0.5f; py[i] += dy * k * 0.5f; pz[i] += dz * k * 0.5f
-                px[i + 1] -= dx * k * 0.5f; py[i + 1] -= dy * k * 0.5f; pz[i + 1] -= dz * k * 0.5f
-            }
-        }
-        // Eğilme sertliği: ilk parça konnektörün ekseninde (aşağı) çıkar, sonrakiler bir öncekinin yönünü sürdürmeye çalışır
-        px[1] += (px[0] - px[1]) * 0.35f
-        py[1] += (py[0] + CABLE_SEG - py[1]) * 0.35f
-        pz[1] += (pz[0] - pz[1]) * 0.35f
-        for (i in 2 until CABLE_N) {
-            val ax = px[i - 1] - px[i - 2]
-            val ay = py[i - 1] - py[i - 2]
-            val az = pz[i - 1] - pz[i - 2]
-            val l = sqrt(ax * ax + ay * ay + az * az).coerceAtLeast(1e-4f)
-            px[i] += (px[i - 1] + ax / l * CABLE_SEG - px[i]) * CABLE_STIFF
-            py[i] += (py[i - 1] + ay / l * CABLE_SEG - py[i]) * CABLE_STIFF
-            pz[i] += (pz[i - 1] + az / l * CABLE_SEG - pz[i]) * CABLE_STIFF
-        }
-    }
-}
+/** Konnektör gövdesinin telefona bakan ucunun dikey konumu. [e]: takılma ilerlemesi (0 = aşağıda, 1 = takılı). */
+private fun plugTopY(e: Float): Float = PORT_Y + PLUG_GAP_END + (1f - e) * PLUG_START_GAP
 
 private fun roundedPts(x0: Float, y0: Float, x1: Float, y1: Float, r: Float): List<FloatArray> {
     val out = ArrayList<FloatArray>()
@@ -922,38 +830,37 @@ private fun roundedPts(x0: Float, y0: Float, x1: Float, y1: Float, r: Float): Li
     return out
 }
 
+/** Silindir gibi gölgelenen beyaz yüzey: soldan ışık, sağda gölge. */
+private fun cableBrush(left: Float, width: Float): Brush = Brush.horizontalGradient(
+    colorStops = arrayOf(
+        0f to Color(0xFFB4B4BC), 0.22f to Color(0xFFF3F3F6), 0.42f to Color.White,
+        0.72f to Color(0xFFD9D9DF), 1f to Color(0xFF9E9EA7),
+    ),
+    startX = left, endX = left + width,
+)
+
 /** Kablo + konnektör. Telefondan sonra çizilir (kablo telefonun altında kalır, telefonun üstüne binmez). */
-private fun DrawScope.drawCable(cam: PhoneCam, sim: CableSim, e: Float, path: Path) {
+private fun DrawScope.drawCable(cam: PhoneCam, e: Float, path: Path) {
     val hw = HOUSING_W / 2f
     val hd = HOUSING_D / 2f
-    val xo = sim.housingX(e)
-    val yTop = sim.housingTopY(e)
+    val yTop = plugTopY(e)
     val yBot = yTop + HOUSING_LEN
 
-    // 1) Kablo: kalın çizgi + gölge + parlak vurgu (silindir hissi)
-    val pts = Array(CABLE_N) { cam.scr(sim.px[it], sim.py[it], sim.pz[it]) }
-    val wid = FloatArray(CABLE_N) {
-        val c = cam.pt(sim.px[it], sim.py[it], sim.pz[it])
-        val sc = cam.s * cam.dist / (cam.dist - c.z)
-        2f * CABLE_R * sc * lerpF(1.45f, 1f, (it / 3f).coerceAtMost(1f))      // konnektör çıkışında biraz kalın
-    }
-    for (i in CABLE_N - 2 downTo 0) {
-        val a = pts[i]
-        val b = pts[i + 1]
-        val w = (wid[i] + wid[i + 1]) / 2f
-        val dx = b.x - a.x
-        val dy = b.y - a.y
-        val len = sqrt(dx * dx + dy * dy)
-        if (len < 0.01f) continue
-        var nx = -dy / len
-        var ny = dx / len
-        if (nx + ny > 0f) { nx = -nx; ny = -ny }                                // ışık sol üstten
-        drawLine(Color(0xFFE2E2E7), a, b, w, StrokeCap.Round)
-        val so = Offset(-nx * w * 0.24f, -ny * w * 0.24f)
-        drawLine(Color(0xFFA6A6AE), a + so, b + so, w * 0.42f, StrokeCap.Round)
-        val ho = Offset(nx * w * 0.22f, ny * w * 0.22f)
-        drawLine(Color.White, a + ho, b + ho, w * 0.34f, StrokeCap.Round)
-    }
+    // 1) Kablo: telefonun dikey ekseninde olduğu için ekranda dikey ve sabit genişlikli bir silindir
+    val c = cam.pt(0f, yBot, 0f)
+    val sc = cam.s * cam.dist / (cam.dist - c.z)
+    val cx = cam.scr(0f, yBot, 0f).x
+    val yA = cam.scr(0f, yBot - 1f, 0f).y
+    val yB = cam.scr(0f, yBot + CABLE_LEN, 0f).y
+    val cw = 2f * CABLE_R * sc
+    drawRect(cableBrush(cx - cw / 2f, cw), Offset(cx - cw / 2f, yA), Size(cw, yB - yA))
+    // Kauçuk boğaz: kablodan biraz kalın, alt ucu yuvarlak
+    val bw = 2f * BOOT_R * sc
+    val bTop = cam.scr(0f, yBot - 2f, 0f).y
+    val bBot = cam.scr(0f, yBot + BOOT_LEN, 0f).y
+    drawRoundRect(
+        cableBrush(cx - bw / 2f, bw), Offset(cx - bw / 2f, bTop), Size(bw, bBot - bTop), CornerRadius(bw / 2f),
+    )
 
     // 2) USB-C metal uç (yalnızca telefonun dışında kalan kısmı)
     val mw = METAL_W / 2f
@@ -961,7 +868,7 @@ private fun DrawScope.drawCable(cam: PhoneCam, sim: CableSim, e: Float, path: Pa
     val yM0 = max(PORT_Y, yTop - METAL_LEN)
     if (yTop - yM0 > 0.02f) {
         for (s in floatArrayOf(-1f, 1f)) {
-            val sx = xo + s * mw
+            val sx = s * mw
             if (cam.visible(cam.dir(s, 0f, 0f), cam.pt(sx, (yM0 + yTop) / 2f, 0f))) {
                 fillPoly(
                     path,
@@ -972,16 +879,14 @@ private fun DrawScope.drawCable(cam: PhoneCam, sim: CableSim, e: Float, path: Pa
         }
         fillPoly(
             path,
-            listOf(
-                cam.scr(xo - mw, yM0, md), cam.scr(xo + mw, yM0, md), cam.scr(xo + mw, yTop, md), cam.scr(xo - mw, yTop, md),
-            ),
+            listOf(cam.scr(-mw, yM0, md), cam.scr(mw, yM0, md), cam.scr(mw, yTop, md), cam.scr(-mw, yTop, md)),
             Color(0xFFC3C5CC),
         )
     }
 
     // 3) Beyaz konnektör gövdesi: yan yüzler + yuvarlak köşeli ön yüz
     for (s in floatArrayOf(-1f, 1f)) {
-        val sx = xo + s * hw
+        val sx = s * hw
         if (cam.visible(cam.dir(s, 0f, 0f), cam.pt(sx, (yTop + yBot) / 2f, 0f))) {
             fillPoly(
                 path,
@@ -992,7 +897,7 @@ private fun DrawScope.drawCable(cam: PhoneCam, sim: CableSim, e: Float, path: Pa
             )
         }
     }
-    val front = roundedPts(xo - hw, yTop, xo + hw, yBot, 2.6f).map { cam.scr(it[0], it[1], hd) }
+    val front = roundedPts(-hw, yTop, hw, yBot, 2.6f).map { cam.scr(it[0], it[1], hd) }
     path.reset()
     path.moveTo(front[0].x, front[0].y)
     for (i in 1 until front.size) path.lineTo(front[i].x, front[i].y)
@@ -1001,7 +906,7 @@ private fun DrawScope.drawCable(cam: PhoneCam, sim: CableSim, e: Float, path: Pa
         path,
         Brush.linearGradient(
             listOf(Color(0xFFFBFBFD), Color(0xFFDEDEE3)),
-            start = cam.scr(xo, yTop, hd), end = cam.scr(xo, yBot, hd),
+            start = cam.scr(0f, yTop, hd), end = cam.scr(0f, yBot, hd),
         ),
     )
     drawPath(path, Color(0xFFB4B4BC), style = Stroke(0.8f))
@@ -1032,35 +937,26 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
     var tiltOn by remember { mutableStateOf(false) }
     TiltSensorEffect(tiltOn, tiltYaw)
 
-    // Şarj gösterimi (id 3): önce kablo telefona takılır, sonra ada animasyonu oynar
+    // Şarj gösterimi (id 3): kablo telefon dönerken gelir, takılır; sonra ada animasyonu oynar
     val isCharge = run.id == 3
     val plug = remember { Animatable(0f) }
-    val sim = remember { CableSim() }
-    LaunchedEffect(isCharge) {
-        if (!isCharge) return@LaunchedEffect
-        var last = 0L
-        while (true) {
-            withFrameNanos { now ->
-                if (last != 0L && plug.value > 0.001f) {
-                    sim.step((now - last) / 1_000_000_000f, tiltYaw.value * tiltGain.value, plug.value)
-                }
-                last = now
-            }
-        }
-    }
 
     LaunchedEffect(face) {
         if (face == null) return@LaunchedEffect
         cover.animateTo(1f, tween(220))
-        p.animateTo(FRONT_T, tween(1700, easing = FastOutSlowInEasing))      // ekran bize döner
+        if (isCharge) {
+            coroutineScope {
+                launch { p.animateTo(FRONT_T, tween(1700, easing = FastOutSlowInEasing)) }     // ekran bize döner
+                launch {
+                    snapshotFlow { p.value }.first { it <= 0.45f }       // telefon neredeyse dönünce kablo hemen gelir
+                    plug.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
+                }
+            }
+        } else {
+            p.animateTo(FRONT_T, tween(1700, easing = FastOutSlowInEasing))      // ekran bize döner
+        }
         tiltOn = true
         launch { tiltGain.animateTo(1f, tween(500)) }
-        if (isCharge) {
-            delay(250)
-            plug.animateTo(1f, tween(1500, easing = FastOutSlowInEasing))   // kablo alttan çıkıp girişe takılır
-            sim.kick()
-            delay(350)
-        }
         islandA.animateTo(1f, tween(200))
         coroutineScope {
             val job = launch { run.script(uiState, cfgFlow.value) }
@@ -1122,11 +1018,7 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
                 )
             }
             drawPhone3D(cam, img, paint, path, matrix)
-            if (isCharge) {
-                val pe = plug.value
-                val tk = sim.tick.value                    // her simülasyon adımında yeniden çiz
-                if (pe > 0.001f && tk >= 0) drawCable(cam, sim, pe, path)
-            }
+            if (isCharge && plug.value > 0.001f) drawCable(cam, plug.value, path)
 
             // Yandayken: Dene ekranındaki gibi üstte ve altta siyaha sol
             val fe = smooth(seg(t, 0.78f, 1f))
