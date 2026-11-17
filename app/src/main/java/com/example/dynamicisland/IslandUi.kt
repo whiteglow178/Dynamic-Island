@@ -1740,6 +1740,42 @@ private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, color: Color
     drawPath(path, color, alpha = alpha, style = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
+/** Logonun etrafında dönen çok hafif beyazımsı çizgi: arkasında sönen bir iz ve uçta küçük bir parıltı noktası. */
+@Composable
+private fun ShazamOrbit(modifier: Modifier = Modifier) {
+    val tr = rememberInfiniteTransition(label = "shzOrbit")
+    val ang: Float by tr.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "shzOrbitAng",
+    )
+    Canvas(modifier) {
+        val sw = 1.6.dp.toPx()
+        val r = size.minDimension / 2f - sw
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val tl = Offset(c.x - r, c.y - r)
+        val sz = Size(r * 2f, r * 2f)
+        val trail = 110f
+        val steps = 36
+        for (i in 0 until steps) {
+            val t = i / steps.toFloat()          // 0 = iz sonu (görünmez), 1 = uç
+            drawArc(
+                Color.White.copy(alpha = 0.30f * t * t), ang - trail + trail * t, trail / steps + 1f, false,
+                tl, sz, style = Stroke(width = sw, cap = StrokeCap.Butt),
+            )
+        }
+        val rad = ang * 0.0174533f
+        val head = Offset(c.x + r * cos(rad), c.y + r * sin(rad))
+        val gr = 5.dp.toPx()
+        drawCircle(
+            brush = Brush.radialGradient(listOf(Color.White.copy(alpha = 0.40f), Color.Transparent), center = head, radius = gr),
+            radius = gr, center = head,
+        )
+        drawCircle(Color.White.copy(alpha = 0.85f), radius = 1.4.dp.toPx(), center = head)
+    }
+}
+
 /** Küçük adadaki Shazam ses dalgası: mavi, hareketli çubuklar. */
 @Composable
 private fun ShazamWave(modifier: Modifier = Modifier, bars: Int = 5, flat: Boolean = false) {
@@ -1965,16 +2001,19 @@ private fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
             Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(52.dp).clip(CircleShape)
-                    .background(Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom))),
-                contentAlignment = Alignment.Center,
-            ) {
-                Canvas(Modifier.size(34.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
+            Box(Modifier.size(60.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(52.dp).clip(CircleShape)
+                        .background(Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom))),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(Modifier.size(34.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
+                }
+                ShazamOrbit(Modifier.fillMaxSize())
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
-                "Listening...", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp,
+                "Dinliyor", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp,
                 maxLines = 1, modifier = Modifier.weight(1f),
             )
             ShazamWave(Modifier.width(32.dp).height(18.dp), bars = 6, flat = true)
