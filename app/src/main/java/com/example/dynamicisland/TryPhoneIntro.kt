@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.PointMode
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
@@ -43,7 +44,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -141,13 +144,47 @@ private val segNormals: List<FloatArray> by lazy {
     }
 }
 
-// Yan duvarın kalınlık boyunca şeritleri: yuvarlatılmış kenar hissi (ön pah parlak, arkaya doğru koyulaşır)
-private val STRIP_T = floatArrayOf(0f, 0.05f, 0.16f, 0.50f, 0.84f, 0.95f, 1f)
-private val STRIP_M = floatArrayOf(1.45f, 1.18f, 1.00f, 0.95f, 0.80f, 0.62f)
+// Yan duvarın kalınlık boyunca şeritleri (ince ve çok sayıda: pürüzsüz, yuvarlak kenar hissi)
+private val STRIP_T = floatArrayOf(
+    0f, 0.015f, 0.03f, 0.045f, 0.065f, 0.10f, 0.20f, 0.35f, 0.50f, 0.65f, 0.80f, 0.90f, 0.935f, 0.955f, 0.97f, 0.985f, 1f,
+)
+private const val SIDE_SAMPLES = 48
 
-private fun metal(l: Float, mult: Float): Color {
-    val k = ((0.28f + 0.90f * l.coerceIn(0f, 1f)) * mult).coerceIn(0f, 1.2f)
-    return Color((0.745f * k).coerceIn(0f, 1f), (0.720f * k).coerceIn(0f, 1f), (0.680f * k).coerceIn(0f, 1f))
+// Dene ekranındaki gri metal bandın rengi (TryScreen.drawMetalBand ile aynı tonlar).
+// Anahtarlar: Eylem Düğmesi merkezine göre dikey konum, "hap boyu" (ACTION_LEN) cinsinden.
+private val BAND_KEYS = floatArrayOf(-1.05f, -0.04f, 0.66f, 1.28f, 1.90f)
+private val BAND_COLORS = arrayOf(
+    Color(0xFF5E5E65), Color(0xFF8A8A90), Color(0xFFA2A2A8), Color(0xFF68686E), Color(0xFF505056),
+)
+
+private fun bandBase(yMm: Float): Color {
+    val u = (yMm - ACTION_Y) / ACTION_LEN
+    if (u <= BAND_KEYS[0]) return BAND_COLORS[0]
+    for (i in 1 until BAND_KEYS.size) {
+        if (u <= BAND_KEYS[i]) {
+            val f = (u - BAND_KEYS[i - 1]) / (BAND_KEYS[i] - BAND_KEYS[i - 1])
+            return lerp(BAND_COLORS[i - 1], BAND_COLORS[i], f)
+        }
+    }
+    return BAND_COLORS[BAND_COLORS.size - 1]
+}
+
+private fun shade(c: Color, k: Float) =
+    Color((c.red * k).coerceIn(0f, 1f), (c.green * k).coerceIn(0f, 1f), (c.blue * k).coerceIn(0f, 1f))
+
+/** Yandan bakışta (yüzey normali kameraya dönük, l ≈ 0.74) 1.0 verir; eğik açılarda hafifçe değişir. */
+private fun lightFactor(l: Float): Float =
+    (0.55f + 0.45f * ((0.28f + 0.90f * l.coerceIn(0f, 1f)) / 0.946f)).coerceIn(0.4f, 1.15f)
+
+/** Duvarın kalınlığı boyunca parlaklık: iki kenarda ince parlak çizgi, uçlarda siyaha sönme, ortası düz gri. */
+private fun wallProfile(u: Float): Float {
+    val e = min(u, 1f - u)
+    val base = 1f - 0.06f * u
+    return when {
+        e < 0.025f -> lerpF(0.35f, 1.45f, e / 0.025f)
+        e < 0.06f -> lerpF(1.45f, base, (e - 0.025f) / 0.035f)
+        else -> base
+    }
 }
 
 // ---------------------------------------------------------------- Tuşlar
@@ -165,12 +202,12 @@ private fun pillPoints(yc: Float, len: Float, g: Float = 1f): List<FloatArray> {
     val r = BTN_T / 2f
     val half = len / 2f - r
     val out = ArrayList<FloatArray>()
-    for (j in 0..9) {                                         // üst yarım daire
-        val a = PI + j * PI / 9.0
+    for (j in 0..23) {                                        // üst yarım daire
+        val a = PI + j * PI / 23.0
         out.add(floatArrayOf(((yc - half + r * sin(a).toFloat()) - yc) * g + yc, r * cos(a).toFloat() * g))
     }
-    for (j in 0..9) {                                         // alt yarım daire
-        val a = j * PI / 9.0
+    for (j in 0..23) {                                        // alt yarım daire
+        val a = j * PI / 23.0
         out.add(floatArrayOf(((yc + half + r * sin(a).toFloat()) - yc) * g + yc, r * cos(a).toFloat() * g))
     }
     return out
@@ -185,6 +222,8 @@ private fun DrawScope.fillPoly(path: Path, pts: List<Offset>, color: Color, edge
     if (edge) drawPath(path, color, style = Stroke(0.7f))     // komşu parçalar arasında ince çizgi kalmasın
 }
 
+private fun my0(b: Btn, p: FloatArray, q: FloatArray): Float = (p[0] + q[0]) / 2f
+
 private fun DrawScope.drawButton(cam: PhoneCam, b: Btn, path: Path) {
     val base = pillPoints(b.yc, b.len)
     val xw = b.side * (PH_W / 2f)
@@ -196,8 +235,8 @@ private fun DrawScope.drawButton(cam: PhoneCam, b: Btn, path: Path) {
 
     // Tuşun oturduğu koyu yuva
     if (wallVisible) {
-        val rec = pillPoints(b.yc, b.len, 1.28f).map { cam.scr(xw, it[0], it[1]) }
-        fillPoly(path, rec, Color(0xFF1B1A18).copy(alpha = 0.95f), edge = false)
+        val rec = pillPoints(b.yc, b.len, 1.05f).map { cam.scr(xw, it[0], it[1]) }
+        fillPoly(path, rec, Color(0xFF050507), edge = false)
     }
     // Yan yüzler
     val n = base.size
@@ -216,7 +255,7 @@ private fun DrawScope.drawButton(cam: PhoneCam, b: Btn, path: Path) {
         fillPoly(
             path,
             listOf(cam.scr(xw, p[0], p[1]), cam.scr(xw, q[0], q[1]), cam.scr(xo, q[0], q[1]), cam.scr(xo, p[0], p[1])),
-            metal(light, 0.95f),
+            shade(bandBase(my0(b, p, q)), 0.9f * lightFactor(light)),
         )
     }
     // Dış yüz
@@ -227,13 +266,50 @@ private fun DrawScope.drawButton(cam: PhoneCam, b: Btn, path: Path) {
         for (i in 1 until cap.size) path.lineTo(cap[i].x, cap[i].y)
         path.close()
         val bounds = path.getBounds()
+        val lfc = lightFactor(wl)
         drawPath(
             path,
             Brush.verticalGradient(
-                listOf(metal(wl, 1.18f), metal(wl, 0.86f)), startY = bounds.top, endY = bounds.bottom,
+                listOf(
+                    shade(bandBase(b.yc - b.len / 2f), 1.02f * lfc),
+                    shade(bandBase(b.yc + b.len / 2f), 0.98f * lfc),
+                ),
+                startY = bounds.top, endY = bounds.bottom,
             ),
         )
-        drawPath(path, Color.Black.copy(alpha = 0.35f), style = Stroke(max(0.8f, 0.07f * cam.s)))
+    }
+}
+
+/** Düz yan duvar (sol: s = -1, sağ: s = +1): her şerit tek dörtgen + dikey renk geçişi. */
+private fun DrawScope.drawSideWall(cam: PhoneCam, s: Float, path: Path) {
+    val hz = PH_D / 2f
+    val x = s * PH_W / 2f
+    val nc = cam.dir(s, 0f, 0f)
+    if (!cam.visible(nc, cam.pt(x, 0f, 0f))) return
+    val lf = lightFactor(nc.x * LX + nc.y * LY + nc.z * LZ)
+    val yT = -(PH_H / 2f - PH_R)
+    val yB = -yT
+    for (k in 0 until STRIP_T.size - 1) {
+        val z0 = hz - PH_D * STRIP_T[k]
+        val z1 = hz - PH_D * STRIP_T[k + 1]
+        val pm = wallProfile((STRIP_T[k] + STRIP_T[k + 1]) / 2f) * lf
+        val a0 = cam.scr(x, yT, z0)
+        val a1 = cam.scr(x, yT, z1)
+        val b1 = cam.scr(x, yB, z1)
+        val b0 = cam.scr(x, yB, z0)
+        val st = Offset((a0.x + a1.x) / 2f, (a0.y + a1.y) / 2f)
+        val en = Offset((b0.x + b1.x) / 2f, (b0.y + b1.y) / 2f)
+        if (abs(en.x - st.x) + abs(en.y - st.y) < 1f) continue
+        val stops = Array(SIDE_SAMPLES) { j ->
+            val f = j / (SIDE_SAMPLES - 1f)
+            f to shade(bandBase(yT + (yB - yT) * f), pm)
+        }
+        val brush = Brush.linearGradient(colorStops = stops, start = st, end = en)
+        path.reset()
+        path.moveTo(a0.x, a0.y); path.lineTo(a1.x, a1.y); path.lineTo(b1.x, b1.y); path.lineTo(b0.x, b0.y)
+        path.close()
+        drawPath(path, brush)
+        drawPath(path, brush, style = Stroke(0.7f))
     }
 }
 
@@ -244,22 +320,28 @@ private fun DrawScope.drawPhone3D(
     val hz = PH_D / 2f
     val n = outline.size
 
-    // 1) Yan duvarlar (yalnızca kameraya bakan parçalar)
+    // 1) Yan duvarlar. Düz sol/sağ duvarlar tek parça, dikey renk geçişli (Dene ekranındaki gri bant gibi pürüzsüz);
+    //    köşe yayları kısa parçalarla çizilir.
+    val hw = PH_W / 2f
     for (i in 0 until n) {
         val a = outline[i]
         val b = outline[(i + 1) % n]
+        if (abs(abs(a.x) - hw) < 1e-3f && abs(abs(b.x) - hw) < 1e-3f) continue
         val sn = segNormals[i]
         val my = (a.y + b.y) / 2f
         val nc = cam.dir(sn[0], sn[1], 0f)
         if (!cam.visible(nc, cam.pt((a.x + b.x) / 2f, my, 0f))) continue
-        val light = nc.x * LX + nc.y * LY + nc.z * LZ
-        val wob = 1f + 0.05f * sin(my * 0.45f)                 // ince, fırçalanmış metal dalgalanması
-        val pa = Array(7) { cam.scr(a.x, a.y, hz - PH_D * STRIP_T[it]) }
-        val pb = Array(7) { cam.scr(b.x, b.y, hz - PH_D * STRIP_T[it]) }
-        for (k in 0 until 6) {
-            fillPoly(path, listOf(pa[k], pb[k], pb[k + 1], pa[k + 1]), metal(light, STRIP_M[k] * wob))
+        val lf = lightFactor(nc.x * LX + nc.y * LY + nc.z * LZ)
+        val base = bandBase(my)
+        val pa = Array(STRIP_T.size) { cam.scr(a.x, a.y, hz - PH_D * STRIP_T[it]) }
+        val pb = Array(STRIP_T.size) { cam.scr(b.x, b.y, hz - PH_D * STRIP_T[it]) }
+        for (k in 0 until STRIP_T.size - 1) {
+            val pm = wallProfile((STRIP_T[k] + STRIP_T[k + 1]) / 2f)
+            fillPoly(path, listOf(pa[k], pb[k], pb[k + 1], pa[k + 1]), shade(base, pm * lf))
         }
     }
+    drawSideWall(cam, -1f, path)
+    drawSideWall(cam, 1f, path)
 
     // 2) Tuşlar
     for (b in BTNS) drawButton(cam, b, path)
@@ -309,7 +391,7 @@ private fun DrawScope.drawFaceMm() {
     // Titanyum ön kenar
     drawRoundRect(
         Brush.linearGradient(
-            0f to Color(0xFFE2DDD3), 0.5f to Color(0xFFB7B1A6), 1f to Color(0xFF8F897F),
+            0f to Color(0xFFC9C9CF), 0.5f to Color(0xFFA2A2A8), 1f to Color(0xFF6E6E74),
             start = Offset(0f, 0f), end = Offset(PH_W, PH_H),
         ),
         size = Size(PH_W, PH_H), cornerRadius = CornerRadius(bodyR),
