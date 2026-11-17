@@ -170,6 +170,13 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
             SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
         }
+        sec("Kamera / mikrofon göstergesi", "Bir uygulama kamerayı ya da mikrofonu kullanırken ada haber verir") {
+            SwitchRow(
+                "Gösterge",
+                "Kamera ya da mikrofon açılınca ada kısa süre açılır, sonra yeşil (kamera) / turuncu (mikrofon) nokta olarak kalır. Nokta modunda ve normal adada çalışır. Hangi uygulamanın kullandığı Android tarafından verilmez",
+                draft.privacyIndicator,
+            ) { draft = draft.copy(privacyIndicator = it) }
+        }
         sec("Nokta modu", "Ada yerine 3, 4 ya da 5 nokta; olaylar nokta (baloncuk) olarak görünür") {
             SwitchRow(
                 "Nokta modu",
@@ -193,11 +200,6 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     "Olay gelince nokta adadan ayrılmaz; olay simgesi birleşik adanın içinde, kendi yerinde görünür",
                     draft.dotMergeKeep,
                 ) { draft = draft.copy(dotMergeKeep = it) }
-                SwitchRow(
-                    "Kamera / mikrofon göstergesi",
-                    "Bir uygulama kamerayı ya da mikrofonu kullanırken nokta olarak görünür: yeşil = kamera, turuncu = mikrofon. Dokununca ayrıntı açılır",
-                    draft.dotPrivacy,
-                ) { draft = draft.copy(dotPrivacy = it) }
                 SliderRow("Noktalar arası boşluk", draft.dotGapDp, 2f..30f, "${draft.dotGapDp.toInt()} dp") { draft = draft.copy(dotGapDp = it) }
                 SliderRow("Konum: yatay (sağ +)", draft.dotOffsetXDp, -120f..120f, "${draft.dotOffsetXDp.toInt()} dp") { draft = draft.copy(dotOffsetXDp = it) }
                 SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }

@@ -271,7 +271,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Shazam -> extraBg() && shazamPhase == ShazamPhase.Listening
         Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
         Bg.Notif -> settings.value.dotMode && notifBg != null
-        Bg.Privacy -> settings.value.dotMode && privacyContent != null
+        Bg.Privacy -> privacyContent != null
     }
 
     /** Biten olayları listeden çıkarır, yeni başlayanı sona (= en yeni) ekler. */
@@ -303,7 +303,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Notif -> if (settings.value.dotMode && notifBg == c) Bg.Notif else null
         is IslandContent.Status -> when {
             extraBg() && c.kind == StatusKind.Timer && c.endsAt > System.currentTimeMillis() && timerContent?.endsAt == c.endsAt -> Bg.Timer
-            (c.kind == StatusKind.Camera || c.kind == StatusKind.Mic) && settings.value.dotMode && privacyContent == c -> Bg.Privacy
+            (c.kind == StatusKind.Camera || c.kind == StatusKind.Mic) && privacyContent == c -> Bg.Privacy
             else -> null
         }
         else -> null
@@ -354,7 +354,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         else scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, sideKey(ui.value))) }
     }
 
-    // ---------------------------------------------------------------- Kamera / mikrofon göstergesi (nokta modu)
+    // ---------------------------------------------------------------- Kamera / mikrofon göstergesi (nokta modundan bağımsız ayrı ayar)
     // Kamera: CameraManager "kullanılamıyor" bildirimi; mikrofon: AudioRecordingCallback. İkisi de izin gerektirmez.
     private var privacyContent: IslandContent.Status? = null
     private val camBusy = HashSet<String>()
@@ -374,12 +374,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val am = getSystemService(android.media.AudioManager::class.java)
         val mcb = object : android.media.AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: List<android.media.AudioRecordingConfiguration>) {
-                micBusy = configs.any { !it.isClientSilenced }
+                micBusy = configs.isNotEmpty()
                 runCatching { refreshPrivacy() }
             }
         }
         micCb = mcb
         runCatching { am.registerAudioRecordingCallback(mcb, h) }
+        // Servis başlarken zaten süren bir kayıt varsa onu da yakala
+        runCatching { micBusy = am.activeRecordingConfigurations.isNotEmpty() }
     }
 
     private fun stopPrivacyMonitor() {
@@ -391,7 +393,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Kamera / mikrofon durumuna göre göstergeyi günceller: başlayınca kısa süre panel açılır, sonra nokta olarak kalır. */
     private fun refreshPrivacy() {
         val s = settings.value
-        val on = s.dotMode && s.dotPrivacy
+        val on = s.privacyIndicator
         val cam = on && camBusy.isNotEmpty()
         val mic = on && micBusy
         val next = if (!cam && !mic) null else IslandContent.Status(

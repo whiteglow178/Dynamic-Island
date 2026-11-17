@@ -1201,6 +1201,17 @@ fun IslandPill(
             ) { SideGlyph(content, geo.ch) }
         }
 
+        if (content is IslandContent.Status && (content.kind == StatusKind.Camera || content.kind == StatusKind.Mic) && compactVisible && !cfg.dotMode) {
+            // Normal ada: kapalı halde kamera deliğinin sağında yeşil (kamera) / turuncu (mikrofon) nokta
+            Box(
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                    .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Box(Modifier.padding(end = 12.dp).size(8.dp).background(statusColor(content), RoundedCornerShape(50)))
+            }
+        }
+
         if (content is IslandContent.Call && !content.isIncoming && compactVisible && !cfg.dotMode) {
             // Küçültülmüş aktif arama: solda yeşil telefon + süre, sağda renkli ses dalgası
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
