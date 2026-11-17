@@ -444,43 +444,18 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
     val showBig = needsBig && !bigDismissed
     val hint = previewHint(kind, draft, bigDismissed)
 
-    // Dış Box: büyük telefon ayarlar sayfasının ÜSTÜNE biner, sayfayı daraltmaz / itmez
+    // Tam telefon gerektiren ayarlarda önizleme kartı telefonun tamamını gösterecek şekilde büyür
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
             PreviewCard(
                 draft.effective(), mode, { mode = it }, expanded, { expanded = !expanded },
-                kind = kind, hint = hint, showBig = showBig, onSmallTap = { if (needsBig) bigDismissed = false },
+                kind = kind, hint = hint, showBig = showBig,
+                onSmallTap = { if (needsBig) bigDismissed = false }, onBigTap = { bigDismissed = true },
             )
 
             SnapSettingsPager(pages, pager, Modifier.weight(1f))
         }
-        if (showBig) {
-            BigPhoneOverlay(draft.effective(), kind, hint, { bigDismissed = true }, Modifier.align(Alignment.TopCenter))
-        }
-    }
-}
-
-/** Ayarlar sayfasının üstüne binen, tamamı görünen telefon. Dokununca kapanır. */
-@Composable
-private fun BigPhoneOverlay(cfg: IslandSettings, kind: PreviewKind, hint: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
-    val cardShape = RoundedCornerShape(28.dp)
-    Column(
-        modifier.fillMaxWidth().zIndex(2f).clip(cardShape)
-            .background(Brush.linearGradient(listOf(Color(0xFF1F4E6B), Color(0xFF3A3A78), Color(0xFF5A3470))))
-            .border(1.dp, Color.White.copy(alpha = 0.10f), cardShape)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
-            .padding(top = 16.dp, bottom = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        PhoneMock(BIG_PHONE_W_DP, BIG_PHONE_H_DP) {
-            MockStatusBar()
-            PreviewScene(kind, cfg)
-        }
-        Text(
-            hint, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 10.dp),
-        )
     }
 }
 
@@ -625,7 +600,8 @@ private val PHONE_SCALE = (PHONE_W_DP - 2f * PHONE_BEZEL_DP) / PHONE_VIRTUAL_W_D
 @Composable
 private fun PreviewCard(
     cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, expanded: Boolean, onToggle: () -> Unit,
-    kind: PreviewKind = PreviewKind.Island, hint: String = "", showBig: Boolean = false, onSmallTap: () -> Unit = {},
+    kind: PreviewKind = PreviewKind.Island, hint: String = "", showBig: Boolean = false,
+    onSmallTap: () -> Unit = {}, onBigTap: () -> Unit = {},
 ) {
     val art = remember { sampleArt() }
     val music = mode == 1
@@ -650,97 +626,71 @@ private fun PreviewCard(
         PreviewKind.Favorites -> cfg.favoritesHeightDp(cfg.favoritePkgList().size)
         PreviewKind.SideCall -> 64f
     }
-    val openNeedDp = (islandTopV + ehForKind + 14f) * PHONE_SCALE + 16f + PHONE_BEZEL_DP + 12f
+    // 3 boyutlu telefon: normal modda büyük çizilip üst kısmı gösterilir, tam modda tamamı karta sığar
+    val phoneWDp = if (showBig) p3dFullWidthDp() else P3D_W_DP
+    val phoneTopDp = if (showBig) P3D_FULL_PAD_DP else P3D_TOP_DP
+    val openNeedDp = (islandTopV + ehForKind + 14f) * p3dScale(P3D_W_DP) + P3D_TOP_DP + p3dScreenInsetDp(P3D_W_DP) + 12f
     val boxH by animateDpAsState(
-        (if (expanded || kind != PreviewKind.Island) openNeedDp else 150f).coerceAtLeast(150f).dp,
+        (if (showBig) P3D_FULL_H_DP
+        else (if (expanded || kind != PreviewKind.Island) openNeedDp else 150f).coerceAtLeast(150f)).dp,
         tween(320, easing = FastOutSlowInEasing), label = "previewH",
     )
     val cardShape = RoundedCornerShape(28.dp)
-    val phoneShape = RoundedCornerShape(38.dp)
-    val screenShape = RoundedCornerShape(38.dp - PHONE_BEZEL_DP.dp)
-    val dens = LocalDensity.current
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
             Modifier.fillMaxWidth().height(boxH).clip(cardShape)
                 .background(Brush.linearGradient(listOf(Color(0xFF1F4E6B), Color(0xFF3A3A78), Color(0xFF5A3470))))
-                .border(1.dp, Color.White.copy(alpha = 0.10f), cardShape),
+                .border(1.dp, Color.White.copy(alpha = 0.10f), cardShape)
+                .then(
+                    // Asistan / Favoriler / Kenar tuşları: telefona dokununca tam <-> üst kısım geçişi
+                    if (kind != PreviewKind.Island) {
+                        Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            if (showBig) onBigTap() else onSmallTap()
+                        }
+                    } else Modifier,
+                ),
             contentAlignment = Alignment.TopCenter,
         ) {
-            // Telefon: alt kısmı kart sınırında kesilir (üst bölüm görünür), kamera görseli yok
-            if (kind != PreviewKind.Island) {
-                // Asistan / Favoriler / Kenar tuşları: telefon o ayarın sahnesini oynatır (büyük telefon açıkken burada çizilmez)
-                if (!showBig) {
-                    Box(
-                        Modifier.padding(top = 16.dp)
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSmallTap() },
-                    ) {
-                        PhoneMock(PHONE_W_DP, 560f) {
-                            MockStatusBar()
-                            PreviewScene(kind, cfg)
+            Phone3DPreview(phoneWDp, Modifier.padding(top = phoneTopDp.dp)) {
+                if (kind != PreviewKind.Island) {
+                    // Telefon o ayarın sahnesini oynatır (gerçek ada / asistan / favoriler / kenar tuşları)
+                    PreviewScene(kind, cfg)
+                } else {
+                    Box(Modifier.fillMaxSize()) {
+                        if (showOutside) {
+                            OutsideLyricText(
+                                cfg, SAMPLE_STATE, frame,
+                                Modifier.align(Alignment.TopCenter)
+                                    .offset(x = cfg.offsetXDp.dp, y = (islandTopV + geo.ch.value + 10f).dp)
+                                    .width(cfg.lyricsOutsideWidthDp.dp.coerceAtMost(320.dp)),
+                                artColor = SAMPLE_COLOR,
+                            )
                         }
-                    }
-                }
-            } else Box(Modifier.padding(top = 16.dp).width(PHONE_W_DP.dp).height(560.dp)) {
-                // yan tuşlar
-                Box(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = 90.dp).width(3.dp).height(44.dp)
-                    .clip(RoundedCornerShape(2.dp)).background(Color(0xFF2A2D35)))
-                Box(Modifier.align(Alignment.TopStart).offset(x = (-2).dp, y = 76.dp).width(3.dp).height(28.dp)
-                    .clip(RoundedCornerShape(2.dp)).background(Color(0xFF2A2D35)))
-                Box(Modifier.align(Alignment.TopStart).offset(x = (-2).dp, y = 112.dp).width(3.dp).height(28.dp)
-                    .clip(RoundedCornerShape(2.dp)).background(Color(0xFF2A2D35)))
-
-                // gövde + çerçeve
-                Box(
-                    Modifier.fillMaxSize().clip(phoneShape)
-                        .background(Color(0xFF08090C))
-                        .border(1.5.dp, Color(0xFF454956), phoneShape)
-                        .padding(PHONE_BEZEL_DP.dp),
-                ) {
-                    // ekran
-                    Box(
-                        Modifier.fillMaxSize().clip(screenShape)
-                            .background(Brush.verticalGradient(listOf(Color(0xFF2E6A93), Color(0xFF5B4496), Color(0xFFB2557F)))),
-                    ) {
-                        // Yoğunluğu küçültüp 412 dp'lik sanal ekranı maket ekrana sığdırır
-                        CompositionLocalProvider(LocalDensity provides Density(dens.density * PHONE_SCALE, dens.fontScale)) {
-                            Box(Modifier.fillMaxSize()) {
-                                MockStatusBar()
-                                if (showOutside) {
-                                    OutsideLyricText(
-                                        cfg, SAMPLE_STATE, frame,
+                        // Üç nokta modu önizlemesi: yan noktalar (ortadaki nokta aşağıdaki ada)
+                        if (cfg.dotMode && !expanded) {
+                            for (dir in intArrayOf(-1, 1)) {
+                                val d = if (dir > 0) cfg.dotRightDp else cfg.dotLeftDp
+                                val dx = dir * (cfg.dotMidDp / 2f + cfg.dotGapDp + d / 2f)
+                                Box(
+                                    Modifier.align(Alignment.TopCenter)
+                                        .offset(x = (cfg.offsetXDp + dx).dp, y = (islandTopV + (cfg.dotMidDp - d) / 2f).dp)
+                                        .size(d.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
+                                )
+                                if (dotHasOuter(cfg, dir)) {   // 4 / 5 nokta: dış nokta
+                                    val o = dotOuterSizeDp(cfg, dir)
+                                    val ox = dx + dir * (d / 2f + cfg.dotGapDp + o / 2f)
+                                    Box(
                                         Modifier.align(Alignment.TopCenter)
-                                            .offset(x = cfg.offsetXDp.dp, y = (islandTopV + geo.ch.value + 10f).dp)
-                                            .width(cfg.lyricsOutsideWidthDp.dp.coerceAtMost(320.dp)),
-                                        artColor = SAMPLE_COLOR,
+                                            .offset(x = (cfg.offsetXDp + ox).dp, y = (islandTopV + (cfg.dotMidDp - o) / 2f).dp)
+                                            .size(o.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
                                     )
                                 }
-                                // Telefonun içindeki ada: dokununca açılır / kapanır
-                                if (cfg.dotMode && !expanded) {
-                                    // Üç nokta modu önizlemesi: yan noktalar (ortadaki nokta aşağıdaki ada)
-                                    for (dir in intArrayOf(-1, 1)) {
-                                        val d = if (dir > 0) cfg.dotRightDp else cfg.dotLeftDp
-                                        val dx = dir * (cfg.dotMidDp / 2f + cfg.dotGapDp + d / 2f)
-                                        Box(
-                                            Modifier.align(Alignment.TopCenter)
-                                                .offset(x = (cfg.offsetXDp + dx).dp, y = (islandTopV + (cfg.dotMidDp - d) / 2f).dp)
-                                                .size(d.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
-                                        )
-                                        if (dotHasOuter(cfg, dir)) {   // 4 / 5 nokta: dış nokta
-                                            val o = dotOuterSizeDp(cfg, dir)
-                                            val ox = dx + dir * (d / 2f + cfg.dotGapDp + o / 2f)
-                                            Box(
-                                                Modifier.align(Alignment.TopCenter)
-                                                    .offset(x = (cfg.offsetXDp + ox).dp, y = (islandTopV + (cfg.dotMidDp - o) / 2f).dp)
-                                                    .size(o.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
-                                            )
-                                        }
-                                    }
-                                }
-                                Box(Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = islandTopV.dp)) {
-                                    IslandPill(sample, progress, geo, cfg, SAMPLE_STATE, frame, compactLy, onToggle, {}, {})
-                                }
                             }
+                        }
+                        // Telefonun içindeki ada: dokununca açılır / kapanır
+                        Box(Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = islandTopV.dp)) {
+                            IslandPill(sample, progress, geo, cfg, SAMPLE_STATE, frame, compactLy, onToggle, {}, {})
                         }
                     }
                 }

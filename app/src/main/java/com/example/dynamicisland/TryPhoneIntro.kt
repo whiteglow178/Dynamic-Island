@@ -41,7 +41,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -800,6 +802,76 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
                             onTap = {}, onCommand = {}, onOutput = {},
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------- Ayarlar önizlemesi (3 boyutlu telefon)
+// Ayarlar ekranının üstündeki önizleme kartı bu telefonu kullanır. Telefon tam karşıdan görünür; ekranın üstüne
+// gerçek ada çizilir (TryPhoneShowcase ile aynı yöntem). İki kullanım:
+//  - Normal: telefon büyük çizilir, kart yalnızca üst kısmı (ada bölgesi) gösterir, alt kısım kartta kesilir.
+//  - Tam: telefonun tamamı karta sığacak şekilde küçültülür (tam genişlik asistan, kenar tuşları gibi ayarlar).
+
+/** Normal (üst kısım) önizlemede telefon genişliği, dp. */
+internal const val P3D_W_DP = 236f
+/** Normal önizlemede telefonun karttaki üst boşluğu, dp. */
+internal const val P3D_TOP_DP = 16f
+/** Tam telefon önizlemesinde kartın yüksekliği, dp. Telefonun tamamı bu yüksekliğe sığar. */
+internal const val P3D_FULL_H_DP = 300f
+/** Tam telefon önizlemesinde telefonun üst/alt boşluğu, dp. */
+internal const val P3D_FULL_PAD_DP = 12f
+
+/** Ekranın telefon kenarından içeri payı (dp), telefon genişliği [wDp] iken. */
+internal fun p3dScreenInsetDp(wDp: Float): Float = SCREEN_INSET_MM * wDp / PH_W
+
+/** 412 dp'lik sanal ekranı maket ekrana sığdıran yoğunluk çarpanı. */
+internal fun p3dScale(wDp: Float): Float = (wDp - 2f * p3dScreenInsetDp(wDp)) / PHONE_VIRTUAL_W_DP
+
+/** Tam telefon önizlemesinde telefonun genişliği (dp): yükseklik [P3D_FULL_H_DP] - boşluklara sığar. */
+internal fun p3dFullWidthDp(): Float = (P3D_FULL_H_DP - 2f * P3D_FULL_PAD_DP) * PH_W / PH_H
+
+/**
+ * [phoneWDp] genişliğinde 3 boyutlu telefon (karşıdan). Boyutu telefonun tamamıdır (en-boy oranı korunur); üst kapsayıcı
+ * kısa ise alt kısım kapsayıcıda kesilir. [content] ekranın içine, 412 dp genişliğinde sanal ekran olarak çizilir.
+ */
+@Composable
+internal fun Phone3DPreview(phoneWDp: Float, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    var face by remember { mutableStateOf<ImageBitmap?>(phoneFaceCache) }
+    LaunchedEffect(Unit) { if (face == null) face = obtainPhoneFace() }
+
+    val paint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG) }
+    val path = remember { Path() }
+    val matrix = remember { android.graphics.Matrix() }
+    val dens = LocalDensity.current
+
+    val phoneHDp = phoneWDp * PH_H / PH_W
+    val insetDp = p3dScreenInsetDp(phoneWDp)
+    val k = p3dScale(phoneWDp)
+
+    // requiredSize: üst kapsayıcı kısa olsa da telefon tam boyunda ölçülür (taşan kısım kapsayıcıda kesilir)
+    Box(modifier.requiredSize(phoneWDp.dp, phoneHDp.dp)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val img = face ?: return@Canvas
+            val dist = 330f
+            val hz = PH_D / 2f
+            // Ön yüz tam olarak tuvale oturur: mm başına piksel = genişlik / PH_W
+            val pxPerMm = size.width / PH_W
+            val cam = PhoneCam(0f, 0f, V3(0f, 0f, 0f), pxPerMm * (dist - hz) / dist, dist, size.width / 2f, size.height / 2f)
+            drawPhone3D(cam, img, paint, path, matrix)
+        }
+
+        if (face != null) {
+            Box(
+                Modifier
+                    .offset(insetDp.dp, insetDp.dp)
+                    .size((phoneWDp - 2f * insetDp).dp, (phoneHDp - 2f * insetDp).dp)
+                    .clip(RoundedCornerShape((SCREEN_CORNER_MM * phoneWDp / PH_W).dp)),
+            ) {
+                CompositionLocalProvider(LocalDensity provides Density(dens.density * k, dens.fontScale)) {
+                    Box(Modifier.fillMaxSize()) { content() }
                 }
             }
         }
