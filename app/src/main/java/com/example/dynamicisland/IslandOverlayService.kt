@@ -101,7 +101,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0)
 
     // ---- Çoklu olay: en yeni olay ortada, öncekiler sağ / sol baloncukta
-    private enum class Bg { Media, Rec, Call, Shazam, Timer }   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
+    private enum class Bg { Media, Rec, Call, Shazam, Timer, Notif }   // Notif: yalnızca nokta modunda; Shazam / Timer: 4 ya da 5 nokta modunda   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
     private val bgOrder = ArrayList<Bg>()      // başlama sırası: en eski başta, en yeni sonda
     private var winSide = 0                    // pencerenin şu an yan baloncuklar için ayırdığı pay (px)
     private var mediaBgUntil = 0L              // parça geçişinde "durdu" bildirimi gelse de baloncuk kısa süre kalır
@@ -198,7 +198,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandEvent.Notification -> if (!assistantActive && callKey == null) scope.launch {
                 val icon = iconFor(e.pkg)
-                showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key), holdMs = 4_000)
+                showNotif(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key))
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
             is IslandEvent.ShazamListening -> onShazamListening()
@@ -265,6 +265,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Call -> callKey != null && !callIncoming
         Bg.Shazam -> extraBg() && shazamPhase == ShazamPhase.Listening
         Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
+        Bg.Notif -> settings.value.dotMode && notifBg != null
     }
 
     /** Biten olayları listeden çıkarır, yeni başlayanı sona (= en yeni) ekler. */
@@ -278,6 +279,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Rec -> recContent()
         Bg.Shazam -> IslandContent.Shazam(ShazamPhase.Listening)
         Bg.Timer -> timerContent
+        Bg.Notif -> notifBg
         Bg.Call -> if (callKey == null) null else IslandContent.Call(
             callName, callIncoming,
             if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince),
@@ -291,6 +293,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.ScreenRec -> if (c.phase != RecPhase.Saved) Bg.Rec else null
         is IslandContent.Call -> if (!c.isIncoming) Bg.Call else null
         is IslandContent.Shazam -> if (extraBg() && c.phase == ShazamPhase.Listening) Bg.Shazam else null
+        is IslandContent.Notif -> if (settings.value.dotMode && notifBg == c) Bg.Notif else null
         is IslandContent.Status ->
             if (extraBg() && c.kind == StatusKind.Timer && c.endsAt > System.currentTimeMillis() && timerContent?.endsAt == c.endsAt) Bg.Timer else null
         else -> null
@@ -324,6 +327,47 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             timerContent = null
             val cur = ui.value
             if (cur.content is IslandContent.Status && !cur.expanded) rest() else update { it }
+        }
+    }
+
+    // ---- Bildirim süreleri: genişletilmiş (varsayılan 5 sn) + küçültülmüş (varsayılan 10 sn)
+    private var notifBg: IslandContent.Notif? = null     // nokta modunda küçültülmüş süre boyunca noktada tutulan (en son) bildirim
+    private var notifJob: Job? = null
+
+    private fun showNotif(n: IslandContent.Notif) {
+        val s = settings.value
+        collapseJob?.cancel()
+        notifJob?.cancel()
+        notifBg = if (s.dotMode) n else null
+        update { IslandUiState(n, expanded = true) }
+        notifJob = scope.launch {
+            delay((s.notifExpandedSec * 1000f).toLong())
+            compactNotif(n)
+        }
+    }
+
+    /** Genişletilmiş süre bitti ya da kullanıcı küçülttü: bildirim küçültülmüş halde (nokta modunda nokta) bir süre daha kalır. */
+    private suspend fun compactNotif(n: IslandContent.Notif) {
+        val s = settings.value
+        val cur = ui.value
+        if (cur.content == n && cur.expanded) {
+            update { it.copy(expanded = false) }
+            delay(s.settleMs())
+        }
+        delay((s.notifCompactSec * 1000f).toLong())
+        finishNotif()
+    }
+
+    private fun clearNotif() { notifJob?.cancel(); notifJob = null; notifBg = null }
+
+    /** Bildirim süresi doldu / bildirim silindi ya da açıldı: ada bir sonraki olaya (ya da boşa) döner. */
+    private fun finishNotif() {
+        notifBg = null
+        val cur = ui.value
+        when {
+            cur.content !is IslandContent.Notif -> update { it }
+            cur.expanded -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            else -> rest()
         }
     }
 
@@ -979,12 +1023,22 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
-    private fun collapseNow() { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+    private fun collapseNow() {
+        val cur = ui.value
+        val n = cur.content as? IslandContent.Notif
+        if (n != null) {
+            // Bildirim: açıksa küçültülmüş süreye geçer; zaten küçültülmüşse (dokunma vb.) hemen kapanır
+            if (cur.expanded) { notifJob?.cancel(); collapseJob?.cancel(); notifJob = scope.launch { compactNotif(n) } }
+            else { clearNotif(); finishNotif() }
+            return
+        }
+        collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+    }
 
     /** Bildirimi sistemden de siler ve adayı kapatır. */
     private fun dismissNotif(n: IslandContent.Notif) {
         IslandNotificationListener.dismiss(n.key)
-        collapseNow()
+        clearNotif(); finishNotif()
     }
 
     /** Bildirim üstünde sağa / sola kaydırma. */
@@ -1002,6 +1056,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandContent.ScreenRec -> Bg.Rec
             is IslandContent.Call -> Bg.Call
             is IslandContent.Status -> if (c.kind == StatusKind.Timer) Bg.Timer else return
+            is IslandContent.Notif -> Bg.Notif
             else -> return      // Shazam dinleme noktası dokununca açılmaz
         }
         // 0 = sağ iç, 1 = sol iç, 2 = sağ dış, 3 = sol dış (dış yuvalar ±2: animasyon dış noktadan başlar)
@@ -1026,6 +1081,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             Bg.Rec -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
             Bg.Call -> { callExpanded = true; callFromSide = from; publishCall(); scheduleCallCollapse() }
             Bg.Timer -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
+            Bg.Notif -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse((settings.value.notifExpandedSec * 1000f).toLong()) }
             Bg.Shazam -> Unit
         }
     }
@@ -1217,6 +1273,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     /** Bildirime dokununca: bildirimin kendi hedefi (ör. ilgili sohbet) açılır; yoksa uygulamanın ana ekranı. */
     private fun openNotification(n: IslandContent.Notif) {
+        clearNotif()      // açılan bildirim adada kalmaz
         val open: () -> Unit = {
             val pi = n.intent
             val sent = pi != null && runCatching {

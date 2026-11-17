@@ -169,6 +169,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
             Text("Aynı hareket hem açmaya / küçültmeye hem silmeye atanırsa, en son açtığın seçenek kalır; çakışan diğeri otomatik kapanır.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SubHeader("Süreler")
+            SliderRow("Genişletilmiş kalma süresi", draft.notifExpandedSec, 2f..20f, "${draft.notifExpandedSec.toInt()} sn") { draft = draft.copy(notifExpandedSec = kotlin.math.round(it)) }
+            SliderRow("Küçültülmüş kalma süresi", draft.notifCompactSec, 0f..60f, if (draft.notifCompactSec < 1f) "Hemen gitsin" else "${draft.notifCompactSec.toInt()} sn") { draft = draft.copy(notifCompactSec = kotlin.math.round(it)) }
+            Text("Önce bildirim genişletilmiş görünür, ardından küçülüp bu süre kadar adada (nokta modunda nokta olarak) kalır. Dokunarak açabilir ya da kaydırarak silebilirsin.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             SubHeader("Uygulamayı aç")
             SwitchRow("Dokununca", "Bildirimin geldiği uygulama açılır (mümkünse ilgili sohbet / ekran)",
                 draft.notifTapOpens) { on -> draft = draft.copy(notifTapOpens = on, notifCollapseTap = if (on) false else draft.notifCollapseTap) }

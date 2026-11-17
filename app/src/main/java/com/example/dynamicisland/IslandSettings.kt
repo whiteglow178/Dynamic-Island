@@ -101,6 +101,8 @@ data class IslandSettings(
     val notifDeleteSwipeSide: Boolean = false, // sağa / sola kaydırınca bildirim silinsin
     val notifDeleteSwipeUp: Boolean = false,   // yukarı kaydırınca bildirim silinsin
     // Yan baloncuk
+    val notifExpandedSec: Float = 5f,        // bildirim genişletilmiş halde kalma süresi (sn)
+    val notifCompactSec: Float = 10f,        // sonra küçültülmüş halde (nokta modunda nokta olarak) kalma süresi (sn); 0 = hemen gider
     val sideTapPromote: Boolean = false,     // baloncuğa dokununca o olay kalıcı olarak ortaya geçsin (kapalıysa yalnızca paneli açılır)
     val hideStatusBar: Boolean = false,      // şarj / zil modu gibi durum görünümleri açıkken durum çubuğunu gizle
     val notifLaunchAnim: Boolean = true,     // ... ve açılırken adadan siyah ekran animasyonu oynasın
@@ -289,6 +291,7 @@ class SettingsRepository(context: Context) {
         val DOT_ON = booleanPreferencesKey("dot_on"); val DOT_MID = floatPreferencesKey("dot_mid")
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
+        val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
         val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
     }
 
@@ -357,6 +360,8 @@ class SettingsRepository(context: Context) {
             notifDeleteSwipeSide = p[K.NT_DEL_SIDE] ?: d.notifDeleteSwipeSide,
             notifDeleteSwipeUp = p[K.NT_DEL_UP] ?: d.notifDeleteSwipeUp,
             sideTapPromote = p[K.SIDE_PROMOTE] ?: d.sideTapPromote,
+            notifExpandedSec = p[K.NT_EXP_S] ?: d.notifExpandedSec,
+            notifCompactSec = p[K.NT_CMP_S] ?: d.notifCompactSec,
             hideStatusBar = p[K.HIDE_SB] ?: d.hideStatusBar,
             notifLaunchAnim = p[K.NT_ANIM] ?: d.notifLaunchAnim,
             musicExitAnim = p[K.MX_ANIM] ?: d.musicExitAnim,
@@ -469,6 +474,7 @@ class SettingsRepository(context: Context) {
             it[K.DOT_ON] = s.dotMode; it[K.DOT_MID] = s.dotMidDp
             it[K.DOT_L] = s.dotLeftDp; it[K.DOT_R] = s.dotRightDp; it[K.DOT_GAP] = s.dotGapDp
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
+            it[K.NT_EXP_S] = s.notifExpandedSec; it[K.NT_CMP_S] = s.notifCompactSec
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
         }
     }
