@@ -1717,14 +1717,8 @@ private val ShazamBlueBottom = Color(0xFF0A68FF)
 
 private val ShazamBlue = Color(0xFF0088FF)
 
-/**
- * Resmi Shazam "S" işareti (gönderdiğin logodan ölçülen geometri): iki kalın, yuvarlak uçlu kanca;
- * ikincisi birincinin 180° döndürülmüşü. [color] mavi ya da beyaz olabilir; arka daire yok.
- */
-private fun DrawScope.drawShazamGlyph(
-    topLeft: Offset, side: Float, color: Color, alpha: Float,
-    blendMode: androidx.compose.ui.graphics.BlendMode = androidx.compose.ui.graphics.BlendMode.SrcOver,
-) {
+/** Resmi Shazam "S" işareti: iki kalın, yuvarlak uçlu kanca; ikincisi birincinin 180° döndürülmüşü. */
+private fun shazamGlyphPath(topLeft: Offset, side: Float): Path {
     fun pt(u: Float, v: Float, flip: Boolean) =
         if (flip) Offset(topLeft.x + (1f - u) * side, topLeft.y + (1f - v) * side) else Offset(topLeft.x + u * side, topLeft.y + v * side)
     val r = 0.1759f * side
@@ -1735,10 +1729,17 @@ private fun DrawScope.drawShazamGlyph(
         val c = pt(0.4148f, 0.4630f, flip)        // kancanın yay merkezi
         val p2 = pt(0.5861f, 0.5398f, flip)       // iç uç (yuvarlak)
         path.moveTo(p0.x, p0.y)
-        path.arcTo(Rect(c, r), 225f + rot * 180f, -180f, false)   // çizgi + yay (yayın başlangıcına düz çizgiyle inilir)
+        path.arcTo(Rect(c, r), 225f + rot * 180f, -180f, false)
         path.lineTo(p2.x, p2.y)
     }
-    drawPath(path, color, alpha = alpha, style = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = blendMode)
+    return path
+}
+
+private fun DrawScope.drawShazamGlyph(
+    topLeft: Offset, side: Float, color: Color, alpha: Float,
+    blendMode: androidx.compose.ui.graphics.BlendMode = androidx.compose.ui.graphics.BlendMode.SrcOver,
+) {
+    drawPath(shazamGlyphPath(topLeft, side), color, alpha = alpha, style = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = blendMode)
 }
 
 /**
@@ -1754,15 +1755,22 @@ private fun ShazamGlyphSweep(modifier: Modifier = Modifier) {
         animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing)),
         label = "shzGlyphAng",
     )
-    Canvas(modifier.graphicsLayer { alpha = 0.99f }) {      // alpha < 1: ayrı katman (kesme için gerekli)
+    Canvas(modifier) {
         val side = size.minDimension
         val c = Offset(size.width / 2f, size.height / 2f)
         val cyan = Color(0xFF3CE6FF)
+        val sw = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round)
         // 1) mavi logo
         drawShazamGlyph(Offset.Zero, side, ShazamBlue, 1f)
-        // 2) dönen turkuaz süpürme (ön kenar keskin, arkası sönüyor)
-        withTransform({ rotate(ang, c) }) {
-            drawCircle(
+        // 2) turkuaz süpürme: maske / blend yok; ışık doğrudan logonun çizgisine fırça olarak sürülür,
+        //    bu yüzden logonun dışına taşması mümkün değil. Merkez (0,0) olacak şekilde ortalanmış yol çizilir;
+        //    yol -ang kadar önceden döndürülür, tuval +ang döner: logo sabit kalır, fırçanın ışığı döner.
+        val glyph = shazamGlyphPath(Offset(-side / 2f, -side / 2f), side)
+        val unrot = Path().apply { addPath(glyph) }
+        unrot.transform(androidx.compose.ui.graphics.Matrix().apply { rotateZ(-ang) })
+        withTransform({ translate(c.x, c.y); rotate(ang, Offset.Zero) }) {
+            drawPath(
+                unrot,
                 brush = Brush.sweepGradient(
                     colorStops = arrayOf(
                         0f to cyan.copy(alpha = 1f),
@@ -1771,22 +1779,11 @@ private fun ShazamGlyphSweep(modifier: Modifier = Modifier) {
                         0.82f to cyan.copy(alpha = 0.50f),
                         1f to cyan.copy(alpha = 1f),
                     ),
-                    center = c,
+                    center = Offset.Zero,
                 ),
-                radius = side, center = c,
+                style = sw,
             )
         }
-        // 3) turkuaz kısmın çevresinde çok hafif parıltı (maskeden ÖNCE çizilir: logonun dışına taşmaz)
-        val rad = (ang - 65f) * 0.0174533f
-        val gp = Offset(c.x + side * 0.34f * cos(rad), c.y + side * 0.34f * sin(rad))
-        drawCircle(
-            brush = Brush.radialGradient(
-                listOf(cyan.copy(alpha = 0.22f), cyan.copy(alpha = 0f)), center = gp, radius = side * 0.42f,
-            ),
-            radius = side * 0.42f, center = gp,
-        )
-        // 4) logonun dışında kalan her şeyi sil (parıltı dahil)
-        drawShazamGlyph(Offset.Zero, side, Color.White, 1f, androidx.compose.ui.graphics.BlendMode.DstIn)
     }
 }
 
