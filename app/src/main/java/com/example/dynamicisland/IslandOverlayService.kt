@@ -96,11 +96,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val calibrateRunnable = Runnable { calibrate() }
     private val showAgain = Runnable { composeView?.animate()?.alpha(1f)?.setDuration(120)?.start() }
     private var resizeListener: View.OnLayoutChangeListener? = null
+    private var dotWin = false     // nokta modu açık mı (pencere küçülürken gizleme eşiği için)
 
     private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0)
 
     // ---- Çoklu olay: en yeni olay ortada, öncekiler sağ / sol baloncukta
-    private enum class Bg { Media, Rec, Call }
+    private enum class Bg { Media, Rec, Call, Shazam, Timer }   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
     private val bgOrder = ArrayList<Bg>()      // başlama sırası: en eski başta, en yeni sonda
     private var winSide = 0                    // pencerenin şu an yan baloncuklar için ayırdığı pay (px)
     private var mediaBgUntil = 0L              // parça geçişinde "durdu" bildirimi gelse de baloncuk kısa süre kalır
@@ -191,7 +192,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.CallEnded -> onCallEnded(e.key)
             is IslandEvent.ScreenRec -> onScreenRec(e)
             is IslandEvent.ScreenRecGone -> onScreenRecGone(e)
-            is IslandEvent.Status -> if (!assistantActive && callKey == null) showTemporarily(e.content, e.holdMs)
+            is IslandEvent.Status -> if (!assistantActive && callKey == null) {
+                (e.content as? IslandContent.Status)?.let { onTimerStatus(it) }
+                showTemporarily(e.content, e.holdMs)
+            }
             is IslandEvent.Notification -> if (!assistantActive && callKey == null) scope.launch {
                 val icon = iconFor(e.pkg)
                 showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key), holdMs = 4_000)
@@ -259,6 +263,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Media -> mediaBgActive() && !hidingMedia()
         Bg.Rec -> recPhase.let { it == RecPhase.Countdown || it == RecPhase.Recording || it == RecPhase.Processing }
         Bg.Call -> callKey != null && !callIncoming
+        Bg.Shazam -> extraBg() && shazamPhase == ShazamPhase.Listening
+        Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
     }
 
     /** Biten olayları listeden çıkarır, yeni başlayanı sona (= en yeni) ekler. */
@@ -270,6 +276,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun bgContent(b: Bg): IslandContent? = when (b) {
         Bg.Media -> lastMedia
         Bg.Rec -> recContent()
+        Bg.Shazam -> IslandContent.Shazam(ShazamPhase.Listening)
+        Bg.Timer -> timerContent
         Bg.Call -> if (callKey == null) null else IslandContent.Call(
             callName, callIncoming,
             if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince),
@@ -282,6 +290,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Media -> Bg.Media
         is IslandContent.ScreenRec -> if (c.phase != RecPhase.Saved) Bg.Rec else null
         is IslandContent.Call -> if (!c.isIncoming) Bg.Call else null
+        is IslandContent.Shazam -> if (extraBg() && c.phase == ShazamPhase.Listening) Bg.Shazam else null
+        is IslandContent.Status ->
+            if (extraBg() && c.kind == StatusKind.Timer && c.endsAt > System.currentTimeMillis() && timerContent?.endsAt == c.endsAt) Bg.Timer else null
         else -> null
     }
 
@@ -292,12 +303,36 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var sideLayout: List<Bg>? = null
     private var sidesHidden = false     // geri dönüşte baloncuklar kısa süre ortadaki adaya karışır (mevcut birleşme animasyonu)
 
-    private fun defaultSides(center: Bg): List<Bg> = bgOrder.asReversed().filter { it != center }.take(2)
+    /** 4 / 5 nokta modu açık mı? Açıkken Shazam dinleme ve zamanlayıcı da yan noktalarda görünen arka plan olayıdır. */
+    private fun extraBg(): Boolean = settings.value.let { it.dotMode && it.dotCount >= 4 }
+
+    /** Yan noktaların sayısı: 3 nokta = 2, 4 nokta = 3, 5 nokta = 4; nokta modu kapalıyken 2 yan baloncuk. */
+    private fun maxSides(): Int = settings.value.let { if (it.dotMode) (it.dotCount - 1).coerceIn(2, 4) else 2 }
+
+    // Çalışan zamanlayıcı (4 / 5 nokta modunda bitene kadar yan noktada kalır)
+    private var timerContent: IslandContent.Status? = null
+    private var timerJob: Job? = null
+
+    private fun onTimerStatus(c: IslandContent.Status) {
+        if (c.kind != StatusKind.Timer) return
+        val left = c.endsAt - System.currentTimeMillis()
+        timerJob?.cancel()
+        if (!extraBg() || left <= 0L) { timerContent = null; return }
+        timerContent = c
+        timerJob = scope.launch {
+            delay(left)
+            timerContent = null
+            val cur = ui.value
+            if (cur.content is IslandContent.Status && !cur.expanded) rest() else update { it }
+        }
+    }
+
+    private fun defaultSides(center: Bg): List<Bg> = bgOrder.asReversed().filter { it != center }.take(maxSides())
 
     private fun orderedSides(center: Bg): List<Bg> {
         val layout = sideLayout ?: return defaultSides(center)
         val kept = layout.filter { it != center && it in bgOrder }
-        return (kept + defaultSides(center).filter { it !in kept }).take(2)
+        return (kept + defaultSides(center).filter { it !in kept }).take(maxSides())
     }
 
     /**
@@ -437,7 +472,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         syncBgOrder()
         if (callKey != null && callIncoming) { publishCall(); return }     // gelen arama hep ortada
         // Shazam hâlâ dinliyorsa (araya bildirim vb. girdiyse) dinleme görünümüne dön
-        if (shazamPhase == ShazamPhase.Listening) {
+        if (!extraBg() && shazamPhase == ShazamPhase.Listening) {
             update { IslandUiState(IslandContent.Shazam(ShazamPhase.Listening), expanded = false) }
             return
         }
@@ -570,7 +605,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (ui.value.content is IslandContent.Shazam) {
             collapseJob?.cancel()
             collapseJob = scope.launch { collapseAndRest() }
-        }
+        } else update { it }      // yan noktadaki Shazam dinleme olayı kalksın
     }
 
     // ---------------------------------------------------------------- Ekran kaydı (sistem kaydedici; izin gerektirmez)
@@ -966,9 +1001,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandContent.Media -> Bg.Media
             is IslandContent.ScreenRec -> Bg.Rec
             is IslandContent.Call -> Bg.Call
-            else -> return
+            is IslandContent.Status -> if (c.kind == StatusKind.Timer) Bg.Timer else return
+            else -> return      // Shazam dinleme noktası dokununca açılmaz
         }
-        val from = if (index == 0) 1 else -1          // 0 = sağ baloncuk, 1 = sol
+        // 0 = sağ iç, 1 = sol iç, 2 = sağ dış, 3 = sol dış (dış yuvalar ±2: animasyon dış noktadan başlar)
+        val from = when (index) { 0 -> 1; 1 -> -1; 2 -> 2; else -> -2 }
         // Dokunulan olay ortaya geçer ve genişler. Ayar "kalıcı" değilse küçüldükten ~1 sn sonra eski sıra geri gelir
         // (önceki ortadaki olay ortaya döner, dokunulan olay yine baloncuk olur).
         val permanent = settings.value.sideTapPromote
@@ -988,6 +1025,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             Bg.Media -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(8_000) }
             Bg.Rec -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
             Bg.Call -> { callExpanded = true; callFromSide = from; publishCall(); scheduleCallCollapse() }
+            Bg.Timer -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
+            Bg.Shazam -> Unit
         }
     }
 
@@ -1855,7 +1894,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // gösterebiliyor (yana kayma): yalnızca o durumda içeriği kısa süre gizleyip geri getiriyoruz.
         // Konum aynıysa (ada pencerenin ortasında kalıyorsa) gizlemeye gerek yok; gizlemek
         // kapanırken adanın bir an kaybolup geri gelmesine (göz kırpma) yol açıyordu.
-        if (big && curW > 1 && w < curW && cur.x != x) {
+        // Nokta modunda küçük yatay fark (birkaç dp) gizlemeye değmez: gizlemek adanın göz kırpmasına yol açıyordu
+        val moved = if (dotWin) abs(cur.x - x) > dp(12f) else cur.x != x
+        if (big && curW > 1 && w < curW && moved) {
             composeView?.let { v ->
                 v.animate().cancel()
                 v.removeCallbacks(showAgain)
@@ -1926,6 +1967,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
      */
     private suspend fun syncWindow(k: WinKey) {
         val s = k.s
+        dotWin = s.dotMode
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
         val cw = dp(if (s.dotMode) s.compactWidthDp else if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val music = k.kind == 2
@@ -1990,11 +2032,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             k.expanded -> {
                 setBlur(false, s)
-                val winW = ew + 2 * pad + 2 * sideExtra
+                // Nokta modunda genişlemişken yalnızca gerçekten çizilen yan baloncuklar pay ayırır (boş noktalar solar).
+                // Aksi halde pencere ekrandan geniş olur, yatay konum 0'a zorlanır ve küçülürken ada göz kırpar.
+                val sideExp = if (s.dotMode && k.side == 0) 0 else sideExtra
+                val winW = ew + 2 * pad + 2 * sideExp
                 val maxShSide = ((screenW - winW) / 2).coerceAtLeast(0)
-                val xWin = if (sideExtra > 0) baseX.coerceIn(-maxShSide, maxShSide) else xExp
+                val xWin = if (sideExp > 0) baseX.coerceIn(-maxShSide, maxShSide) else xExp
                 setGeometry(winW, eh + 2 * pad, xWin, y)
-                winSide = sideExtra
+                winSide = sideExp
                 if (blurOk && !assistant) { delay(settle); setBlur(true, s) }
             }
             else -> {

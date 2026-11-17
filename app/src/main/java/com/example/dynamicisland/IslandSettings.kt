@@ -178,6 +178,9 @@ data class IslandSettings(
     val dotLeftDp: Float = 24f,              // soldaki nokta çapı
     val dotRightDp: Float = 24f,             // sağdaki nokta çapı
     val dotGapDp: Float = 10f,               // noktalar arası boşluk
+    val dotCount: Int = 3,                   // nokta sayısı: 3, 4 (fazladan nokta sağda) ya da 5
+    val dotLeft2Dp: Float = 20f,             // soldaki dış nokta çapı (5 nokta)
+    val dotRight2Dp: Float = 20f,            // sağdaki dış nokta çapı (4 ve 5 nokta)
     val dotOffsetXDp: Float = 0f,            // üç nokta konumu: normal Konum ayarına eklenir (+ sağa)
     val dotOffsetYDp: Float = 0f,            // (+ aşağı)
 ) {
@@ -286,6 +289,7 @@ class SettingsRepository(context: Context) {
         val DOT_ON = booleanPreferencesKey("dot_on"); val DOT_MID = floatPreferencesKey("dot_mid")
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
+        val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -407,6 +411,9 @@ class SettingsRepository(context: Context) {
             dotLeftDp = p[K.DOT_L] ?: d.dotLeftDp,
             dotRightDp = p[K.DOT_R] ?: d.dotRightDp,
             dotGapDp = p[K.DOT_GAP] ?: d.dotGapDp,
+            dotCount = (p[K.DOT_N] ?: d.dotCount).coerceIn(3, 5),
+            dotLeft2Dp = p[K.DOT_L2] ?: d.dotLeft2Dp,
+            dotRight2Dp = p[K.DOT_R2] ?: d.dotRight2Dp,
             dotOffsetXDp = p[K.DOT_OX] ?: d.dotOffsetXDp,
             dotOffsetYDp = p[K.DOT_OY] ?: d.dotOffsetYDp,
         )
@@ -462,6 +469,7 @@ class SettingsRepository(context: Context) {
             it[K.DOT_ON] = s.dotMode; it[K.DOT_MID] = s.dotMidDp
             it[K.DOT_L] = s.dotLeftDp; it[K.DOT_R] = s.dotRightDp; it[K.DOT_GAP] = s.dotGapDp
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
+            it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
         }
     }
 }

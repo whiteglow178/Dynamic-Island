@@ -129,7 +129,22 @@ const val CALL_COMPACT_W_DP = 160f
 const val SIDE_GAP_DP = 8f
 
 /** Yan baloncuklar için pencerenin her iki yanda ayıracağı pay (dp): boşluk + baloncuk çapı + yay taşması. Servis kullanır. */
-fun sideExtraDp(cfg: IslandSettings): Float = sideGapDp(cfg) + max(sideSizeDp(cfg, 1), sideSizeDp(cfg, -1)) + 6f
+fun sideExtraDp(cfg: IslandSettings): Float = sideGapDp(cfg) + max(dotExtentDp(cfg, 1), dotExtentDp(cfg, -1)) + 6f
+
+/** Üç / dört / beş nokta modunda bu yanda dış nokta var mı? (4 nokta: yalnızca sağda, 5 nokta: iki yanda) */
+fun dotHasOuter(cfg: IslandSettings, dir: Int): Boolean =
+    cfg.dotMode && (if (dir > 0) cfg.dotCount >= 4 else cfg.dotCount >= 5)
+
+/** Yuvanın çapı (dp): level 1 = iç nokta (normal yan baloncuk), level 2 = dış nokta. */
+fun slotSizeDp(cfg: IslandSettings, dir: Int, level: Int): Float =
+    if (level == 2) dotOuterSizeDp(cfg, dir) else sideSizeDp(cfg, dir)
+
+/** Dış noktanın çapı (dp). */
+fun dotOuterSizeDp(cfg: IslandSettings, dir: Int): Float = if (dir > 0) cfg.dotRight2Dp else cfg.dotLeft2Dp
+
+/** Adanın bir yanındaki tüm noktaların kapladığı genişlik (iç nokta + varsa boşluk + dış nokta), dp. */
+fun dotExtentDp(cfg: IslandSettings, dir: Int): Float =
+    sideSizeDp(cfg, dir) + if (dotHasOuter(cfg, dir)) sideGapDp(cfg) + dotOuterSizeDp(cfg, dir) else 0f
 
 /** Ada ile yan baloncuk arasındaki boşluk (dp). Üç nokta modunda ayardan gelir. */
 fun sideGapDp(cfg: IslandSettings): Float = if (cfg.dotMode) cfg.dotGapDp else SIDE_GAP_DP
@@ -146,7 +161,7 @@ fun expandedWidthDpFor(c: IslandContent, cfg: IslandSettings, screenWDp: Float):
 
 /** Ada genişlemişken iki yanına baloncuk (çap + boşluk) sığıyor mu? Dar ekranda sığmazsa baloncuk gösterilmez. */
 fun sideFitsWhenExpanded(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Boolean =
-    expandedWidthDpFor(c, cfg, screenWDp) + 2f * (sideGapDp(cfg) + max(sideSizeDp(cfg, 1), sideSizeDp(cfg, -1)) + 4f) <= screenWDp
+    expandedWidthDpFor(c, cfg, screenWDp) + 2f * (sideGapDp(cfg) + max(dotExtentDp(cfg, 1), dotExtentDp(cfg, -1)) + 4f) <= screenWDp
 
 private class SideHold { var c: IslandContent? = null }
 
@@ -198,10 +213,11 @@ private fun metaballPath(c1: Offset, r1: Float, c2: Offset, r2: Float, maxDist: 
  * Baloncuk merkezinin pencere ortasına göre yatay konumu: sep = 0 adanın ucunun içinde, sep = 1 son konumunda.
  * [rs] baloncuğun yarıçapı, [gap] adayla arasındaki boşluk (px).
  */
-private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, sep: Float, rs: Float, gap: Float): Float {
+private fun Density.sideCenterX(dir: Int, geo: Geo, progress: IslandProgress, sep: Float, rs: Float, gap: Float, skip: Float = 0f): Float {
     val pillW = lerp(geo.cw, geo.ew, progress.w.value).toPx()
     val capX = pillW / 2f - rs
-    return dir * (capX + (2f * rs + gap) * sep.coerceAtLeast(0f))
+    // skip: dış nokta için iç noktanın kapladığı yer (iç nokta çapı + boşluk)
+    return dir * (capX + (2f * rs + gap + skip) * sep.coerceAtLeast(0f))
 }
 
 /** Ortadaki adanın yanındaki baloncuklar: [0] sağda, [1] solda. Her biri adadan sıvı gibi bölünüp ayrılır, birleşirken geri girer. */
@@ -212,34 +228,46 @@ private fun IslandSides(
 ) {
     // Üç nokta modu: boştaki yuvalar da siyah nokta olarak görünür (ada genişleyince solar)
     if (cfg.dotMode) {
-        DotPlaceholder(1, sides.getOrNull(0) != null, geo, progress, cfg, color)
-        DotPlaceholder(-1, sides.getOrNull(1) != null, geo, progress, cfg, color)
+        DotPlaceholder(1, 1, sides.getOrNull(0) != null, geo, progress, cfg, color)
+        DotPlaceholder(-1, 1, sides.getOrNull(1) != null, geo, progress, cfg, color)
+        if (dotHasOuter(cfg, 1)) DotPlaceholder(1, 2, sides.getOrNull(2) != null, geo, progress, cfg, color)     // 4 ve 5 nokta: sağ dış nokta
+        if (dotHasOuter(cfg, -1)) DotPlaceholder(-1, 2, sides.getOrNull(3) != null, geo, progress, cfg, color)   // 5 nokta: sol dış nokta
     }
-    SideSlot(sides.getOrNull(0), 1, geo, progress, cfg, color, fromSide == 1, animExpanded, wantExpanded, { onPress(0) }) { onTap(0) }
-    SideSlot(sides.getOrNull(1), -1, geo, progress, cfg, color, fromSide == -1, animExpanded, wantExpanded, { onPress(1) }) { onTap(1) }
+    SideSlot(sides.getOrNull(0), 1, 1, geo, progress, cfg, color, fromSide == 1, animExpanded, wantExpanded, { onPress(0) }) { onTap(0) }
+    SideSlot(sides.getOrNull(1), -1, 1, geo, progress, cfg, color, fromSide == -1, animExpanded, wantExpanded, { onPress(1) }) { onTap(1) }
+    // 4 ve 5 nokta: dış yuvalar (sağ dış = 3. olay, sol dış = 4. olay); fromSide ±2 dış yuvadan açılışı belirtir
+    if (dotHasOuter(cfg, 1)) SideSlot(sides.getOrNull(2), 1, 2, geo, progress, cfg, color, fromSide == 2, animExpanded, wantExpanded, { onPress(2) }) { onTap(2) }
+    if (dotHasOuter(cfg, -1)) SideSlot(sides.getOrNull(3), -1, 2, geo, progress, cfg, color, fromSide == -2, animExpanded, wantExpanded, { onPress(3) }) { onTap(3) }
 }
 
 /** Üç nokta modunda yan noktanın boş hali (olay yokken de nokta görünür). */
 @Composable
-private fun DotPlaceholder(dir: Int, hasTarget: Boolean, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>) {
+private fun DotPlaceholder(dir: Int, level: Int, hasTarget: Boolean, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>) {
     Canvas(Modifier.fillMaxSize()) {
         val k = (1f - progress.mean * 2f).coerceIn(0f, 1f)
         if (k <= 0f) return@Canvas
         if (hasTarget && cfg.glassEnabled) return@Canvas      // cam modunda üst üste binen yarı saydam daire koyulaşmasın
         val rs = sideSizeDp(cfg, dir).dp.toPx() / 2f
         val gap = sideGapDp(cfg).dp.toPx()
-        val c = Offset(size.width / 2f + sideCenterX(dir, geo, progress, 1f, rs, gap), geo.ch.toPx() / 2f)
-        drawCircle(color.value.let { it.copy(alpha = it.alpha * k) }, rs, c)
+        var cxd = size.width / 2f + sideCenterX(dir, geo, progress, 1f, rs, gap)    // iç nokta
+        var r = rs
+        if (level == 2) {                                                          // dış nokta: iç noktanın dışında, aynı boşlukla
+            val ro = dotOuterSizeDp(cfg, dir).dp.toPx() / 2f
+            cxd += dir * (rs + gap + ro)
+            r = ro
+        }
+        val c = Offset(cxd, geo.ch.toPx() / 2f)
+        drawCircle(color.value.let { it.copy(alpha = it.alpha * k) }, r, c)
         if (cfg.borderEnabled) {
             val bw = cfg.borderWidthDp.dp.toPx()
-            drawCircle(Color(cfg.borderColorArgb).copy(alpha = k), rs - bw / 2f, c, style = Stroke(bw))
+            drawCircle(Color(cfg.borderColorArgb).copy(alpha = k), r - bw / 2f, c, style = Stroke(bw))
         }
     }
 }
 
 @Composable
 private fun SideSlot(
-    target: IslandContent?, dir: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, tappedOpen: Boolean,
+    target: IslandContent?, dir: Int, level: Int, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, tappedOpen: Boolean,
     animExpanded: Boolean, wantExpanded: Boolean, onPress: () -> Unit, onTap: () -> Unit,
 ) {
     val hold = remember { SideHold() }
@@ -277,13 +305,14 @@ private fun SideSlot(
             if (k <= 0f) return@Canvas
             val ch = geo.ch.toPx()
             val rm = min(36.dp.toPx(), ch / 2f)                      // ortadaki adanın uç yarıçapı
-            val rs = sideSizeDp(cfg, dir).dp.toPx() / 2f             // bu baloncuğun yarıçapı (üç nokta modunda ayrı ayarlı)
+            val rs = slotSizeDp(cfg, dir, level).dp.toPx() / 2f      // bu baloncuğun yarıçapı (nokta modunda ayrı ayarlı)
             val gap = sideGapDp(cfg).dp.toPx()
+            val skip = if (level == 2) sideSizeDp(cfg, dir).dp.toPx() + gap else 0f   // dış nokta: iç noktanın yerini atlar
             val cx = size.width / 2f
             val cy = ch / 2f
             val pillHalf = lerp(geo.cw, geo.ew, progress.w.value).toPx() / 2f
             val a = Offset(cx + dir * (pillHalf - rm), cy)           // adanın bu yandaki ucu (yuvarlak kısım)
-            val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value, rs, gap), cy)     // baloncuk
+            val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value, rs, gap, skip), cy)     // baloncuk
             val col = color.value.let { it.copy(alpha = it.alpha * k) }
             drawCircle(col, rs, b)
             // Neck: daireler birbirinden uzaklaştıkça incelir, belli bir noktada kopar
@@ -294,14 +323,15 @@ private fun SideSlot(
             }
         }
         // İçerik: baloncuk ayrıldıkça görünür (albüm kapağı / kırmızı nokta / telefon simgesi)
-        val sizeDp = sideSizeDp(cfg, dir).dp
+        val sizeDp = slotSizeDp(cfg, dir, level).dp
         Box(
             Modifier.align(Alignment.TopCenter)
                 .offset { IntOffset(0, ((geo.ch.toPx() - sizeDp.toPx()) / 2f).roundToInt()) }
                 .requiredSize(sizeDp)
                 .graphicsLayer {
                     val s = sep.value
-                    translationX = sideCenterX(dir, geo, progress, s, sizeDp.toPx() / 2f, sideGapDp(cfg).dp.toPx())
+                    val g = sideGapDp(cfg).dp.toPx()
+                    translationX = sideCenterX(dir, geo, progress, s, sizeDp.toPx() / 2f, g, if (level == 2) sideSizeDp(cfg, dir).dp.toPx() + g else 0f)
                     // Dokunulan baloncuğun yerinde, ada genişlemeye başlayana kadar yeni (genişleyen) adanın dairesi durur: altındaki simge görünmesin
                     val hide = tappedOpen && !animExpanded
                     alpha = if (hide) 0f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present) 1f else if (gone[0]) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
@@ -655,8 +685,11 @@ fun IslandRoot(
             // Önceki ortadaki adanın kapalı genişliği: yan baloncuğun konumu buna göre hesaplanmıştı (animasyonun çıkış noktası)
             if (s.fromSide == 0 && !s.expanded) SideEffect { prevCw.value = geo.cw.value }
             val fromX = if (s.fromSide == 0) 0.dp else run {
-                val r = sideSizeDp(cfg, s.fromSide) / 2f
-                (s.fromSide * (prevCw.value / 2f + r + sideGapDp(cfg))).dp
+                val fd = if (s.fromSide > 0) 1 else -1                  // yön
+                val lvl = abs(s.fromSide)                                // 1 = iç yuva, 2 = dış yuva
+                val r = slotSizeDp(cfg, fd, lvl) / 2f
+                val skip = if (lvl == 2) sideSizeDp(cfg, fd) + sideGapDp(cfg) else 0f
+                (fd * (prevCw.value / 2f + skip + sideGapDp(cfg) + r)).dp
             }
             // Eski ortadaki olayın son görüntüsü: baloncuğa basılınca, yeni ada genişlemeye başlayana kadar ortada kalır (boşluk olmasın)
             val ghostWanted = s.fromSide != 0 && s.expanded && !animExpanded

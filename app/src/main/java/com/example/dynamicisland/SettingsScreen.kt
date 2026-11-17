@@ -146,16 +146,19 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
             SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
         }
-        sec("Üç nokta modu", "Ada yerine üç nokta; olaylar nokta (baloncuk) olarak görünür") {
+        sec("Nokta modu", "Ada yerine 3, 4 ya da 5 nokta; olaylar nokta (baloncuk) olarak görünür") {
             SwitchRow(
-                "Üç nokta modu",
+                "Nokta modu",
                 "Ortadaki nokta kameranın üstünde durur. Yeni olay ortadaki noktada, öncekiler yan noktalarda görünür; dokununca ada gibi genişler",
                 draft.dotMode,
             ) { draft = draft.copy(dotMode = it) }
             if (draft.dotMode) {
+                SegmentedTabs(listOf("3 nokta", "4 nokta", "5 nokta"), draft.dotCount - 3) { draft = draft.copy(dotCount = it + 3) }
                 SliderRow("Orta nokta (kamera)", draft.dotMidDp, 12f..48f, "${draft.dotMidDp.toInt()} dp") { draft = draft.copy(dotMidDp = it) }
                 SliderRow("Sol nokta", draft.dotLeftDp, 8f..48f, "${draft.dotLeftDp.toInt()} dp") { draft = draft.copy(dotLeftDp = it) }
                 SliderRow("Sağ nokta", draft.dotRightDp, 8f..48f, "${draft.dotRightDp.toInt()} dp") { draft = draft.copy(dotRightDp = it) }
+                if (draft.dotCount >= 5) SliderRow("Sol dış nokta", draft.dotLeft2Dp, 8f..48f, "${draft.dotLeft2Dp.toInt()} dp") { draft = draft.copy(dotLeft2Dp = it) }
+                if (draft.dotCount >= 4) SliderRow("Sağ dış nokta", draft.dotRight2Dp, 8f..48f, "${draft.dotRight2Dp.toInt()} dp") { draft = draft.copy(dotRight2Dp = it) }
                 SliderRow("Noktalar arası boşluk", draft.dotGapDp, 2f..30f, "${draft.dotGapDp.toInt()} dp") { draft = draft.copy(dotGapDp = it) }
                 SliderRow("Konum: yatay (sağ +)", draft.dotOffsetXDp, -120f..120f, "${draft.dotOffsetXDp.toInt()} dp") { draft = draft.copy(dotOffsetXDp = it) }
                 SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }
@@ -718,6 +721,15 @@ private fun PreviewCard(
                                                 .offset(x = (cfg.offsetXDp + dx).dp, y = (islandTopV + (cfg.dotMidDp - d) / 2f).dp)
                                                 .size(d.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
                                         )
+                                        if (dotHasOuter(cfg, dir)) {   // 4 / 5 nokta: dış nokta
+                                            val o = dotOuterSizeDp(cfg, dir)
+                                            val ox = dx + dir * (d / 2f + cfg.dotGapDp + o / 2f)
+                                            Box(
+                                                Modifier.align(Alignment.TopCenter)
+                                                    .offset(x = (cfg.offsetXDp + ox).dp, y = (islandTopV + (cfg.dotMidDp - o) / 2f).dp)
+                                                    .size(o.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
+                                            )
+                                        }
                                     }
                                 }
                                 Box(Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = islandTopV.dp)) {
