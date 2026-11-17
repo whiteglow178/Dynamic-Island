@@ -53,6 +53,21 @@ class IslandNotificationListener : NotificationListenerService() {
             runCatching { instance?.cancelNotification(key) }
         }
 
+        /** Shazam'ın "dinleniyor" bildirimini kapatır: varsa iptal / durdur eylemini tetikler, yoksa bildirimi siler. */
+        fun stopShazamListening() {
+            val i = instance ?: return
+            runCatching {
+                val key = i.shazamListenKey ?: return
+                val sbn = i.activeNotifications?.firstOrNull { it.key == key } ?: return
+                val hints = listOf("iptal", "cancel", "stop", "durdur", "kapat", "dismiss")
+                val act = sbn.notification.actions?.firstOrNull { a ->
+                    val t = a.title?.toString()?.lowercase().orEmpty()
+                    hints.any { h -> t.contains(h) }
+                }
+                if (act != null) act.actionIntent.send() else i.cancelNotification(key)
+            }
+        }
+
         /**
          * Ada servisi (yeniden) başlayınca çağrılır: o an çalan müziği tekrar yayınlar.
          * Dinleyici hiç bağlı değilse sistemden yeniden bağlanmasını ister.

@@ -586,8 +586,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandContent.Status -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
             is IslandContent.Shazam -> {
-                // Bulunan şarkıya dokununca Shazam açılır; dinlerken dokunma bir şey yapmaz
+                // Bulunan şarkıya dokununca Shazam açılır; dinlerken dokunma "Listening..." panelini açar / küçültür
                 if ((cur.content as IslandContent.Shazam).phase == ShazamPhase.Found) { sendCallIntent(shazamOpen); endShazam() }
+                else if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+                else { collapseJob?.cancel(); update { it.copy(expanded = true) } }
             }
             is IslandContent.ScreenRec -> {
                 val c = cur.content as IslandContent.ScreenRec
@@ -641,6 +643,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (shazamPhase != ShazamPhase.Listening) return
         shazamJob?.cancel()
         shazamJob = scope.launch { delay(SHAZAM_GONE_GRACE_MS); if (shazamPhase == ShazamPhase.Listening) endShazam() }
+    }
+
+    /** Genişlemiş dinleme panelindeki X: Shazam'ın dinleme bildirimini kapatmayı dener ve adayı kapatır. */
+    private fun onShazamStop() {
+        IslandNotificationListener.stopShazamListening()
+        endShazam()
     }
 
     private fun endShazam() {
@@ -1188,7 +1196,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 else if (s.notifDeleteSwipeUp) dismissNotif(c)           // çakışırsa silme önceliklidir
                 else if (s.notifCollapseSwipeUp) collapseNow()
             }
-            is IslandContent.Shazam -> if (c.phase == ShazamPhase.Found) endShazam()
+            is IslandContent.Shazam -> when {
+                c.phase == ShazamPhase.Found -> endShazam()
+                dir > 0 && !cur.expanded -> { collapseJob?.cancel(); update { it.copy(expanded = true) } }
+                dir < 0 && cur.expanded -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            }
             is IslandContent.ScreenRec -> when {
                 // "Kaydedildi" görünümü: herhangi bir dikey kaydırma kapatır (önceden hareketle küçültülemiyordu)
                 c.phase == RecPhase.Saved -> endRec()
@@ -1857,7 +1869,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
                     onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
                     onAnswer = ::onCallAnswer, onDecline = ::onCallDecline, onSpeaker = ::onCallSpeaker,
-                    onRecStop = ::onRecStop,
+                    onRecStop = ::onRecStop, onShazamStop = ::onShazamStop,
                     onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap, onSidePress = ::onSidePress,
                 )
             }

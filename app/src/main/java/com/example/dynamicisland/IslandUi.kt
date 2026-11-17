@@ -547,6 +547,7 @@ fun IslandRoot(
     onOpenMusic: () -> Unit = {},
     onSwipe: (Int) -> Unit = {},     // +1 = aşağı, -1 = yukarı
     onRecStop: () -> Unit = {},
+    onShazamStop: () -> Unit = {},       // genişlemiş Shazam "Listening..." panelindeki X düğmesi
     onNotifSwipeSide: () -> Unit = {},   // bildirim üstünde sağa / sola kaydırma
     onSideTap: (Int) -> Unit = {},       // yan baloncuğa dokunma: 0 = sağ, 1 = sol
     onSidePress: (Int) -> Unit = {},     // yan baloncuğa parmak değdi (henüz dokunma tamamlanmadı): pencere önceden büyütülür
@@ -730,7 +731,7 @@ fun IslandRoot(
             // Ada açılınca (ya da başka olay gelince) her zaman tam görünür
             LaunchedEffect(s.expanded) { if (s.expanded) popIn.snapTo(1f) }
             Box(Modifier.graphicsLayer { alpha = if (hidden) 0f else popIn.value }) {
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onShazamStop = onShazamStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX)
             }
         }
     }
@@ -957,6 +958,7 @@ fun IslandPill(
     onSwipe: (Int) -> Unit = {},
     artFlip: ArtFlip? = null,
     onRecStop: () -> Unit = {},
+    onShazamStop: () -> Unit = {},
     onNotifSwipeSide: () -> Unit = {},
     fromX: Dp = 0.dp,       // yan baloncuktan açılıyorsa baloncuğun ada merkezine göre yatay konumu (0 = normal açılış)
 ) {
@@ -1120,7 +1122,7 @@ fun IslandPill(
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     is IslandContent.ScreenRec -> ScreenRecContent(content, onRecStop)
-                    is IslandContent.Shazam -> ShazamContent(content)
+                    is IslandContent.Shazam -> ShazamContent(content, onShazamStop)
                     IslandContent.Idle -> Unit
                 }
             }
@@ -1740,7 +1742,7 @@ private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, color: Color
 
 /** Küçük adadaki Shazam ses dalgası: mavi, hareketli çubuklar. */
 @Composable
-private fun ShazamWave(modifier: Modifier = Modifier) {
+private fun ShazamWave(modifier: Modifier = Modifier, bars: Int = 5, flat: Boolean = false) {
     val tr = rememberInfiniteTransition(label = "shzWave")
     val phase: Float by tr.animateFloat(
         initialValue = 0f,
@@ -1749,14 +1751,14 @@ private fun ShazamWave(modifier: Modifier = Modifier) {
         label = "shzPhase",
     )
     Canvas(modifier) {
-        val n = 5
+        val n = bars
         val gap: Float = size.width / n
         val bw: Float = gap * 0.46f
         for (i in 0 until n) {
             val v: Float = 0.30f + 0.70f * abs(sin(phase + i * 1.15f))
             val h: Float = (size.height * v).coerceAtLeast(bw)
             val x: Float = gap * i + gap / 2f
-            val color = androidx.compose.ui.graphics.lerp(ShazamBlue, Color(0xFF6BBBFF), i / (n - 1).toFloat())
+            val color = if (flat) Color(0xFF1E7BFF) else androidx.compose.ui.graphics.lerp(ShazamBlue, Color(0xFF6BBBFF), i / (n - 1).toFloat())
             drawLine(color, Offset(x, (size.height - h) / 2f), Offset(x, (size.height + h) / 2f), strokeWidth = bw, cap = StrokeCap.Round)
         }
     }
@@ -1923,7 +1925,7 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
 
 /** Açık ada: [kapak (patlama animasyonu)]  [şarkı adı / sanatçı]. Yazılar bulanıktan netleşir. Apple Music etiketi yok. */
 @Composable
-private fun ShazamContent(c: IslandContent.Shazam) {
+private fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
     val found = c.phase == ShazamPhase.Found
     val burst = remember(c.title, c.artist) { Animatable(0f) }
     val reveal = remember(c.title, c.artist) { Animatable(0f) }
@@ -1954,6 +1956,39 @@ private fun ShazamContent(c: IslandContent.Shazam) {
                 if (c.artist.isNotBlank()) {
                     Text(c.artist, color = Color.White.copy(alpha = 0.66f), fontWeight = FontWeight.Medium, fontSize = 15.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    } else {
+        // Dinleme (genişlemiş): [mavi daire + beyaz Shazam logosu]  Listening...  [mavi ses dalgası]  [X düğmesi]
+        Row(
+            Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(52.dp).clip(CircleShape)
+                    .background(Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom))),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(Modifier.size(34.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "Listening...", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp,
+                maxLines = 1, modifier = Modifier.weight(1f),
+            )
+            ShazamWave(Modifier.width(32.dp).height(18.dp), bars = 6, flat = true)
+            Spacer(Modifier.width(14.dp))
+            Box(
+                Modifier.size(52.dp).clip(CircleShape).background(Color(0xFF14224A))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onStop),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(Modifier.size(20.dp)) {
+                    val w = 2.6.dp.toPx()
+                    val m = w / 2f
+                    drawLine(Color(0xFF3D7BFF), Offset(m, m), Offset(size.width - m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
+                    drawLine(Color(0xFF3D7BFF), Offset(size.width - m, m), Offset(m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
                 }
             }
         }
