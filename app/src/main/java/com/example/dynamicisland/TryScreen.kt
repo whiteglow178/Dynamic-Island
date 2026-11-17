@@ -464,6 +464,11 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
         }
         } // eğilen metalik kenar katmanı
 
+        // Giriş animasyonu: tam telefon belirir, 3 boyutlu dönüp sol üstteki Eylem Düğmesi'ne yaklaşır, sonra bu ekrana geçilir.
+        // Dokunarak atlanabilir. Geri tuşu bunun üstünde kalır.
+        var introActive by remember { mutableStateOf(true) }
+        if (introActive) TryPhoneIntro(pillWpx = pillWpx, glowY = { glowY }, onDone = { introActive = false })
+
         // Geri tuşu (sabit)
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp)) {
