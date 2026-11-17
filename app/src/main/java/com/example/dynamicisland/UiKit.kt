@@ -64,18 +64,19 @@ private fun softCase(s: String): String =
 @Composable
 fun SectionCard(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(22.dp)
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column(Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(softCase(title), color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            if (subtitle != null) Text(subtitle, color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp)
+    val shape = RoundedCornerShape(14.dp)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // iOS grup başlığı: kartın üstünde küçük, gri
+        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(softCase(title), color = cs.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.sp)
+            if (subtitle != null) Text(subtitle, color = cs.onSurfaceVariant.copy(alpha = 0.75f), fontSize = 12.sp, lineHeight = 16.sp)
         }
         Column(
             Modifier.fillMaxWidth()
                 .animateContentSize(tween(260, easing = FastOutSlowInEasing))
-                .clip(shape).background(cs.surface).border(1.dp, cs.outlineVariant, shape)
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .clip(shape).background(cs.surface)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) { content() }
     }
 }
@@ -84,9 +85,9 @@ fun SectionCard(title: String, subtitle: String? = null, content: @Composable Co
 @Composable
 fun GroupLabel(text: String) =
     Text(
-        softCase(text), color = MaterialTheme.colorScheme.onBackground, fontSize = 22.sp,
-        fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp,
-        modifier = Modifier.padding(start = 8.dp, top = 10.dp),
+        softCase(text), color = MaterialTheme.colorScheme.onBackground, fontSize = 26.sp,
+        fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp,
+        modifier = Modifier.padding(start = 16.dp, top = 12.dp),
     )
 
 @Composable
@@ -94,7 +95,7 @@ fun SubHeader(text: String) =
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.2.sp)
 
 @Composable
-fun SectionDivider() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+fun SectionDivider() = HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
 
 // ---------------------------------------------------------------- Satırlar
 @Composable
@@ -220,9 +221,9 @@ fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float
 @Composable
 fun RadioRow(title: String, desc: String, selected: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(14.dp)
-    val bg by animateColorAsState(if (selected) cs.primaryContainer.copy(alpha = 0.45f) else Color.Transparent, tween(200), label = "radioBg")
-    val edge by animateColorAsState(if (selected) cs.primary.copy(alpha = 0.6f) else cs.outlineVariant, tween(200), label = "radioEdge")
+    val shape = RoundedCornerShape(12.dp)
+    val bg by animateColorAsState(if (selected) cs.surfaceVariant else Color.Transparent, tween(200), label = "radioBg")
+    val edge by animateColorAsState(if (selected) cs.primary.copy(alpha = 0.55f) else cs.outlineVariant, tween(200), label = "radioEdge")
     val ring by animateColorAsState(if (selected) cs.primary else cs.outline, tween(200), label = "radioRing")
     val dot by animateDpAsState(if (selected) 10.dp else 0.dp, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium), label = "radioDot")
     Row(
@@ -246,26 +247,26 @@ fun RadioRow(title: String, desc: String, selected: Boolean, onClick: () -> Unit
 @Composable
 fun SegmentedTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(10.dp)
     BoxWithConstraints(
-        Modifier.fillMaxWidth().clip(shape).background(cs.surface).border(1.dp, cs.outlineVariant, shape).padding(4.dp),
+        Modifier.fillMaxWidth().clip(shape).background(cs.surfaceVariant).padding(2.dp),
     ) {
         val segW = maxWidth / labels.size.coerceAtLeast(1)
         val x by animateDpAsState(
             segW * selected.coerceIn(0, (labels.size - 1).coerceAtLeast(0)),
             spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow), label = "tabX",
         )
-        Box(Modifier.offset(x = x).width(segW).height(40.dp).clip(RoundedCornerShape(12.dp)).background(cs.primaryContainer))
+        Box(Modifier.offset(x = x).width(segW).height(34.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF636366)))
         Row(Modifier.fillMaxWidth()) {
             labels.forEachIndexed { i, label ->
                 val sel = i == selected
-                val fg by animateColorAsState(if (sel) cs.onPrimaryContainer else cs.onSurfaceVariant, tween(220), label = "tabFg$i")
+                val fg by animateColorAsState(if (sel) Color.White else cs.onSurfaceVariant, tween(220), label = "tabFg$i")
                 Box(
-                    Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp))
+                    Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(8.dp))
                         .selectable(selected = sel, role = Role.Tab) { onSelect(i) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(label, color = fg, fontSize = 14.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium)
+                    Text(label, color = fg, fontSize = 13.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium)
                 }
             }
         }
@@ -276,11 +277,10 @@ fun SegmentedTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) 
 @Composable
 fun IslandActionButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, tonal: Boolean = true) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(14.dp)
     Box(
         modifier.fillMaxWidth().height(50.dp).clip(shape)
             .background(if (tonal) cs.surfaceVariant else cs.primary)
-            .border(1.dp, if (tonal) cs.outline else Color.Transparent, shape)
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
