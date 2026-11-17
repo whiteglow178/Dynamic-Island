@@ -60,6 +60,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -216,15 +217,18 @@ private fun shade(c: Color, k: Float) =
 private fun lightFactor(l: Float): Float =
     (0.55f + 0.45f * ((0.28f + 0.90f * l.coerceIn(0f, 1f)) / 0.946f)).coerceIn(0.4f, 1.15f)
 
-/** Duvarın kalınlığı boyunca parlaklık: iki kenarda ince parlak çizgi, uçlarda siyaha sönme, ortası düz gri. */
+// Dene ekranındaki gri bantla aynı kenar: dış %7'lik kısım siyaha söner, %4'te ince parlak çizgi, çevresinde hafif ışık.
+private const val EDGE_FADE = 0.07f
+private const val EDGE_LINE = 0.04f
+
+private fun tri(d: Float, r: Float) = max(0f, 1f - d / r)
+private fun edgeOf(u: Float) = min(u, 1f - u)
+
+/** Duvarın kalınlığı boyunca parlaklık (köşe yayları için): kenarlarda siyaha söner. */
 private fun wallProfile(u: Float): Float {
-    val e = min(u, 1f - u)
-    val base = 1f - 0.06f * u
-    return when {
-        e < 0.025f -> lerpF(0.35f, 1.45f, e / 0.025f)
-        e < 0.06f -> lerpF(1.45f, base, (e - 0.025f) / 0.035f)
-        else -> base
-    }
+    val ramp = (edgeOf(u) / EDGE_FADE).coerceIn(0f, 1f)
+    val glow = 1f + 0.08f * tri(abs(edgeOf(u) - EDGE_LINE), 0.03f)
+    return ramp * glow
 }
 
 // ---------------------------------------------------------------- Tuşlar
@@ -320,7 +324,21 @@ private fun DrawScope.drawButton(cam: PhoneCam, b: Btn, path: Path) {
     }
 }
 
-/** Düz yan duvar (sol: s = -1, sağ: s = +1): her şerit tek dörtgen + dikey renk geçişi. */
+private val WALL_U = floatArrayOf(0f, 0.01f, 0.0355f, 0.04f, 0.0445f, 0.07f, 0.93f, 0.9555f, 0.96f, 0.9645f, 0.99f, 1f)
+private val EDGE_DARK = Color(0xFF050507)
+
+private fun DrawScope.fillPolyBrush(path: Path, pts: List<Offset>, brush: Brush) {
+    path.reset()
+    path.moveTo(pts[0].x, pts[0].y)
+    for (i in 1 until pts.size) path.lineTo(pts[i].x, pts[i].y)
+    path.close()
+    drawPath(path, brush)
+}
+
+/**
+ * Düz yan duvar (sol: s = -1, sağ: s = +1). Üç katman: dikey renk geçişli gri dolgu, kenar çizgisi/ışık, kenarlarda siyaha sönme.
+ * Kalınlık boyunca geçişler duvarın dikey kenarlarına paralel çizilir (perspektifte de doğru).
+ */
 private fun DrawScope.drawSideWall(cam: PhoneCam, s: Float, path: Path) {
     val hz = PH_D / 2f
     val x = s * PH_W / 2f
@@ -329,25 +347,48 @@ private fun DrawScope.drawSideWall(cam: PhoneCam, s: Float, path: Path) {
     val lf = lightFactor(nc.x * LX + nc.y * LY + nc.z * LZ)
     val yT = -(PH_H / 2f - PH_R)
     val yB = -yT
-    for (k in 0 until STRIP_T.size - 1) {
-        val z0 = hz - PH_D * STRIP_T[k]
-        val z1 = hz - PH_D * STRIP_T[k + 1]
-        val pm = wallProfile((STRIP_T[k] + STRIP_T[k + 1]) / 2f) * lf
-        val a0 = cam.scr(x, yT, z0)
-        val a1 = cam.scr(x, yT, z1)
-        val b1 = cam.scr(x, yB, z1)
-        val b0 = cam.scr(x, yB, z0)
-        val st = Offset((a0.x + a1.x) / 2f, (a0.y + a1.y) / 2f)
-        val en = Offset((b0.x + b1.x) / 2f, (b0.y + b1.y) / 2f)
-        if (abs(en.x - st.x) + abs(en.y - st.y) < 1f) continue
-        val stops = Array(SIDE_SAMPLES) { j -> (j / (SIDE_SAMPLES - 1f)) to shade(WALL_BASE[j], pm) }
-        val brush = Brush.linearGradient(colorStops = stops, start = st, end = en)
-        path.reset()
-        path.moveTo(a0.x, a0.y); path.lineTo(a1.x, a1.y); path.lineTo(b1.x, b1.y); path.lineTo(b0.x, b0.y)
-        path.close()
-        drawPath(path, brush)
-        drawPath(path, brush, style = Stroke(0.7f))
+    val a0 = cam.scr(x, yT, hz)
+    val a1 = cam.scr(x, yT, -hz)
+    val b1 = cam.scr(x, yB, -hz)
+    val b0 = cam.scr(x, yB, hz)
+    val quad = listOf(a0, a1, b1, b0)
+    val st = Offset((a0.x + a1.x) / 2f, (a0.y + a1.y) / 2f)
+    val en = Offset((b0.x + b1.x) / 2f, (b0.y + b1.y) / 2f)
+    if (abs(en.x - st.x) + abs(en.y - st.y) < 1f) return
+
+    // 1) Dikey renk geçişli gri dolgu
+    val stops = Array(SIDE_SAMPLES) { j -> (j / (SIDE_SAMPLES - 1f)) to shade(WALL_BASE[j], lf) }
+    fillPolyBrush(path, quad, Brush.linearGradient(colorStops = stops, start = st, end = en))
+
+    // Kalınlık yönü: duvarın dikey kenarına dik
+    val ex = b0.x - a0.x
+    val ey = b0.y - a0.y
+    val el = sqrt(ex * ex + ey * ey)
+    if (el < 1f) return
+    val gx = -ey / el
+    val gy = ex / el
+    val proj = (a1.x - a0.x) * gx + (a1.y - a0.y) * gy
+    if (abs(proj) < 1f) return
+    val gs = a0
+    val ge = Offset(a0.x + gx * proj, a0.y + gy * proj)
+
+    // 2) Kenarda ince parlak çizgi + hafif ışık
+    val light = Array(WALL_U.size) { i ->
+        val d = abs(edgeOf(WALL_U[i]) - EDGE_LINE)
+        val a = min(0.7f, 0.14f * tri(d, 0.03f) + 0.55f * tri(d, 0.0045f))
+        WALL_U[i] to Color.White.copy(alpha = a)
     }
+    fillPolyBrush(path, quad, Brush.linearGradient(colorStops = light, start = gs, end = ge))
+
+    // 3) İki kenarda siyaha sönme
+    val clear = EDGE_DARK.copy(alpha = 0f)
+    fillPolyBrush(
+        path, quad,
+        Brush.linearGradient(
+            colorStops = arrayOf(0f to EDGE_DARK, EDGE_FADE to clear, 1f - EDGE_FADE to clear, 1f to EDGE_DARK),
+            start = gs, end = ge,
+        ),
+    )
 }
 
 // ---------------------------------------------------------------- Telefon (3 boyutlu çizim)
@@ -594,6 +635,7 @@ internal fun TryPhoneIntro(pillWpx: Float, glowY: () -> Float, onDone: () -> Uni
 
     Box(
         Modifier.fillMaxSize()
+            .clipToBounds()
             .graphicsLayer { alpha = cover.value }
             .pointerInput(Unit) { detectTapGestures(onTap = { skip = true }) },
     ) {
@@ -862,54 +904,61 @@ private fun DrawScope.drawCable(cam: PhoneCam, e: Float, path: Path) {
         cableBrush(cx - bw / 2f, bw), Offset(cx - bw / 2f, bTop), Size(bw, bBot - bTop), CornerRadius(bw / 2f),
     )
 
-    // 2) USB-C metal uç (yalnızca telefonun dışında kalan kısmı)
-    val mw = METAL_W / 2f
-    val md = METAL_D / 2f
+    // Yuvarlak (stadyum) kesitin ekrandaki sol/sağ sınırı: dönünce genişlik gerçekçi değişir
+    fun span(a: Float, b: Float, y: Float): Pair<Float, Float> {
+        var lo = Float.MAX_VALUE
+        var hi = -Float.MAX_VALUE
+        val cx0 = a - b
+        for (k in 0 until 24) {
+            val ang = k * 2.0 * PI / 24.0
+            val ca = cos(ang).toFloat()
+            val px = (if (ca >= 0f) cx0 else -cx0) + b * ca
+            val pz = b * sin(ang).toFloat()
+            val sx = cam.scr(px, y, pz).x
+            if (sx < lo) lo = sx
+            if (sx > hi) hi = sx
+        }
+        return lo to hi
+    }
+
+    // 2) USB-C metal uç (yalnızca telefonun dışında kalan kısmı): yuvarlak uçlu, silindir gibi gölgeli
     val yM0 = max(PORT_Y, yTop - METAL_LEN)
     if (yTop - yM0 > 0.02f) {
-        for (s in floatArrayOf(-1f, 1f)) {
-            val sx = s * mw
-            if (cam.visible(cam.dir(s, 0f, 0f), cam.pt(sx, (yM0 + yTop) / 2f, 0f))) {
-                fillPoly(
-                    path,
-                    listOf(cam.scr(sx, yM0, -md), cam.scr(sx, yM0, md), cam.scr(sx, yTop, md), cam.scr(sx, yTop, -md)),
-                    Color(0xFF8E9098),
-                )
-            }
-        }
-        fillPoly(
-            path,
-            listOf(cam.scr(-mw, yM0, md), cam.scr(mw, yM0, md), cam.scr(mw, yTop, md), cam.scr(-mw, yTop, md)),
-            Color(0xFFC3C5CC),
+        val (ml, mr) = span(METAL_W / 2f, METAL_D / 2f, yTop)
+        val mt = cam.scr(0f, yM0, 0f).y
+        val mb = cam.scr(0f, yTop, 0f).y
+        drawRoundRect(
+            Brush.horizontalGradient(
+                colorStops = arrayOf(
+                    0f to Color(0xFF7E8087), 0.2f to Color(0xFFC9CBD2), 0.5f to Color(0xFFE2E4E9),
+                    0.8f to Color(0xFFB4B6BD), 1f to Color(0xFF7B7D84),
+                ),
+                startX = ml, endX = mr,
+            ),
+            Offset(ml, mt), Size(mr - ml, mb - mt), CornerRadius((mr - ml) * 0.1f),
         )
     }
 
-    // 3) Beyaz konnektör gövdesi: yan yüzler + yuvarlak köşeli ön yüz
-    for (s in floatArrayOf(-1f, 1f)) {
-        val sx = s * hw
-        if (cam.visible(cam.dir(s, 0f, 0f), cam.pt(sx, (yTop + yBot) / 2f, 0f))) {
-            fillPoly(
-                path,
-                listOf(
-                    cam.scr(sx, yTop + 1f, -hd), cam.scr(sx, yTop + 1f, hd), cam.scr(sx, yBot - 1f, hd), cam.scr(sx, yBot - 1f, -hd),
-                ),
-                Color(0xFFBFBFC6),
-            )
-        }
-    }
-    val front = roundedPts(-hw, yTop, hw, yBot, 2.6f).map { cam.scr(it[0], it[1], hd) }
+    // 3) Beyaz konnektör gövdesi: yuvarlak köşeli, kenarları silindir gibi yumuşakça gölgeli (kare kutu değil)
+    val (hl, hr) = span(hw, hd, (yTop + yBot) / 2f)
+    val hTop = cam.scr(0f, yTop, 0f).y
+    val hBot = cam.scr(0f, yBot, 0f).y
+    val hwid = hr - hl
+    val rt = min(1.8f * sc, hwid / 2f)
+    val rb = min(5.5f * sc, hwid / 2f)
     path.reset()
-    path.moveTo(front[0].x, front[0].y)
-    for (i in 1 until front.size) path.lineTo(front[i].x, front[i].y)
-    path.close()
+    path.addRoundRect(RoundRect(hl, hTop, hr, hBot, CornerRadius(rt), CornerRadius(rt), CornerRadius(rb), CornerRadius(rb)))
     drawPath(
         path,
-        Brush.linearGradient(
-            listOf(Color(0xFFFBFBFD), Color(0xFFDEDEE3)),
-            start = cam.scr(0f, yTop, hd), end = cam.scr(0f, yBot, hd),
+        Brush.horizontalGradient(
+            colorStops = arrayOf(
+                0f to Color(0xFFB9B9C1), 0.14f to Color(0xFFEDEDF1), 0.26f to Color(0xFFFBFBFD),
+                0.62f to Color(0xFFF6F6F8), 0.80f to Color(0xFFE0E0E5), 1f to Color(0xFFA7A7B0),
+            ),
+            startX = hl, endX = hr,
         ),
     )
-    drawPath(path, Color(0xFFB4B4BC), style = Stroke(0.8f))
+    drawPath(path, Color(0x66808088), style = Stroke(0.8f))
 }
 
 @Composable
@@ -929,6 +978,7 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
     val p = remember { Animatable(1f) }          // 1 = yandan (Eylem Düğmesi), FRONT_T = karşıdan
     val cover = remember { Animatable(0f) }
     val islandA = remember { Animatable(0f) }
+    val edge = remember { Animatable(1f) }       // üst/alt siyaha sönme (1 = Dene ekranındaki gibi karanlık)
     var skip by remember { mutableStateOf(false) }
 
     // Telefonu çevirince 3B telefon da sağa/sola döner (yalnızca ekran bize dönükken)
@@ -944,6 +994,7 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
     LaunchedEffect(face) {
         if (face == null) return@LaunchedEffect
         cover.animateTo(1f, tween(220))
+        launch { edge.animateTo(0f, tween(350, easing = FastOutSlowInEasing)) }   // uzaklaşırken karanlık hemen kalkar
         if (isCharge) {
             coroutineScope {
                 launch { p.animateTo(FRONT_T, tween(1700, easing = FastOutSlowInEasing)) }     // ekran bize döner
@@ -970,6 +1021,7 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
             tiltGain.animateTo(0f, tween(350))                                // önce düz karşıya dön
         }
         tiltOn = false
+        launch { delay(520); edge.animateTo(1f, tween(600, easing = FastOutSlowInEasing)) }   // yana dönünce tekrar kararır
         p.animateTo(1f, tween(1200, easing = FastOutSlowInEasing))           // tekrar yana
         cover.animateTo(0f, tween(320))
         onDone()
@@ -982,6 +1034,7 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
 
     BoxWithConstraints(
         Modifier.fillMaxSize()
+            .clipToBounds()
             .graphicsLayer { alpha = cover.value }
             .pointerInput(Unit) { detectTapGestures(onTap = { skip = true }) },
     ) {
@@ -1021,7 +1074,7 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
             if (isCharge && plug.value > 0.001f) drawCable(cam, plug.value, path)
 
             // Yandayken: Dene ekranındaki gibi üstte ve altta siyaha sol
-            val fe = smooth(seg(t, 0.78f, 1f))
+            val fe = edge.value
             if (fe > 0.001f) {
                 val ph = pillWpx * 2.03f
                 fun f(y: Float) = (y / h).coerceIn(0f, 1f)
