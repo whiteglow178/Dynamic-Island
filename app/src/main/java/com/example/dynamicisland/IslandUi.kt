@@ -1740,7 +1740,7 @@ private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, color: Color
     drawPath(path, color, alpha = alpha, style = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
-/** Logonun etrafında dönen çok hafif beyazımsı çizgi: arkasında sönen bir iz ve uçta küçük bir parıltı noktası. */
+/** Mavi dairenin İÇİNDE, kenara yakın dönen çok hafif beyazımsı çizgi: arkasında sönen bir iz, ucunda ve izin üstünde küçük parıltılar. */
 @Composable
 private fun ShazamOrbit(modifier: Modifier = Modifier) {
     val tr = rememberInfiniteTransition(label = "shzOrbit")
@@ -1751,28 +1751,37 @@ private fun ShazamOrbit(modifier: Modifier = Modifier) {
         label = "shzOrbitAng",
     )
     Canvas(modifier) {
-        val sw = 1.6.dp.toPx()
-        val r = size.minDimension / 2f - sw
+        val sw = 1.5.dp.toPx()
+        val r = size.minDimension / 2f - 3.dp.toPx()
         val c = Offset(size.width / 2f, size.height / 2f)
         val tl = Offset(c.x - r, c.y - r)
         val sz = Size(r * 2f, r * 2f)
-        val trail = 110f
-        val steps = 36
+        val trail = 120f
+        val steps = 40
         for (i in 0 until steps) {
             val t = i / steps.toFloat()          // 0 = iz sonu (görünmez), 1 = uç
             drawArc(
-                Color.White.copy(alpha = 0.30f * t * t), ang - trail + trail * t, trail / steps + 1f, false,
+                Color.White.copy(alpha = 0.34f * t * t), ang - trail + trail * t, trail / steps + 1f, false,
                 tl, sz, style = Stroke(width = sw, cap = StrokeCap.Butt),
             )
         }
-        val rad = ang * 0.0174533f
-        val head = Offset(c.x + r * cos(rad), c.y + r * sin(rad))
-        val gr = 5.dp.toPx()
+        fun at(deg: Float, rr: Float): Offset {
+            val rad = deg * 0.0174533f
+            return Offset(c.x + rr * cos(rad), c.y + rr * sin(rad))
+        }
+        // İz üzerinde çok küçük, sönen parıltılar
+        val sparks = listOf(-18f to 0.55f, -40f to 0.40f, -66f to 0.28f, -95f to 0.16f)
+        for ((back, a) in sparks) {
+            val rr = r + (if (back < -50f) -1.2f else 1.0f).dp.toPx()
+            drawCircle(Color.White.copy(alpha = a), radius = 0.8.dp.toPx(), center = at(ang + back, rr))
+        }
+        val head = at(ang, r)
+        val gr = 4.5.dp.toPx()
         drawCircle(
-            brush = Brush.radialGradient(listOf(Color.White.copy(alpha = 0.40f), Color.Transparent), center = head, radius = gr),
+            brush = Brush.radialGradient(listOf(Color.White.copy(alpha = 0.45f), Color.Transparent), center = head, radius = gr),
             radius = gr, center = head,
         )
-        drawCircle(Color.White.copy(alpha = 0.85f), radius = 1.4.dp.toPx(), center = head)
+        drawCircle(Color.White.copy(alpha = 0.85f), radius = 1.2.dp.toPx(), center = head)
     }
 }
 
@@ -2001,17 +2010,15 @@ private fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
             Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(60.dp), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier.size(52.dp).clip(CircleShape)
-                        .background(Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom))),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Canvas(Modifier.size(34.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
-                }
+            Box(
+                Modifier.size(52.dp).clip(CircleShape)
+                    .background(Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom))),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(Modifier.size(34.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
                 ShazamOrbit(Modifier.fillMaxSize())
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             Text(
                 "Dinliyor", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp,
                 maxLines = 1, modifier = Modifier.weight(1f),
