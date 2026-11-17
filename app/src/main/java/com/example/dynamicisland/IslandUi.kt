@@ -1740,48 +1740,89 @@ private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, color: Color
     drawPath(path, color, alpha = alpha, style = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
-/** Mavi dairenin İÇİNDE, kenara yakın dönen çok hafif beyazımsı çizgi: arkasında sönen bir iz, ucunda ve izin üstünde küçük parıltılar. */
+/**
+ * Shazam logosunun mavi dairesinin içinde dönen turkuaz ışık süpürmesi (logonun ARKASINDA):
+ * merkezden kenara doğru güçlenen, ön kenarı keskin, arkası yavaşça sönen bir dilim (saat yönünde döner).
+ * Ayrıca kenara yakın yerlerde göz kırpan çok küçük açık mavi parıltılar vardır.
+ */
 @Composable
 private fun ShazamOrbit(modifier: Modifier = Modifier) {
     val tr = rememberInfiniteTransition(label = "shzOrbit")
     val ang: Float by tr.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing)),
         label = "shzOrbitAng",
     )
-    Canvas(modifier) {
-        val sw = 1.5.dp.toPx()
-        val r = size.minDimension / 2f - 3.dp.toPx()
-        val c = Offset(size.width / 2f, size.height / 2f)
-        val tl = Offset(c.x - r, c.y - r)
-        val sz = Size(r * 2f, r * 2f)
-        val trail = 120f
-        val steps = 40
-        for (i in 0 until steps) {
-            val t = i / steps.toFloat()          // 0 = iz sonu (görünmez), 1 = uç
-            drawArc(
-                Color.White.copy(alpha = 0.34f * t * t), ang - trail + trail * t, trail / steps + 1f, false,
-                tl, sz, style = Stroke(width = sw, cap = StrokeCap.Butt),
+    val ph: Float by tr.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.2831855f,
+        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing)),
+        label = "shzTwinkle",
+    )
+    // açı (derece), yarıçap oranı, titreşim sıklığı (tam sayı: döngü kesintisiz), faz
+    val sparks = remember {
+        listOf(
+            floatArrayOf(205f, 0.80f, 2f, 0.0f), floatArrayOf(250f, 0.86f, 1f, 1.7f), floatArrayOf(300f, 0.78f, 3f, 3.1f),
+            floatArrayOf(335f, 0.90f, 2f, 4.4f), floatArrayOf(20f, 0.84f, 1f, 0.9f), floatArrayOf(150f, 0.88f, 3f, 2.3f),
+            floatArrayOf(110f, 0.76f, 2f, 5.2f), floatArrayOf(230f, 0.62f, 1f, 3.8f),
+        )
+    }
+    Box(modifier) {
+        // Döner dilim: sabit çizilir, katman döndürülür (her karede yeniden çizim yok)
+        Canvas(
+            Modifier.fillMaxSize().graphicsLayer { rotationZ = ang; alpha = 0.99f },   // alpha < 1: ayrı katman (maske için gerekli)
+        ) {
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val r = size.minDimension / 2f
+            val cyan = Color(0xFF22E0FF)
+            drawCircle(
+                brush = Brush.sweepGradient(
+                    colorStops = arrayOf(
+                        0f to cyan.copy(alpha = 0.95f),       // ön kenar (keskin)
+                        0.015f to cyan.copy(alpha = 0f),
+                        0.70f to cyan.copy(alpha = 0f),
+                        0.88f to cyan.copy(alpha = 0.32f),
+                        1f to cyan.copy(alpha = 0.95f),
+                    ),
+                    center = c,
+                ),
+                radius = r, center = c,
+            )
+            // Merkezden kenara doğru güçlenen maske: dilim ortada görünmez, kenarda parlar
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to Color.Black.copy(alpha = 0f),
+                        0.35f to Color.Black.copy(alpha = 0f),
+                        0.75f to Color.Black.copy(alpha = 0.55f),
+                        1f to Color.Black,
+                    ),
+                    center = c, radius = r,
+                ),
+                radius = r, center = c, blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
             )
         }
-        fun at(deg: Float, rr: Float): Offset {
-            val rad = deg * 0.0174533f
-            return Offset(c.x + rr * cos(rad), c.y + rr * sin(rad))
+        // Küçük göz kırpan parıltılar
+        Canvas(Modifier.fillMaxSize()) {
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val r = size.minDimension / 2f
+            val gr = 3.dp.toPx()
+            for (sp in sparks) {
+                val tw = 0.5f + 0.5f * sin(ph * sp[2] + sp[3])
+                val a = tw * tw * 0.85f
+                if (a < 0.03f) continue
+                val rad = sp[0] * 0.0174533f
+                val p = Offset(c.x + r * sp[1] * cos(rad), c.y + r * sp[1] * sin(rad))
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(Color(0xFF9FE9FF).copy(alpha = a), Color(0xFF9FE9FF).copy(alpha = 0f)), center = p, radius = gr,
+                    ),
+                    radius = gr, center = p,
+                )
+                drawCircle(Color.White.copy(alpha = a * 0.9f), radius = 0.7.dp.toPx(), center = p)
+            }
         }
-        // İz üzerinde çok küçük, sönen parıltılar
-        val sparks = listOf(-18f to 0.55f, -40f to 0.40f, -66f to 0.28f, -95f to 0.16f)
-        for ((back, a) in sparks) {
-            val rr = r + (if (back < -50f) -1.2f else 1.0f).dp.toPx()
-            drawCircle(Color.White.copy(alpha = a), radius = 0.8.dp.toPx(), center = at(ang + back, rr))
-        }
-        val head = at(ang, r)
-        val gr = 4.5.dp.toPx()
-        drawCircle(
-            brush = Brush.radialGradient(listOf(Color.White.copy(alpha = 0.45f), Color.Transparent), center = head, radius = gr),
-            radius = gr, center = head,
-        )
-        drawCircle(Color.White.copy(alpha = 0.85f), radius = 1.2.dp.toPx(), center = head)
     }
 }
 
@@ -2015,8 +2056,8 @@ private fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
                     .background(Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom))),
                 contentAlignment = Alignment.Center,
             ) {
-                Canvas(Modifier.size(34.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
                 ShazamOrbit(Modifier.fillMaxSize())
+                Canvas(Modifier.size(36.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
             }
             Spacer(Modifier.width(12.dp))
             Text(
