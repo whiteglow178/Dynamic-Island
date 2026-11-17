@@ -387,7 +387,7 @@ private fun SideGlyph(c: IslandContent, ch: Dp) {
                     modifier = Modifier.size(sz).clip(RoundedCornerShape(sz * 0.28f)),
                 )
             } else {
-                Canvas(Modifier.size(sz)) { drawShazamGlyph(Offset.Zero, size.minDimension, ShazamBlue, 1f) }
+                ShazamGlyphSweep(Modifier.size(sz))
             }
         }
         is IslandContent.Status -> Text(
@@ -1213,9 +1213,7 @@ fun IslandPill(
                 val sz = (geo.ch - 12.dp).coerceAtLeast(14.dp)
                 val cover = content.cover
                 if (expandingNow || cover == null) {
-                    Canvas(Modifier.align(Alignment.CenterStart).padding(start = 9.dp).size(sz).then(fade)) {
-                        drawShazamGlyph(Offset.Zero, size.minDimension, ShazamBlue, 1f)
-                    }
+                    ShazamGlyphSweep(Modifier.align(Alignment.CenterStart).padding(start = 9.dp).size(sz).then(fade))
                 } else {
                     Image(
                         bitmap = cover, contentDescription = null, contentScale = ContentScale.Crop,
@@ -1723,7 +1721,10 @@ private val ShazamBlue = Color(0xFF0088FF)
  * Resmi Shazam "S" işareti (gönderdiğin logodan ölçülen geometri): iki kalın, yuvarlak uçlu kanca;
  * ikincisi birincinin 180° döndürülmüşü. [color] mavi ya da beyaz olabilir; arka daire yok.
  */
-private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, color: Color, alpha: Float) {
+private fun DrawScope.drawShazamGlyph(
+    topLeft: Offset, side: Float, color: Color, alpha: Float,
+    blendMode: androidx.compose.ui.graphics.BlendMode = androidx.compose.ui.graphics.BlendMode.SrcOver,
+) {
     fun pt(u: Float, v: Float, flip: Boolean) =
         if (flip) Offset(topLeft.x + (1f - u) * side, topLeft.y + (1f - v) * side) else Offset(topLeft.x + u * side, topLeft.y + v * side)
     val r = 0.1759f * side
@@ -1737,7 +1738,56 @@ private fun DrawScope.drawShazamGlyph(topLeft: Offset, side: Float, color: Color
         path.arcTo(Rect(c, r), 225f + rot * 180f, -180f, false)   // çizgi + yay (yayın başlangıcına düz çizgiyle inilir)
         path.lineTo(p2.x, p2.y)
     }
-    drawPath(path, color, alpha = alpha, style = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    drawPath(path, color, alpha = alpha, style = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = blendMode)
+}
+
+/**
+ * Küçük adadaki Shazam logosu: mavi "S" işaretinin İÇİNDE dönen turkuaz ışık (yalnızca logonun şekliyle kesilir),
+ * ışığın çevresinde çok hafif bir parıltı. Saat yönünde döner.
+ */
+@Composable
+private fun ShazamGlyphSweep(modifier: Modifier = Modifier) {
+    val tr = rememberInfiniteTransition(label = "shzGlyph")
+    val ang: Float by tr.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing)),
+        label = "shzGlyphAng",
+    )
+    Canvas(modifier.graphicsLayer { alpha = 0.99f }) {      // alpha < 1: ayrı katman (kesme için gerekli)
+        val side = size.minDimension
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val cyan = Color(0xFF3CE6FF)
+        // 1) mavi logo
+        drawShazamGlyph(Offset.Zero, side, ShazamBlue, 1f)
+        // 2) dönen turkuaz süpürme (ön kenar keskin, arkası sönüyor)
+        withTransform({ rotate(ang, c) }) {
+            drawCircle(
+                brush = Brush.sweepGradient(
+                    colorStops = arrayOf(
+                        0f to cyan.copy(alpha = 1f),
+                        0.02f to cyan.copy(alpha = 0f),
+                        0.62f to cyan.copy(alpha = 0f),
+                        0.82f to cyan.copy(alpha = 0.50f),
+                        1f to cyan.copy(alpha = 1f),
+                    ),
+                    center = c,
+                ),
+                radius = side, center = c,
+            )
+        }
+        // 3) logonun dışında kalan her şeyi sil
+        drawShazamGlyph(Offset.Zero, side, Color.White, 1f, androidx.compose.ui.graphics.BlendMode.DstIn)
+        // 4) turkuaz kısmın çevresinde çok hafif parıltı
+        val rad = (ang - 65f) * 0.0174533f
+        val gp = Offset(c.x + side * 0.34f * cos(rad), c.y + side * 0.34f * sin(rad))
+        drawCircle(
+            brush = Brush.radialGradient(
+                listOf(cyan.copy(alpha = 0.22f), cyan.copy(alpha = 0f)), center = gp, radius = side * 0.42f,
+            ),
+            radius = side * 0.42f, center = gp,
+        )
+    }
 }
 
 /**
@@ -2048,16 +2098,16 @@ private fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
     } else {
         // Dinleme (genişlemiş): [mavi daire + beyaz Shazam logosu]  Listening...  [mavi ses dalgası]  [X düğmesi]
         Row(
-            Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp),
+            Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(52.dp).clip(CircleShape)
+                Modifier.size(62.dp).clip(CircleShape)
                     .background(Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom))),
                 contentAlignment = Alignment.Center,
             ) {
                 ShazamOrbit(Modifier.fillMaxSize())
-                Canvas(Modifier.size(36.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
+                Canvas(Modifier.size(43.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
             }
             Spacer(Modifier.width(12.dp))
             Text(
@@ -2067,12 +2117,12 @@ private fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
             ShazamWave(Modifier.width(32.dp).height(18.dp), bars = 6, flat = true)
             Spacer(Modifier.width(14.dp))
             Box(
-                Modifier.size(52.dp).clip(CircleShape).background(Color(0xFF14224A))
+                Modifier.size(62.dp).clip(CircleShape).background(Color(0xFF14224A))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onStop),
                 contentAlignment = Alignment.Center,
             ) {
-                Canvas(Modifier.size(20.dp)) {
-                    val w = 2.6.dp.toPx()
+                Canvas(Modifier.size(23.dp)) {
+                    val w = 3.dp.toPx()
                     val m = w / 2f
                     drawLine(Color(0xFF3D7BFF), Offset(m, m), Offset(size.width - m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
                     drawLine(Color(0xFF3D7BFF), Offset(size.width - m, m), Offset(m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)

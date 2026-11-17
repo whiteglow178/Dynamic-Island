@@ -2067,7 +2067,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val baseX = cutCenterXOffsetPx + dp(s.offsetXDp)
         val y = (cutCenterYPx - ch / 2).coerceAtLeast(0) + dp(s.offsetYDp) - pad
         val maxShift = ((screenW - ew - 2 * pad) / 2).coerceAtLeast(0)
-        val xExp = baseX.coerceIn(-maxShift, maxShift)
+        // Shazam (kind 11): pencere genişleyip küçülürken yatay konum DEĞİŞMEZ (kısıtlama konumu kaydırıp küçülürken yana kaymaya yol açıyordu)
+        val xExp = if (k.kind == 11) baseX else baseX.coerceIn(-maxShift, maxShift)
         val settle = s.settleMs()
         // Yan baloncuklar varsa pencere iki yanda (simetrik) baloncuk payı kadar genişler; ada pencerenin ortasında kalır
         // Genişlemişken de baloncuk varsa pencere iki yanda pay ayırır (baloncuk genişleyen panelin yanında durur)
@@ -2106,7 +2107,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val sideExp = if (s.dotMode && k.side == 0) 0 else sideExtra
                 val winW = ew + 2 * pad + 2 * sideExp
                 val maxShSide = ((screenW - winW) / 2).coerceAtLeast(0)
-                val xWin = if (sideExp > 0) baseX.coerceIn(-maxShSide, maxShSide) else xExp
+                val xWin = if (k.kind == 11) baseX else if (sideExp > 0) baseX.coerceIn(-maxShSide, maxShSide) else xExp
                 setGeometry(winW, eh + 2 * pad, xWin, y)
                 winSide = sideExp
                 if (blurOk && !assistant) { delay(settle); setBlur(true, s) }
