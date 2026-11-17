@@ -167,6 +167,10 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
         page("Favori uygulamalar", PreviewKind.Favorites) { FavoritesSection(draft) { draft = it } }
 
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
+            SubHeader("Bildirim türü")
+            SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, sol üstte saatin altından küçük bir hap olarak çıkıp büyüyerek ekranın üstünde tam genişlikte cam banner olur. Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
+                draft.notifBanner) { draft = draft.copy(notifBanner = it) }
+            SectionDivider()
             Text("Aynı hareket hem açmaya / küçültmeye hem silmeye atanırsa, en son açtığın seçenek kalır; çakışan diğeri otomatik kapanır.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             SubHeader("Süreler")

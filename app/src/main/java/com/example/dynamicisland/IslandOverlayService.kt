@@ -198,7 +198,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandEvent.Notification -> if (!assistantActive && callKey == null) scope.launch {
                 val icon = iconFor(e.pkg)
-                showNotif(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key))
+                val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
+                val st = settings.value
+                // iOS tarzı banner açıksa bildirim adada değil cam banner olarak gösterilir; pencere eklenemezse adaya düşer
+                if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) showNotif(n)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
             is IslandEvent.ShazamListening -> onShazamListening()
@@ -857,6 +860,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var callEndJob: Job? = null
     private var callSpeaker = false
     private val sideCall by lazy { SideCallOverlay(this, this, this, wm) }
+    private val notifBanner by lazy { NotifBannerOverlay(this, this, this, wm, scope) { n -> openNotification(n) } }
     private var callExpanded = true
     private var callFromSide = 0      // aramaya yan baloncuktan dokunulduysa açılış yönü (animasyon için)
     private var callCollapseJob: Job? = null
@@ -2281,6 +2285,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         lyricsJob?.cancel()
         callTickJob?.cancel(); callEndJob?.cancel()
         runCatching { sideCall.hide() }
+        runCatching { notifBanner.release() }
         runCatching { removeLaunchView() }
         runCatching { removeSwallowView() }
         runCatching { removeStretchView() }

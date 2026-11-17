@@ -91,6 +91,7 @@ data class IslandSettings(
     val favoritesTrigger: Int = 0,           // 0 = dokununca, 1 = basılı tutunca
     val favoritePkgs: String = "",           // paket adları, virgülle ayrılmış (sıra korunur)
     val favoriteLaunchSpeed: Float = 1f,     // açılış animasyonu hızı (1 = normal, 2 = iki kat hızlı)
+    val notifBanner: Boolean = false,        // bildirimler adada değil, iOS tarzı cam banner olarak (sol üstte saatin altından küçük çıkıp büyüyerek) görünsün
     val notifTapOpens: Boolean = true,       // adadaki bildirime dokununca uygulama açılsın
     // Bildirim hareketleri (varsayılan: yalnızca dokununca aç; diğerleri kapalı)
     val notifOpenLong: Boolean = false,      // basılı tutunca bildirimin uygulaması açılsın
@@ -270,7 +271,7 @@ class SettingsRepository(context: Context) {
 
         val IDLE = booleanPreferencesKey("idle")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
-        val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full")
+        val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val REC_ON = booleanPreferencesKey("rec_on"); val REC_WIDE = booleanPreferencesKey("rec_wide_v2")
@@ -351,6 +352,7 @@ class SettingsRepository(context: Context) {
             favoritePkgs = p[K.FAV_PKGS] ?: d.favoritePkgs,
             favoriteLaunchAnim = p[K.FAV_ANIM] ?: d.favoriteLaunchAnim,
             favoriteLaunchSpeed = p[K.FAV_SPD] ?: d.favoriteLaunchSpeed,
+            notifBanner = p[K.NT_BANNER] ?: d.notifBanner,
             notifTapOpens = p[K.NT_OPEN] ?: d.notifTapOpens,
             notifOpenLong = p[K.NT_OPEN_LONG] ?: d.notifOpenLong,
             notifOpenSwipeDown = p[K.NT_OPEN_DN] ?: d.notifOpenSwipeDown,
@@ -447,6 +449,7 @@ class SettingsRepository(context: Context) {
 
             it[K.IDLE] = s.showIdle
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
+            it[K.NT_BANNER] = s.notifBanner
             it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_OPEN_LONG] = s.notifOpenLong; it[K.NT_OPEN_DN] = s.notifOpenSwipeDown
             it[K.NT_COL_TAP] = s.notifCollapseTap; it[K.NT_COL_LONG] = s.notifCollapseLong; it[K.NT_COL_UP] = s.notifCollapseSwipeUp
             it[K.NT_DEL_SIDE] = s.notifDeleteSwipeSide; it[K.NT_DEL_UP] = s.notifDeleteSwipeUp; it[K.SIDE_PROMOTE] = s.sideTapPromote
