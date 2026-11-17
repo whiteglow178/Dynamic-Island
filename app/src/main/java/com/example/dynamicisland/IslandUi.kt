@@ -1776,9 +1776,7 @@ private fun ShazamGlyphSweep(modifier: Modifier = Modifier) {
                 radius = side, center = c,
             )
         }
-        // 3) logonun dışında kalan her şeyi sil
-        drawShazamGlyph(Offset.Zero, side, Color.White, 1f, androidx.compose.ui.graphics.BlendMode.DstIn)
-        // 4) turkuaz kısmın çevresinde çok hafif parıltı
+        // 3) turkuaz kısmın çevresinde çok hafif parıltı (maskeden ÖNCE çizilir: logonun dışına taşmaz)
         val rad = (ang - 65f) * 0.0174533f
         val gp = Offset(c.x + side * 0.34f * cos(rad), c.y + side * 0.34f * sin(rad))
         drawCircle(
@@ -1787,6 +1785,8 @@ private fun ShazamGlyphSweep(modifier: Modifier = Modifier) {
             ),
             radius = side * 0.42f, center = gp,
         )
+        // 4) logonun dışında kalan her şeyi sil (parıltı dahil)
+        drawShazamGlyph(Offset.Zero, side, Color.White, 1f, androidx.compose.ui.graphics.BlendMode.DstIn)
     }
 }
 
@@ -2098,16 +2098,16 @@ private fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
     } else {
         // Dinleme (genişlemiş): [mavi daire + beyaz Shazam logosu]  Listening...  [mavi ses dalgası]  [X düğmesi]
         Row(
-            Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp),
+            Modifier.fillMaxSize().padding(start = 17.dp, end = 15.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(62.dp).clip(CircleShape)
+                Modifier.size(46.dp).clip(CircleShape)
                     .background(Brush.verticalGradient(listOf(ShazamBlueTop, ShazamBlueBottom))),
                 contentAlignment = Alignment.Center,
             ) {
                 ShazamOrbit(Modifier.fillMaxSize())
-                Canvas(Modifier.size(43.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
+                Canvas(Modifier.size(46.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
             }
             Spacer(Modifier.width(12.dp))
             Text(
@@ -2117,12 +2117,12 @@ private fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
             ShazamWave(Modifier.width(32.dp).height(18.dp), bars = 6, flat = true)
             Spacer(Modifier.width(14.dp))
             Box(
-                Modifier.size(62.dp).clip(CircleShape).background(Color(0xFF14224A))
+                Modifier.size(46.dp).clip(CircleShape).background(Color(0xFF14224A))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onStop),
                 contentAlignment = Alignment.Center,
             ) {
-                Canvas(Modifier.size(23.dp)) {
-                    val w = 3.dp.toPx()
+                Canvas(Modifier.size(18.dp)) {
+                    val w = 2.5.dp.toPx()
                     val m = w / 2f
                     drawLine(Color(0xFF3D7BFF), Offset(m, m), Offset(size.width - m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
                     drawLine(Color(0xFF3D7BFF), Offset(size.width - m, m), Offset(m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
