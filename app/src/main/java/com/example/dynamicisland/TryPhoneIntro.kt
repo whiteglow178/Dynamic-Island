@@ -1,6 +1,11 @@
 package com.example.dynamicisland
 
+import android.content.Context
 import android.graphics.Typeface
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -9,7 +14,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +59,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -63,6 +71,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.tanh
 import kotlin.math.cos
 import kotlin.math.abs
 import kotlin.math.max
@@ -675,8 +685,61 @@ private const val SCREEN_INSET_MM = 2.6f      // buildPhoneFace içindeki ekran 
 private const val SCREEN_CORNER_MM = 8.4f
 
 /** Telefon tam karşıdayken kamera (giriş animasyonunun t = FRONT_T karesiyle aynı). */
-private fun frontCam(w: Float, h: Float): PhoneCam =
-    PhoneCam(0f, 0f, V3(0f, 0f, 0f), min2(h * 0.70f / PH_H, w * 0.78f / PH_W), 330f, w / 2f, h * 0.46f)
+private fun frontCam(w: Float, h: Float, yaw: Float = 0f): PhoneCam =
+    PhoneCam(yaw, 0f, V3(0f, 0f, 0f), min2(h * 0.70f / PH_H, w * 0.78f / PH_W), 330f, w / 2f, h * 0.46f)
+
+// ---------------------------------------------------------------- Gösterim sırasında telefonu çevirerek 3B telefonu döndürme
+/** 3B telefonun sağa/sola en fazla dönebileceği açı (derece). Yan duvarlar bu açıda rahat görünür. */
+private const val TILT_MAX_DEG = 40f
+/** Gerçek telefonun 1 derecelik dönüşü 3B telefonda kaç derece olsun (1 = birebir). */
+private const val TILT_GAIN = 1.2f
+/** Dönüş yönü: 1 = 3B telefon senin elindeki telefonla aynı yöne döner, -1 = ters yöne (sabit duran nesne gibi). */
+private const val TILT_SIGN = 1f
+/** Yumuşatma: 0..1, küçük = daha yumuşak/yavaş takip. */
+private const val TILT_SMOOTH = 0.15f
+
+/**
+ * Telefonun uzun ekseni (dikey eksen) etrafındaki dönüşünü ölçer ve [yaw]'a (derece) yazar.
+ * Jiroskop + ivmeölçer birleşik "game rotation vector" sensörü kullanılır (izin gerekmez, manyetometre gerekmez).
+ * Referans, [enabled] true olduğu andaki duruştur: telefonu nasıl tutuyorsan o an "0 derece" olur.
+ */
+@Composable
+private fun TiltSensorEffect(enabled: Boolean, yaw: MutableState<Float>) {
+    val ctx = LocalContext.current
+    DisposableEffect(enabled) {
+        yaw.value = 0f
+        if (!enabled) return@DisposableEffect onDispose { }
+        val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val sensor = sm?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+            ?: sm?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        if (sm == null || sensor == null) return@DisposableEffect onDispose { }
+
+        val listener = object : SensorEventListener {
+            private val r = FloatArray(9)
+            private var ref: FloatArray? = null
+            private var smooth = 0f
+            override fun onSensorChanged(e: SensorEvent) {
+                SensorManager.getRotationMatrixFromVector(r, e.values)
+                val r0 = ref ?: r.copyOf().also { ref = it }
+                // Şimdiki ekran normali (cihaz z ekseni), başlangıç cihaz çatısında: Rrel = R0ᵀ · R, 3. sütun
+                var x = 0f
+                var z = 0f
+                for (k in 0..2) {
+                    x += r0[k * 3] * r[k * 3 + 2]
+                    z += r0[k * 3 + 2] * r[k * 3 + 2]
+                }
+                val deg = (atan2(x, z) * 180.0 / PI).toFloat()
+                // Yumuşak sınır: küçük açılarda doğrusal, sınıra yaklaştıkça yavaşlar
+                val target = TILT_MAX_DEG * tanh(TILT_SIGN * deg * TILT_GAIN / TILT_MAX_DEG)
+                smooth += (target - smooth) * TILT_SMOOTH
+                yaw.value = smooth
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        sm.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+        onDispose { sm.unregisterListener(listener) }
+    }
+}
 
 @Composable
 internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseRun, onDone: () -> Unit) {
@@ -697,10 +760,18 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
     val islandA = remember { Animatable(0f) }
     var skip by remember { mutableStateOf(false) }
 
+    // Telefonu çevirince 3B telefon da sağa/sola döner (yalnızca ekran bize dönükken)
+    val tiltYaw = remember { mutableStateOf(0f) }
+    val tiltGain = remember { Animatable(0f) }
+    var tiltOn by remember { mutableStateOf(false) }
+    TiltSensorEffect(tiltOn, tiltYaw)
+
     LaunchedEffect(face) {
         if (face == null) return@LaunchedEffect
         cover.animateTo(1f, tween(220))
         p.animateTo(FRONT_T, tween(1700, easing = FastOutSlowInEasing))      // ekran bize döner
+        tiltOn = true
+        launch { tiltGain.animateTo(1f, tween(500)) }
         islandA.animateTo(1f, tween(200))
         coroutineScope {
             val job = launch { run.script(uiState, cfgFlow.value) }
@@ -708,7 +779,11 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
             job.join()
             watcher.cancel()
         }
-        islandA.animateTo(0f, tween(220))
+        coroutineScope {
+            launch { islandA.animateTo(0f, tween(220)) }
+            tiltGain.animateTo(0f, tween(350))                                // önce düz karşıya dön
+        }
+        tiltOn = false
         p.animateTo(1f, tween(1200, easing = FastOutSlowInEasing))           // tekrar yana
         cover.animateTo(0f, tween(320))
         onDone()
@@ -717,6 +792,7 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
     val paint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG) }
     val path = remember { Path() }
     val matrix = remember { android.graphics.Matrix() }
+    val ovMatrix = remember { android.graphics.Matrix() }
 
     BoxWithConstraints(
         Modifier.fillMaxSize()
@@ -743,7 +819,7 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
             val cy = lerpF(h * 0.46f, gy, pivT)
             val pivot = V3(lerpF(0f, -(PH_W / 2f + ACTION_PROT), pivT), lerpF(0f, ACTION_Y, pivT), 0f)
             val cam = PhoneCam(
-                yaw = 90f * ye, pitch = 15f * sin(PI * ye).toFloat(),
+                yaw = 90f * ye + tiltYaw.value * tiltGain.value, pitch = 15f * sin(PI * ye).toFloat(),
                 pivot = pivot, s = s, dist = lerpF(330f, 150f, zoomT), cx = w / 2f, cy = cy,
             )
             val glowA = 0.10f * appear * (1f - zoomT)
@@ -791,8 +867,25 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
             val topV = (PHONE_BASE_TOP_DP + c.offsetYDp).coerceAtLeast(0f)
             Box(
                 Modifier
-                    .offset { IntOffset(c0.x.roundToInt(), c0.y.roundToInt()) }
                     .size(with(dens) { sw.toDp() }, with(dens) { sh.toDp() })
+                    // Ekran döndükçe adayı da aynı perspektifle ekranın 4 köşesine oturt
+                    .drawWithContent {
+                        val tc = frontCam(w, h, tiltYaw.value * tiltGain.value)
+                        val i = SCREEN_INSET_MM
+                        val q0 = tc.scr(-PH_W / 2f + i, -PH_H / 2f + i, hz)
+                        val q1 = tc.scr(PH_W / 2f - i, -PH_H / 2f + i, hz)
+                        val q2 = tc.scr(PH_W / 2f - i, PH_H / 2f - i, hz)
+                        val q3 = tc.scr(-PH_W / 2f + i, PH_H / 2f - i, hz)
+                        val src = floatArrayOf(0f, 0f, sw, 0f, sw, sh, 0f, sh)
+                        val dst = floatArrayOf(q0.x, q0.y, q1.x, q1.y, q2.x, q2.y, q3.x, q3.y)
+                        if (ovMatrix.setPolyToPoly(src, 0, dst, 0, 4)) {
+                            val nc = drawContext.canvas.nativeCanvas
+                            nc.save()
+                            nc.concat(ovMatrix)
+                            drawContent()
+                            nc.restore()
+                        }
+                    }
                     .graphicsLayer { alpha = islandA.value }
                     .clip(RoundedCornerShape(with(dens) { (SCREEN_CORNER_MM * pxPerMm).toDp() })),
             ) {
