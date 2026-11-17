@@ -58,6 +58,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.platform.LocalContext
@@ -72,6 +73,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.atan2
+import kotlin.math.exp
 import kotlin.math.tanh
 import kotlin.math.cos
 import kotlin.math.abs
@@ -197,6 +199,13 @@ private fun bandBase(yMm: Float): Color {
         }
     }
     return BAND_COLORS[BAND_COLORS.size - 1]
+}
+
+/** Düz yan duvarın dikey renk örnekleri (her karede yeniden hesaplanmasın). */
+private val WALL_BASE: Array<Color> by lazy {
+    val yT = -(PH_H / 2f - PH_R)
+    val yB = -yT
+    Array(SIDE_SAMPLES) { j -> bandBase(yT + (yB - yT) * (j / (SIDE_SAMPLES - 1f))) }
 }
 
 private fun shade(c: Color, k: Float) =
@@ -330,10 +339,7 @@ private fun DrawScope.drawSideWall(cam: PhoneCam, s: Float, path: Path) {
         val st = Offset((a0.x + a1.x) / 2f, (a0.y + a1.y) / 2f)
         val en = Offset((b0.x + b1.x) / 2f, (b0.y + b1.y) / 2f)
         if (abs(en.x - st.x) + abs(en.y - st.y) < 1f) continue
-        val stops = Array(SIDE_SAMPLES) { j ->
-            val f = j / (SIDE_SAMPLES - 1f)
-            f to shade(bandBase(yT + (yB - yT) * f), pm)
-        }
+        val stops = Array(SIDE_SAMPLES) { j -> (j / (SIDE_SAMPLES - 1f)) to shade(WALL_BASE[j], pm) }
         val brush = Brush.linearGradient(colorStops = stops, start = st, end = en)
         path.reset()
         path.moveTo(a0.x, a0.y); path.lineTo(a1.x, a1.y); path.lineTo(b1.x, b1.y); path.lineTo(b0.x, b0.y)
@@ -691,12 +697,12 @@ private fun frontCam(w: Float, h: Float, yaw: Float = 0f): PhoneCam =
 // ---------------------------------------------------------------- Gösterim sırasında telefonu çevirerek 3B telefonu döndürme
 /** 3B telefonun sağa/sola en fazla dönebileceği açı (derece). Yan duvarlar bu açıda rahat görünür. */
 private const val TILT_MAX_DEG = 40f
-/** Gerçek telefonun 1 derecelik dönüşü 3B telefonda kaç derece olsun (1 = birebir). */
-private const val TILT_GAIN = 1.2f
+/** Gerçek telefonun 1 derecelik dönüşü 3B telefonda kaç derece olsun (1 = birebir). Büyük = daha az çevirmen yeter. */
+private const val TILT_GAIN = 2.5f
 /** Dönüş yönü: 1 = 3B telefon senin elindeki telefonla aynı yöne döner, -1 = ters yöne (sabit duran nesne gibi). */
 private const val TILT_SIGN = 1f
-/** Yumuşatma: 0..1, küçük = daha yumuşak/yavaş takip. */
-private const val TILT_SMOOTH = 0.15f
+/** Yumuşatma zaman sabiti (saniye): küçük = daha çevik, büyük = daha yumuşak. Kare hızından bağımsızdır. */
+private const val TILT_TAU_S = 0.07f
 
 /**
  * Telefonun uzun ekseni (dikey eksen) etrafındaki dönüşünü ölçer ve [yaw]'a (derece) yazar.
@@ -706,8 +712,26 @@ private const val TILT_SMOOTH = 0.15f
 @Composable
 private fun TiltSensorEffect(enabled: Boolean, yaw: MutableState<Float>) {
     val ctx = LocalContext.current
+    val target = remember { FloatArray(1) }
+
+    // Yumuşatma sensör olaylarında değil, EKRAN KARELERİNDE yapılır: hareket her karede akıcı ilerler
+    LaunchedEffect(enabled) {
+        if (!enabled) return@LaunchedEffect
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (last != 0L) {
+                    val dt = (now - last) / 1_000_000_000f
+                    yaw.value += (target[0] - yaw.value) * (1f - exp(-dt / TILT_TAU_S))
+                }
+                last = now
+            }
+        }
+    }
+
     DisposableEffect(enabled) {
         yaw.value = 0f
+        target[0] = 0f
         if (!enabled) return@DisposableEffect onDispose { }
         val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val sensor = sm?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
@@ -717,7 +741,6 @@ private fun TiltSensorEffect(enabled: Boolean, yaw: MutableState<Float>) {
         val listener = object : SensorEventListener {
             private val r = FloatArray(9)
             private var ref: FloatArray? = null
-            private var smooth = 0f
             override fun onSensorChanged(e: SensorEvent) {
                 SensorManager.getRotationMatrixFromVector(r, e.values)
                 val r0 = ref ?: r.copyOf().also { ref = it }
@@ -730,13 +753,11 @@ private fun TiltSensorEffect(enabled: Boolean, yaw: MutableState<Float>) {
                 }
                 val deg = (atan2(x, z) * 180.0 / PI).toFloat()
                 // Yumuşak sınır: küçük açılarda doğrusal, sınıra yaklaştıkça yavaşlar
-                val target = TILT_MAX_DEG * tanh(TILT_SIGN * deg * TILT_GAIN / TILT_MAX_DEG)
-                smooth += (target - smooth) * TILT_SMOOTH
-                yaw.value = smooth
+                target[0] = TILT_MAX_DEG * tanh(TILT_SIGN * deg * TILT_GAIN / TILT_MAX_DEG)
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
-        sm.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+        sm.registerListener(listener, sensor, 10_000)      // ~100 Hz
         onDispose { sm.unregisterListener(listener) }
     }
 }
