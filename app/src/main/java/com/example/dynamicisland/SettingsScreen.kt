@@ -387,6 +387,41 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
 
+        sec("Ada olayları", "Genişletilmiş müzik adasında yağmur, kar, asit ve kırılma efektleri") {
+            SubHeader("Hava durumu")
+            SegmentedTabs(listOf("Kapalı", "Yağmur", "Kar", "Asit"), draft.fxWeather) { draft = draft.copy(fxWeather = it) }
+            if (draft.fxWeather != 0) {
+                SliderRow("Yoğunluk", draft.fxIntensity, 0.1f..1f, "%${(draft.fxIntensity * 100).toInt()}") { draft = draft.copy(fxIntensity = it) }
+            }
+            if (draft.fxWeather == 1) {
+                SectionDivider()
+                SwitchRow("Şimşek", "Şimşeğin düştüğü yerdeki öğe (kapak, düğme, çubuk...) adadan kopup ekranın altına düşer",
+                    draft.fxLightning) { draft = draft.copy(fxLightning = it) }
+                if (draft.fxLightning) {
+                    SliderRow("Şimşek aralığı", draft.fxLightningSec, 3f..30f, "${draft.fxLightningSec.toInt()} sn") { draft = draft.copy(fxLightningSec = it) }
+                }
+            }
+            if (draft.fxWeather == 2) {
+                SliderRow("Donma hızı", draft.fxFreezeSpeed, 0.3f..3f, "x${"%.1f".format(draft.fxFreezeSpeed)}") { draft = draft.copy(fxFreezeSpeed = it) }
+                SliderRow("Buzu kırmak için dokunma", draft.fxThawTaps.toFloat(), 2f..12f, "${draft.fxThawTaps}") { draft = draft.copy(fxThawTaps = (it + 0.5f).toInt()) }
+                Text("Çok kar yağan öğe yavaşça donar ve çalışmayı bırakır. Üstüne dokundukça buz çatlar, sonunda kırılır.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+            if (draft.fxWeather == 3) {
+                SliderRow("Erime hızı", draft.fxMeltSpeed, 0.3f..3f, "x${"%.1f".format(draft.fxMeltSpeed)}") { draft = draft.copy(fxMeltSpeed = it) }
+                Text("Asit damlaları öğenin üstünde kalıp onu eritir; eriyince altındaki öğeye geçer.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+            SectionDivider()
+            SwitchRow("Adayı kırma", "Açıkken genişletilmiş adada hızlı dokunduğun yer kırılıp düşer; her şey kırılınca ada parçalanır. Uzun basma ve kaydırma normal çalışır",
+                draft.fxBreak) { draft = draft.copy(fxBreak = it) }
+            if (draft.fxWeather != 0 || draft.fxBreak) {
+                SliderRow("Geri toplanma süresi", draft.fxRestoreSec, 2f..20f, "${draft.fxRestoreSec.toInt()} sn") { draft = draft.copy(fxRestoreSec = it) }
+            }
+            Text("Önizlemede efektler yalnızca ada içinde görünür; adadan dışarı düşen parçalar gerçek adada çalışır. Efektler pili tüketir.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+
         sec("Özel albüm kapağı", "Adanın içindeki kapak yerine galeriden fotoğraf göster") {
             SwitchRow("Galeriden kapak fotoğrafı", "Kapalı ve açık adadaki küçük albüm kapağı yerine seçtiğin fotoğraf görünür",
                 draft.customArtEnabled) { draft = draft.copy(customArtEnabled = it) }
@@ -899,7 +934,7 @@ private fun PreviewCard(
                         }
                         // Telefonun içindeki ada: dokununca açılır / kapanır
                         Box(Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = islandTopV.dp)) {
-                            IslandPill(sample, progress, geo, cfg, SAMPLE_STATE, frame, compactLy, onToggle, {}, {})
+                            IslandPill(sample, progress, geo, cfg, SAMPLE_STATE, frame, compactLy, onToggle, {}, {}, fxMode = 1)
                         }
                     }
                 }

@@ -67,6 +67,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private lateinit var wm: WindowManager
     private var dialog: Dialog? = null
     private var composeView: ComposeView? = null
+    private val fxWindow by lazy { IslandFxWindow(this, this, this, wm) }   // adadan düşen efekt parçaları (tam ekran, dokunmatik olmayan)
     private var collapseJob: Job? = null
     private var mediaGraceJob: Job? = null     // şarkı geçişinde oynatıcı bir an "durdu" / boş bildirirse adayı hemen kapatma
     private var lastPillToggleAt = 0L          // hızlı art arda dokunuşlarda adanın sürekli aç-kapa yapmasını önler
@@ -127,6 +128,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // istisna yakalanmazsa süreç çöker ve erişilebilirlik servisi "hatalı çalışıyor" olarak işaretlenir.
         if (!runCatching { startAsForeground() }.isSuccess) { stopSelf(); return }
         runCatching { detectCutout() }
+        scope.launch {
+            androidx.compose.runtime.snapshotFlow { FxBridge.count > 0 }.distinctUntilChanged().collect { on ->
+                runCatching { if (on) fxWindow.attach() else fxWindow.detach() }
+            }
+        }
         runCatching { statusCover.attach() }      // ada penceresinden ÖNCE eklenir: ada her zaman üstte kalır
         runCatching { edgeGlow.attach() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
         safeAttachOverlay()
@@ -1785,6 +1791,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { privacy.stop() }
         runCatching { ringer.stop() }
         lyricsJob?.cancel()
+        runCatching { fxWindow.detach() }
+        FxBridge.clear()
         runCatching { call.destroy() }
         runCatching { notifBanner.release() }
         runCatching { removeLaunchView() }

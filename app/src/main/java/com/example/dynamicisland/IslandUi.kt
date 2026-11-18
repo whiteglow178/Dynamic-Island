@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.draw.drawBehind
@@ -474,7 +475,7 @@ fun IslandRoot(
             // Ada açılınca (ya da başka olay gelince) her zaman tam görünür
             LaunchedEffect(s.expanded) { if (s.expanded) popIn.snapTo(1f) }
             Box(Modifier.graphicsLayer { alpha = if (hidden) 0f else popIn.value }) {
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onShazamStop = onShazamStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onShazamStop = onShazamStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX, fxMode = 2)
             }
         }
     }
@@ -703,9 +704,13 @@ fun IslandPill(
     onRecStop: () -> Unit = {},
     onShazamStop: () -> Unit = {},
     onNotifSwipeSide: () -> Unit = {},
+    fxMode: Int = 0,        // ada olayları: 0 kapalı, 1 önizleme (yalnızca ada içi), 2 gerçek ada (parçalar ekrana düşer)
     fromX: Dp = 0.dp,       // yan baloncuktan açılıyorsa baloncuğun ada merkezine göre yatay konumu (0 = normal açılış)
 ) {
     val fromNow by rememberUpdatedState(fromX)
+    // Ada olayları (yağmur / kar / asit / şimşek / kırılma)
+    val fx = remember { IslandFxState() }
+    val fxActive = fxMode != 0 && content is IslandContent.Media && (cfg.fxWeather != 0 || cfg.fxBreak) && !swallow && !cfg.dotMode
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
     val longPressNow by rememberUpdatedState(onLongPress)
@@ -755,16 +760,19 @@ fun IslandPill(
     LaunchedEffect(warm) { if (warm) { delay(1_500); warm = false } }
     val compactVisible by remember(progress) { derivedStateOf { progress.mean < 0.5f && fromNow == 0.dp } }
 
+    CompositionLocalProvider(LocalIslandFx provides (if (fxActive) fx else null)) {
     Box(
         modifier = Modifier
             // Yan baloncuktan açılış: ada baloncuğun yerinden (daire) başlar, büyürken ortaya kayar
             .graphicsLayer { if (fromNow != 0.dp) translationX = fromNow.toPx() * (1f - progress.w.value).coerceIn(0f, 1f) }
+            .graphicsLayer { alpha = if (fxMode == 2 && FxBridge.islandHidden) 0f else 1f }   // ada parçalanınca gövde görünmez
             .layout { measurable, _ ->
                 val w = lerp(if (fromNow != 0.dp) geo.ch else geo.cw, geo.ew, progress.w.value).roundToPx().coerceAtLeast(1)
                 val h = lerp(geo.ch, geo.eh, progress.h.value).roundToPx().coerceAtLeast(1)
                 val placeable = measurable.measure(Constraints.fixed(w, h))
                 layout(w, h) { placeable.place(0, 0) }
             }
+            .onGloballyPositioned { fx.origin = it }
             .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
             .islandSurface(cfg, body, shape, cornerT, if (cfg.borderArtColor && artColor != null) brightTone(artColor) else null)
             .pointerInput(Unit) {
@@ -1040,6 +1048,8 @@ fun IslandPill(
 
             }
         }
+        if (fxActive) FxLayer(fx, cfg, progress, live = fxMode == 2, bodyColor = { body.value })
+    }
     }
 }
 

@@ -163,13 +163,14 @@ fun MusicPanel(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier) {
+            Box((if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier).fxTarget("art")) {
                 FlipAlbumArt(customArt ?: m.art, 60.dp, artFlip, artSpin, 12.dp, customArt == null && artVideo.isEmpty(), video = artVideo)   // sol köşe
             }
             // Kapak yüksekliğinde alan: şarkı adı ortada, sanatçı adı kapağın alt kenarıyla hizalı
             Box(
                 Modifier.weight(1f).height(60.dp)
                     .then(if (cfg.openExpTitle) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier)
+                    .fxTarget("title")
             ) {
                 MarqueeText(
                     m.title.ifBlank { "Bilinmeyen parça" },
@@ -185,12 +186,12 @@ fun MusicPanel(
             Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb)
         }
 
-        if (cfg.lyricsEnabled && cfg.lyricsInPanel) PanelLyrics(cfg, lyrics, frame, artColor = m.artColor)
+        if (cfg.lyricsEnabled && cfg.lyricsInPanel) Column(Modifier.fxTarget("lyrics")) { PanelLyrics(cfg, lyrics, frame, artColor = m.artColor) }
 
-        MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) }
+        Box(Modifier.fxTarget("progress")) { MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) } }
 
         Row(Modifier.fillMaxWidth().offset(y = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp), heartColor, rb) {
+            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp), heartColor, rb, fxId = "heart") {
                 val want = !fav
                 fav = want; lastTap = SystemClock.elapsedRealtime()
                 FavoriteStore.set(ctx, favKey, want)
@@ -200,11 +201,11 @@ fun MusicPanel(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                CtlButton(Ctl.Rew, 24.dp, rb = rb) { onCommand(MediaCommand.Previous) }
-                CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp, rb = rb) { onCommand(MediaCommand.PlayPause) }
-                CtlButton(Ctl.Fwd, 24.dp, rb = rb) { onCommand(MediaCommand.Next) }
+                CtlButton(Ctl.Rew, 24.dp, rb = rb, fxId = "rew") { onCommand(MediaCommand.Previous) }
+                CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp, rb = rb, fxId = "play") { onCommand(MediaCommand.PlayPause) }
+                CtlButton(Ctl.Fwd, 24.dp, rb = rb, fxId = "fwd") { onCommand(MediaCommand.Next) }
             }
-            CtlButton(Ctl.Cast, 25.dp, Modifier.offset(x = 5.dp), rb = rb) { onOutput() }
+            CtlButton(Ctl.Cast, 25.dp, Modifier.offset(x = 5.dp), rb = rb, fxId = "cast") { onOutput() }
         }
     }
 }
@@ -427,12 +428,13 @@ private fun DrawScope.cast(s: Float, color: Color) {
 }
 
 @Composable
-private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartColor: Color = Color(0xFFFF2D6F), rb: RainbowStyle? = null, onClick: () -> Unit) {
+private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartColor: Color = Color(0xFFFF2D6F), rb: RainbowStyle? = null, fxId: String? = null, onClick: () -> Unit) {
+    val fxMod = if (fxId != null) modifier.fxTarget(fxId) else modifier
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "press")
     Box(
-        modifier.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
+        fxMod.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
             .clickable(interactionSource = src, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
