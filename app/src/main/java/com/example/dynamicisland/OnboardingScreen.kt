@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
+import android.graphics.drawable.AdaptiveIconDrawable
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,15 +29,20 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -78,10 +84,15 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -93,7 +104,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -116,7 +129,7 @@ private const val K_WELCOME = "welcome_done"
 private const val K_AUTO_OPENED = "autostart_opened"
 private const val K_AUTO_DONE = "autostart_done"
 
-private enum class OnbPhase { Welcome, Reply, Perms, Finish }
+private enum class OnbPhase { Welcome, Reply, Perms, Unlock, Finish }
 
 private enum class OnbPerm(
     val callText: String, val okText: String, val title: String, val desc: String,
@@ -238,6 +251,9 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
     var shakeCount by remember { mutableIntStateOf(0) }
     var started by remember { mutableStateOf(false) }
     var introShown by remember { mutableStateOf(false) }
+    var pin by remember { mutableStateOf("") }
+    var pinWrong by remember { mutableStateOf(false) }
+    var unlocked by remember { mutableStateOf(false) }
 
     fun isDone(p: OnbPerm): Boolean =
         p in skipped || when (p) {
@@ -283,11 +299,11 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
             if (prev != null && prev != current) { flash = prev.okText; delay(1000) }
         } finally { flash = null }
         shownPerm = current
-        if (current == null) { delay(400); phase = OnbPhase.Finish }
+        if (current == null) { delay(400); phase = OnbPhase.Unlock }
     }
 
     LaunchedEffect(phase) {
-        if (phase == OnbPhase.Finish) { delay(3400); onFinished() }
+        if (phase == OnbPhase.Finish) { delay(1400); onFinished() }
     }
 
     // Cevapla -> klavye
@@ -319,7 +335,30 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
             }
         } else { wrong = true; shakeCount++ }
     }
+    val appIcon = remember {
+        runCatching {
+            val d = ctx.packageManager.getApplicationIcon(ctx.packageName)
+            OnbAppIcon(d.toBitmap(192, 192).asImageBitmap(), d is AdaptiveIconDrawable)
+        }.getOrNull()
+    }
     val focusField: () -> Unit = { runCatching { focus.requestFocus() }; kb?.show() }
+
+    // Şifre ekranı (3 boyutlu telefon): şifre 1234
+    val onDigit: (String) -> Unit = { d ->
+        if (!unlocked && pin.length < 4) {
+            pinWrong = false
+            pin += d
+            if (pin.length == 4) {
+                if (pin == "1234") {
+                    unlocked = true   // ana ekran açılır; Omni Island simgesine dokunulunca devam edilir
+                } else {
+                    pinWrong = true; shakeCount++
+                    scope.launch { delay(500); pin = "" }
+                }
+            }
+        }
+    }
+    val onDelete: () -> Unit = { if (!unlocked && pin.isNotEmpty() && pin.length < 4) { pin = pin.dropLast(1); pinWrong = false } }
 
     val answerCall: () -> Unit = answer@{
         val p = shownPerm ?: return@answer
@@ -378,7 +417,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
         spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessLow), label = "onbZoom",
     )
     val enter by animateFloatAsState(if (started) 1f else 0f, tween(1000, easing = FastOutSlowInEasing), label = "onbEnter")
-    val exit by animateFloatAsState(if (phase == OnbPhase.Finish) 1f else 0f, tween(1400, easing = FastOutSlowInEasing), label = "onbExit")
+    val exit by animateFloatAsState(if (phase == OnbPhase.Finish) 1f else 0f, tween(450, easing = FastOutSlowInEasing), label = "onbExit")
     val shake = remember { Animatable(0f) }
     LaunchedEffect(shakeCount) {
         if (shakeCount > 0) for (t in listOf(14f, -12f, 9f, -6f, 3f, 0f)) shake.animateTo(t, tween(55))
@@ -397,6 +436,12 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
             "Klavyede \"Hoşbuldum\" yazıp gönder tuşuna basman gerek.",
             if (wrong) "Tam olarak \"Hoşbuldum\" yazmalısın." else null, false, false,
         )
+        phase == OnbPhase.Unlock || phase == OnbPhase.Finish -> OnbInfo(
+            if (unlocked) "Artık Hazırsınız" else "Şifre: 1234",
+            if (unlocked) "Omni Island uygulamasına Hoş Geldiniz. Başlamak için telefondaki Omni Island simgesine dokun."
+            else "Telefonun kilidini açmak için tuş takımına 1234 gir.",
+            if (pinWrong) "Yanlış şifre, tekrar dene. Şifre: 1234" else null, false, false,
+        )
         p != null -> OnbInfo(
             p.title, p.desc,
             if (warnFor == p) {
@@ -411,23 +456,51 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
     val stepIndex = when (phase) {
         OnbPhase.Welcome, OnbPhase.Reply -> 0
         OnbPhase.Perms -> 1 + ONB_ORDER.indexOf(p).coerceAtLeast(0)
-        OnbPhase.Finish -> ONB_ORDER.size + 1
+        OnbPhase.Unlock, OnbPhase.Finish -> ONB_ORDER.size
     }
 
     val screenW = LocalConfiguration.current.screenWidthDp
     val phoneW = (screenW * 0.88f).coerceAtMost(380f)
+    // Şifre aşamasında telefonun tamamı görünür: kırpma alanı büyür, telefon ekrana sığacak kadar küçülür
+    val phoneH = phoneW * 146.6f / 70.6f
+    val fitScale = ((LocalConfiguration.current.screenHeightDp - 250f) / phoneH).coerceIn(0.5f, 1f)
+    val full by animateFloatAsState(
+        if (phase == OnbPhase.Unlock || phase == OnbPhase.Finish) 1f else 0f,
+        tween(700, easing = FastOutSlowInEasing), label = "onbFull",
+    )
+    val cropH = (280f + (44f + phoneH * fitScale + 12f - 280f) * full).dp
 
-    Box(Modifier.fillMaxSize().background(cs.background)) {
+    // Uygulamaya girince 3B telefon, EKRANI cihazın ekranını tam kaplayana kadar yaklaşır
+    var rootPx by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val dens = LocalDensity.current
+    val rootWdp = rootPx.width / dens.density
+    val rootHdp = rootPx.height / dens.density
+    val scrInset = 2.6f * phoneW / 70.6f
+    val scrW = phoneW - 2f * scrInset
+    val scrH = phoneH - 2f * scrInset
+    val sbTop = WindowInsets.systemBars.asPaddingValues().calculateTopPadding().value
+    val launchScale = if (rootWdp > 0f) maxOf(rootWdp / scrW, rootHdp / scrH) else 1f
+    val launchTy = rootHdp / 2f - (sbTop + 44f) - (scrInset + scrH / 2f) * launchScale
+    val launch by animateFloatAsState(
+        if (phase == OnbPhase.Finish) 1f else 0f, tween(1100, easing = FastOutSlowInEasing), label = "onbLaunch",
+    )
+
+    Box(Modifier.fillMaxSize().background(cs.background).onSizeChanged { rootPx = it }) {
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
             // ---- 3 boyutlu telefon: yalnızca üst kısım (ada bölgesi) görünür
-            Box(Modifier.fillMaxWidth().height(280.dp).clipToBounds(), contentAlignment = Alignment.TopCenter) {
+            Box(
+                Modifier.fillMaxWidth().height(cropH).zIndex(1f)
+                    .then(if (phase == OnbPhase.Finish) Modifier else Modifier.clipToBounds()),
+                contentAlignment = Alignment.TopCenter,
+            ) {
                 Box(
                     Modifier.padding(top = 44.dp).graphicsLayer {
-                        val s = zoom * (1f - 0.55f * exit)
+                        val s0 = zoom * (1f + (fitScale - 1f) * full)
+                        val s = s0 + (launchScale - s0) * launch
                         scaleX = s; scaleY = s
                         transformOrigin = TransformOrigin(0.5f, 0f)
-                        translationY = (-90f * (1f - enter) - 240f * exit) * density
-                        alpha = enter * (1f - exit)
+                        translationY = (-90f * (1f - enter) + launchTy * launch) * density
+                        alpha = enter
                     },
                 ) {
                     Phone3DPreview(phoneWDp = phoneW) {
@@ -439,21 +512,27 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                                 onDecline = {}, onFieldTap = focusField, onSend = submit,
                                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 14.dp).offset(x = shake.value.dp),
                             )
-                        } else {
+                        } else if (phase == OnbPhase.Perms) {
                             // İzin aramaları: uygulamanın GERÇEK adası (ayarlardaki renk / şekil / animasyonla)
                             RealIslandHost(mode = mode, shakeX = shake.value, onAnswer = answerCall, onDecline = declineCall)
+                        } else {
+                            PhoneLockContent(
+                                pin, pinWrong, unlocked, shake.value, onDigit, onDelete, appIcon,
+                                onOpened = { if (phase == OnbPhase.Unlock) phase = OnbPhase.Finish },
+                            )
                         }
                     }
                 }
                 Box(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(80.dp)
+                        .graphicsLayer { alpha = 1f - full }
                         .background(Brush.verticalGradient(listOf(Color.Transparent, cs.background))),
                 )
             }
 
             // ---- adım noktaları
             Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 14.dp),
+                Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 14.dp).graphicsLayer { alpha = 1f - exit },
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
             ) {
                 val total = ONB_ORDER.size + 1
@@ -523,22 +602,6 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                 keyboardActions = KeyboardActions(onSend = { submit() }),
                 modifier = Modifier.size(1.dp).graphicsLayer { alpha = 0f }.focusRequester(focus),
             )
-        }
-
-        // ---- bitiş yazısı
-        if (exit > 0.01f) {
-            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Column(
-                    Modifier.graphicsLayer { alpha = exit; scaleX = 0.9f + 0.1f * exit; scaleY = 0.9f + 0.1f * exit },
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text("Artık Hazırsınız", color = cs.onBackground, fontSize = 34.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                    Text(
-                        "Omni Island uygulamasına Hoş Geldiniz", color = cs.onSurfaceVariant, fontSize = 17.sp,
-                        textAlign = TextAlign.Center, lineHeight = 24.sp,
-                    )
-                }
-            }
         }
     }
 }
@@ -740,6 +803,166 @@ private fun OnbChecklist(items: List<Pair<OnbPerm, Int>>, modifier: Modifier = M
                     color = when (st) { 2 -> ok; 1 -> Color(0xFFFFB340); else -> cs.onSurfaceVariant },
                     fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 )
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ 3 boyutlu telefonda şifre ekranı
+@Composable
+private fun PhoneLockContent(
+    pin: String, wrong: Boolean, unlocked: Boolean, shakeX: Float,
+    onDigit: (String) -> Unit, onDelete: () -> Unit, appIcon: OnbAppIcon?, onOpened: () -> Unit,
+) {
+    val ua by animateFloatAsState(if (unlocked) 1f else 0f, tween(650, easing = FastOutSlowInEasing), label = "unlockA")
+    val red = Color(0xFFFF6B5E)
+    Box(Modifier.fillMaxSize()) {
+        // Kilit açılınca ortaya çıkan ana ekran
+        if (ua > 0.01f) {
+            Box(
+                Modifier.fillMaxSize()
+                    .graphicsLayer { alpha = ua; val sc = 1.12f - 0.12f * ua; scaleX = sc; scaleY = sc }
+                    .background(Brush.verticalGradient(listOf(Color(0xFF2E6A93), Color(0xFF5B4496), Color(0xFFB2557F)))),
+            ) { OnbHomeGrid(appIcon, ua > 0.9f, onOpened) }
+        }
+        // Şifre ekranı: kilit açılınca yaklaşıp solar
+        if (ua < 0.99f) {
+            Column(
+                Modifier.fillMaxSize()
+                    .graphicsLayer { alpha = 1f - ua; val sc = 1f + 0.25f * ua; scaleX = sc; scaleY = sc }
+                    .background(Brush.verticalGradient(listOf(Color(0xF01B2A22), Color(0xF00A120E)))),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(118.dp))
+                Text("Şifre Gir", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(28.dp))
+                Row(Modifier.offset(x = shakeX.dp), horizontalArrangement = Arrangement.spacedBy(30.dp)) {
+                    repeat(4) { i ->
+                        val edge = if (wrong) red else Color.White
+                        Box(
+                            Modifier.size(17.dp).clip(CircleShape).border(1.6.dp, edge, CircleShape)
+                                .background(if (i < pin.length) edge else Color.Transparent),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(70.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9")).forEach { r ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) { r.forEach { d -> PinKey(d) { onDigit(d) } } }
+                    }
+                    PinKey("0") { onDigit("0") }
+                }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (pin.isEmpty()) "İptal" else "Sil", color = Color.White, fontSize = 20.sp,
+                    modifier = Modifier.padding(bottom = 80.dp).clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = pin.isNotEmpty(), onClick = onDelete).padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+            }
+        }
+        // Ada (kapalı)
+        Box(
+            Modifier.align(Alignment.TopCenter).padding(top = 14.dp).size(126.dp, 37.dp)
+                .clip(RoundedCornerShape(19.dp)).background(Color.Black),
+        )
+    }
+}
+
+@Composable
+private fun PinKey(digit: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(88.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(digit, color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Light) }
+}
+
+private class OnbAppIcon(val bitmap: ImageBitmap, val adaptive: Boolean)
+
+@Composable
+private fun OnbAppIconView(icon: OnbAppIcon?, modifier: Modifier, corner: Dp = 18.dp) {
+    Box(modifier.clip(RoundedCornerShape(corner)).background(Color(0xFF1C1C1E))) {
+        if (icon != null) {
+            Image(
+                bitmap = icon.bitmap, contentDescription = null, contentScale = ContentScale.Crop,
+                // adaptif simgelerde dış %33'lük taşma payı kırpılır
+                modifier = Modifier.fillMaxSize().graphicsLayer { val k = if (icon.adaptive) 1.5f else 1f; scaleX = k; scaleY = k },
+            )
+        } else OnbLogo(Color(0xFF0A84FF), Modifier.fillMaxSize())
+    }
+}
+
+/** Telefonun ana ekranı: isimsiz / resimsiz birkaç uygulama + Omni Island. Simgeye dokununca uygulama açılma animasyonu. */
+@Composable
+private fun OnbHomeGrid(appIcon: OnbAppIcon?, enabled: Boolean, onOpened: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val open = remember { Animatable(0f) }
+    var tapped by remember { mutableStateOf(false) }
+    val pulse by rememberInfiniteTransition(label = "hint").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing)), label = "hintA",
+    )
+    val colors = listOf(0xFF0A84FF, 0xFF30D158, 0xFFFF9F0A, 0xFFFF453A, 0xFFBF5AF2, 0xFF5AC8FA, 0xFFFFD60A, 0xFFFF375F)
+    val omniR = 1
+    val omniC = 2
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val w = maxWidth.value
+        val h = maxHeight.value
+        val size = 76f
+        val gap = (w - 56f - 4f * size) / 3f
+        fun cx(c: Int) = 28f + c * (size + gap)
+        fun ry(r: Int) = 120f + r * 120f
+        val t = open.value
+
+        Box(Modifier.fillMaxSize().graphicsLayer { val sc = 1f + 0.15f * t; scaleX = sc; scaleY = sc; alpha = 1f - 0.5f * t }) {
+            for (r in 0..2) for (c in 0..3) {
+                if (r == omniR && c == omniC) continue
+                val col = Color(colors[(r * 4 + c) % colors.size])
+                Box(
+                    Modifier.offset(cx(c).dp, ry(r).dp).size(size.dp).clip(RoundedCornerShape(18.dp))
+                        .background(Brush.linearGradient(listOf(col, col.copy(alpha = 0.6f)))),
+                )
+            }
+            // dock
+            for (c in 0..3) {
+                val col = Color(colors[(c * 2 + 1) % colors.size])
+                Box(
+                    Modifier.offset(cx(c).dp, (h - 170f).dp).size(size.dp).clip(RoundedCornerShape(18.dp))
+                        .background(Brush.linearGradient(listOf(col, col.copy(alpha = 0.6f)))),
+                )
+            }
+            // Omni Island: dokunma ipucu halkası + simge + yazı
+            if (enabled && !tapped) {
+                Box(
+                    Modifier.offset(cx(omniC).dp, ry(omniR).dp).size(size.dp)
+                        .graphicsLayer { val sc = 1f + 0.3f * pulse; scaleX = sc; scaleY = sc; alpha = 1f - pulse }
+                        .border(2.dp, Color.White, RoundedCornerShape(18.dp)),
+                )
+            }
+            OnbAppIconView(
+                appIcon,
+                Modifier.offset(cx(omniC).dp, ry(omniR).dp).size(size.dp).clickable(enabled = enabled && !tapped) {
+                    tapped = true
+                    scope.launch {
+                        open.animateTo(1f, tween(480, easing = FastOutSlowInEasing))
+                        delay(120)
+                        onOpened()
+                    }
+                },
+            )
+            Box(
+                Modifier.offset((cx(omniC) - 14f).dp, (ry(omniR) + 82f).dp).width((size + 28f).dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("Omni Island", color = Color.White, fontSize = 14.sp, maxLines = 1, softWrap = false) }
+        }
+
+        // Uygulama açılma animasyonu: simge büyüyerek ekranı kaplar
+        if (t > 0.001f) {
+            val x = cx(omniC) * (1f - t)
+            val y = ry(omniR) * (1f - t)
+            Box(
+                Modifier.offset(x.dp, y.dp).size((size + (w - size) * t).dp, (size + (h - size) * t).dp)
+                    .clip(RoundedCornerShape((18f + 28f * t).dp)).background(Color.Black),
+            ) {
+                OnbAppIconView(appIcon, Modifier.align(Alignment.Center).size((size + 34f * t).dp), (18f + 6f * t).dp)
             }
         }
     }

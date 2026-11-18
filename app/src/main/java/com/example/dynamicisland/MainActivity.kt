@@ -71,13 +71,17 @@ class MainActivity : ComponentActivity() {
                     // İlk açılışta açılış (onboarding) ekranı; bittikten sonra normal uygulama (Kurulum sayfası dahil) açılır
                     val prefs = remember { getSharedPreferences("omni_onboarding", Context.MODE_PRIVATE) }
                     var onboarded by remember { mutableStateOf(prefs.getBoolean("onboarding_done", false)) }
-                    if (onboarded) {
-                        AppRoot()
-                    } else {
-                        OnboardingScreen(onFinished = {
-                            prefs.edit().putBoolean("onboarding_done", true).apply()
-                            onboarded = true
-                        })
+                    androidx.compose.animation.Crossfade(
+                        targetState = onboarded, animationSpec = tween(450), label = "onbFade",
+                    ) { done ->
+                        if (done) {
+                            AppRoot()
+                        } else {
+                            OnboardingScreen(onFinished = {
+                                prefs.edit().putBoolean("onboarding_done", true).apply()
+                                onboarded = true
+                            })
+                        }
                     }
                 }
             }
