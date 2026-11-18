@@ -203,7 +203,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
                 val st = settings.value
                 // iOS tarzı banner açıksa bildirim adada değil cam banner olarak gösterilir; pencere eklenemezse adaya düşer
-                if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) showNotif(n)
+                if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
             is IslandEvent.ShazamListening -> shazam.onListening()
@@ -270,7 +270,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Call -> callKey != null && !callIncoming
         Bg.Shazam -> extraBg() && shazam.phase == ShazamPhase.Listening
         Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
-        Bg.Notif -> settings.value.dotMode && notifBg != null
+        Bg.Notif -> settings.value.dotMode && notif.bg != null
         Bg.Privacy -> privacy.content != null
     }
 
@@ -285,7 +285,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Rec -> rec.content()
         Bg.Shazam -> IslandContent.Shazam(ShazamPhase.Listening)
         Bg.Timer -> timerContent
-        Bg.Notif -> notifBg
+        Bg.Notif -> notif.bg
         Bg.Privacy -> privacy.content
         Bg.Call -> if (callKey == null) null else IslandContent.Call(
             callName, callIncoming,
@@ -300,7 +300,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.ScreenRec -> if (c.phase != RecPhase.Saved) Bg.Rec else null
         is IslandContent.Call -> if (!c.isIncoming) Bg.Call else null
         is IslandContent.Shazam -> if (extraBg() && c.phase == ShazamPhase.Listening) Bg.Shazam else null
-        is IslandContent.Notif -> if (settings.value.dotMode && notifBg == c) Bg.Notif else null
+        is IslandContent.Notif -> if (settings.value.dotMode && notif.bg == c) Bg.Notif else null
         is IslandContent.Status -> when {
             extraBg() && c.kind == StatusKind.Timer && c.endsAt > System.currentTimeMillis() && timerContent?.endsAt == c.endsAt -> Bg.Timer
             (c.kind == StatusKind.Camera || c.kind == StatusKind.Mic) && privacy.content == c -> Bg.Privacy
@@ -337,47 +337,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             timerContent = null
             val cur = ui.value
             if (cur.content is IslandContent.Status && !cur.expanded) rest() else update { it }
-        }
-    }
-
-    // ---- Bildirim süreleri: genişletilmiş (varsayılan 5 sn) + küçültülmüş (varsayılan 10 sn)
-    private var notifBg: IslandContent.Notif? = null     // nokta modunda küçültülmüş süre boyunca noktada tutulan (en son) bildirim
-    private var notifJob: Job? = null
-
-    private fun showNotif(n: IslandContent.Notif) {
-        val s = settings.value
-        collapseJob?.cancel()
-        notifJob?.cancel()
-        notifBg = if (s.dotMode) n else null
-        update { IslandUiState(n, expanded = true) }
-        notifJob = scope.launch {
-            delay((s.notifExpandedSec * 1000f).toLong())
-            compactNotif(n)
-        }
-    }
-
-    /** Genişletilmiş süre bitti ya da kullanıcı küçülttü: bildirim küçültülmüş halde (nokta modunda nokta) bir süre daha kalır. */
-    private suspend fun compactNotif(n: IslandContent.Notif) {
-        val s = settings.value
-        val cur = ui.value
-        if (cur.content == n && cur.expanded) {
-            update { it.copy(expanded = false) }
-            delay(s.settleMs())
-        }
-        delay((s.notifCompactSec * 1000f).toLong())
-        finishNotif()
-    }
-
-    private fun clearNotif() { notifJob?.cancel(); notifJob = null; notifBg = null }
-
-    /** Bildirim süresi doldu / bildirim silindi ya da açıldı: ada bir sonraki olaya (ya da boşa) döner. */
-    private fun finishNotif() {
-        notifBg = null
-        val cur = ui.value
-        when {
-            cur.content !is IslandContent.Notif -> update { it }
-            cur.expanded -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
-            else -> rest()
         }
     }
 
@@ -641,6 +600,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val rec by lazy { ScreenRecController(host) }
     private val privacy by lazy { PrivacyController(host) }
     private val appHide by lazy { AppHideController(host) }
+    private val notif by lazy { NotifController(host) }
 
     /** Ekran kaydı içeriğini adaya yayınlar; kayıt daha yeni bir olayın arkasındaysa yalnızca yan baloncuğu yenilenir. */
     private fun publishRec(c: IslandContent.ScreenRec, expanded: Boolean) {
@@ -848,8 +808,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val n = cur.content as? IslandContent.Notif
         if (n != null) {
             // Bildirim: açıksa küçültülmüş süreye geçer; zaten küçültülmüşse (dokunma vb.) hemen kapanır
-            if (cur.expanded) { notifJob?.cancel(); collapseJob?.cancel(); notifJob = scope.launch { compactNotif(n) } }
-            else { clearNotif(); finishNotif() }
+            if (cur.expanded) { notif.compactNow(n) }
+            else { notif.clear(); notif.finish() }
             return
         }
         collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
@@ -858,7 +818,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Bildirimi sistemden de siler ve adayı kapatır. */
     private fun dismissNotif(n: IslandContent.Notif) {
         IslandNotificationListener.dismiss(n.key)
-        clearNotif(); finishNotif()
+        notif.clear(); notif.finish()
     }
 
     /** Bildirim üstünde sağa / sola kaydırma. */
@@ -1102,7 +1062,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     /** Bildirime dokununca: bildirimin kendi hedefi (ör. ilgili sohbet) açılır; yoksa uygulamanın ana ekranı. */
     private fun openNotification(n: IslandContent.Notif) {
-        clearNotif()      // açılan bildirim adada kalmaz
+        notif.clear()      // açılan bildirim adada kalmaz
         val open: () -> Unit = {
             val pi = n.intent
             val sent = pi != null && runCatching {
