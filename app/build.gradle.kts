@@ -14,6 +14,9 @@ android {
         targetSdk = 35
         versionCode = 3
         versionName = "1.2"
+        // ML Kit çeviri her işlemci mimarisi için ayrı yerel kütüphane taşır (APK ~115 MB oluyordu).
+        // Modern telefonlar arm64-v8a kullanır; yalnızca onu paketlemek boyutu belirgin küçültür.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     // Sabit imza: GitHub Secrets doluysa kullanılır, yoksa debug anahtarına düşer
