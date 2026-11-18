@@ -452,19 +452,19 @@ private fun DrawScope.drawPhone3D(
 private const val FACE_K = 9f           // piksel / mm
 private const val FACE_MARGIN = 3f      // görüntü kenarındaki şeffaf pay (piksel)
 
-private fun buildPhoneFace(): ImageBitmap {
+private fun buildPhoneFace(withIsland: Boolean): ImageBitmap {
     val bw = (PH_W * FACE_K + 2 * FACE_MARGIN).roundToInt()
     val bh = (PH_H * FACE_K + 2 * FACE_MARGIN).roundToInt()
     val bmp = ImageBitmap(bw, bh)
     val canvas = androidx.compose.ui.graphics.Canvas(bmp)
     CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, canvas, Size(bw.toFloat(), bh.toFloat())) {
-        withTransform({ translate(FACE_MARGIN, FACE_MARGIN); scale(FACE_K, FACE_K, Offset.Zero) }) { drawFaceMm() }
+        withTransform({ translate(FACE_MARGIN, FACE_MARGIN); scale(FACE_K, FACE_K, Offset.Zero) }) { drawFaceMm(withIsland) }
     }
     return bmp
 }
 
 /** Tüm koordinatlar mm; başlangıç = telefonun sol-üst köşesi. */
-private fun DrawScope.drawFaceMm() {
+private fun DrawScope.drawFaceMm(withIsland: Boolean) {
     val bodyR = PH_R
     // Titanyum ön kenar
     drawRoundRect(
@@ -486,7 +486,7 @@ private fun DrawScope.drawFaceMm() {
     val clip = Path().apply { addRoundRect(RoundRect(sx, sy, sx + sw, sy + sh, CornerRadius(8.4f))) }
     clipPath(clip) {
         drawWallpaper(sx, sy, sw, sh)
-        drawLockScreen(sx, sy, sw, sh)
+        drawLockScreen(sx, sy, sw, sh, withIsland)
         // Camdaki yansıma
         drawRect(
             Brush.linearGradient(
@@ -549,15 +549,18 @@ private fun DrawScope.drawWallpaper(sx: Float, sy: Float, sw: Float, sh: Float) 
     drawPoints(buckets[2], PointMode.Points, gl.copy(alpha = 0.55f), 0.20f, StrokeCap.Round)
 }
 
-private fun DrawScope.drawLockScreen(sx: Float, sy: Float, sw: Float, sh: Float) {
+private fun DrawScope.drawLockScreen(sx: Float, sy: Float, sw: Float, sh: Float, withIsland: Boolean) {
     val cx = sx + sw / 2f
     // Dynamic Island
     val iw = 20.8f
     val ih = 6.2f
     val itop = sy + 2.1f
-    drawRoundRect(Color.Black, Offset(cx - iw / 2f, itop), Size(iw, ih), CornerRadius(ih / 2f))
-    drawCircle(Color(0xFF0B1022), 1.0f, Offset(cx + 7.2f, itop + ih / 2f))
-    drawCircle(Color(0xFF2B3A66).copy(alpha = 0.8f), 0.38f, Offset(cx + 7.0f, itop + ih / 2f - 0.25f))
+    // Ayarlar önizlemesinde (withIsland = false) telefonun kendi adası çizilmez; yerine gerçek ada gelir
+    if (withIsland) {
+        drawRoundRect(Color.Black, Offset(cx - iw / 2f, itop), Size(iw, ih), CornerRadius(ih / 2f))
+        drawCircle(Color(0xFF0B1022), 1.0f, Offset(cx + 7.2f, itop + ih / 2f))
+        drawCircle(Color(0xFF2B3A66).copy(alpha = 0.8f), 0.38f, Offset(cx + 7.0f, itop + ih / 2f - 0.25f))
+    }
 
     // Durum çubuğu (sağ üst): sinyal, wifi, pil
     val white = Color.White.copy(alpha = 0.92f)
@@ -724,9 +727,14 @@ private fun min2(a: Float, b: Float) = if (a < b) a else b
 internal class ShowcaseRun(val id: Int, val script: suspend (MutableStateFlow<IslandUiState>, IslandSettings) -> Unit)
 
 private var phoneFaceCache: ImageBitmap? = null
+private var phoneFaceNoIslandCache: ImageBitmap? = null
 
-private suspend fun obtainPhoneFace(): ImageBitmap =
-    phoneFaceCache ?: withContext(Dispatchers.Default) { buildPhoneFace() }.also { phoneFaceCache = it }
+private suspend fun obtainPhoneFace(withIsland: Boolean = true): ImageBitmap =
+    if (withIsland) {
+        phoneFaceCache ?: withContext(Dispatchers.Default) { buildPhoneFace(true) }.also { phoneFaceCache = it }
+    } else {
+        phoneFaceNoIslandCache ?: withContext(Dispatchers.Default) { buildPhoneFace(false) }.also { phoneFaceNoIslandCache = it }
+    }
 
 /** Animasyon zamanı: bu değerde telefon tam karşıdan görünür (giriş animasyonunun 0.10 anı). */
 private const val FRONT_T = 0.10f
@@ -1130,6 +1138,15 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
                     .clip(RoundedCornerShape(with(dens) { (SCREEN_CORNER_MM * pxPerMm).toDp() })),
             ) {
                 CompositionLocalProvider(LocalDensity provides Density(dens.density * k, dens.fontScale)) {
+                    // Asistan gösterimi: gerçek servisteki gibi ekran kenarlarında renkli parlama (adanın altında kalır)
+                    if (run.id == 8) {
+                        val uiNow by uiState.collectAsState()
+                        val glowOn = remember { MutableStateFlow(false) }
+                        LaunchedEffect(uiNow.content, uiNow.expanded) {
+                            glowOn.value = uiNow.content is IslandContent.Assistant && uiNow.expanded
+                        }
+                        ScreenEdgeGlow(glowOn, SCREEN_CORNER_MM * pxPerMm)
+                    }
                     Box(Modifier.fillMaxSize().offset(x = c.offsetXDp.dp, y = (topV - c.windowPadDp()).dp)) {
                         IslandRoot(
                             state = uiState, settingsFlow = cfgFlow, lyricsFlow = lyricsFlow,
@@ -1173,8 +1190,9 @@ internal fun p3dFullWidthDp(): Float = (P3D_FULL_H_DP - 2f * P3D_FULL_PAD_DP) * 
  */
 @Composable
 internal fun Phone3DPreview(phoneWDp: Float, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    var face by remember { mutableStateOf<ImageBitmap?>(phoneFaceCache) }
-    LaunchedEffect(Unit) { if (face == null) face = obtainPhoneFace() }
+    // Telefonun kendi dinamik adası çizilmez: önizlemedeki ada yalnızca uygulamanın gerçek adasıdır
+    var face by remember { mutableStateOf<ImageBitmap?>(phoneFaceNoIslandCache) }
+    LaunchedEffect(Unit) { if (face == null) face = obtainPhoneFace(false) }
 
     val paint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG) }
     val path = remember { Path() }

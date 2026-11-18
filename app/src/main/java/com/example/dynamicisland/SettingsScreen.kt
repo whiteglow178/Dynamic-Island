@@ -170,7 +170,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
             SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
         }
-        sec("Kamera / mikrofon göstergesi", "Bir uygulama kamerayı ya da mikrofonu kullanırken ada haber verir") {
+        sec("Kamera / mikrofon göstergesi", "Bir uygulama kamerayı ya da mikrofonu kullanırken ada haber verir", PreviewKind.Privacy) {
             SwitchRow(
                 "Gösterge",
                 "Kamera ya da mikrofon açılınca ada kısa süre açılır, sonra yeşil (kamera) / turuncu (mikrofon) nokta olarak kalır. Nokta modunda ve normal adada çalışır. Hangi uygulamanın kullandığı Android tarafından verilmez",
@@ -246,7 +246,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 draft.notifDeleteSwipeUp) { on -> draft = draft.copy(notifDeleteSwipeUp = on, notifCollapseSwipeUp = if (on) false else draft.notifCollapseSwipeUp) }
         }
 
-        sec("Yan baloncuklar", "Adanın yanında ayrılan baloncuklar (müzik, ekran kaydı, arama)") {
+        sec("Yan baloncuklar", "Adanın yanında ayrılan baloncuklar (müzik, ekran kaydı, arama)", PreviewKind.SideBubbles) {
             SwitchRow("Olayları alt alta aç", "Birden fazla olay varken adaya dokununca (ya da aşağı kaydırınca) hepsi genişleyip alt alta kartlar halinde sıralanır. Karta dokununca ya da yukarı kaydırınca kapanır",
                 draft.stackExpand) { draft = draft.copy(stackExpand = it) }
             SectionDivider()
@@ -254,7 +254,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 draft.sideTapPromote) { draft = draft.copy(sideTapPromote = it) }
         }
 
-        sec("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)") {
+        sec("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)", PreviewKind.ScreenRec) {
             SwitchRow("Ekran kaydı adası", "Bildirim erişimi açık olmalı. Kayıt sırasında kırmızı nokta, dokununca süre ve durdur düğmesi", draft.screenRecEnabled) { draft = draft.copy(screenRecEnabled = it) }
             if (draft.screenRecEnabled) {
                 SubHeader("Açık ada genişliği")
@@ -499,6 +499,15 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
     // Pager durumu burada tutulur: görünen sayfanın türüne göre üstteki önizleme değişir
     val pager = rememberPagerState { pages.size }
     val kind = if (lyricsPage) PreviewKind.Island else (pages.getOrNull(pager.currentPage)?.kind ?: PreviewKind.Island)
+    // Sayfaya göre önizleme otomatik doğru hale gelir (örn. ilerleme çubuğu için müzik + açık ada); sonra dokunarak değiştirilebilir
+    val curTitle = pages.getOrNull(pager.currentPage)?.title
+    LaunchedEffect(pager.currentPage, lyricsPage) {
+        if (lyricsPage) return@LaunchedEffect
+        previewFocusFor(curTitle)?.let { f ->
+            f.mode?.let { mode = it }
+            f.expanded?.let { expanded = it }
+        }
+    }
     val sidePrefs by SideCallStore.flow(ctx).collectAsState()
     // Geniş ayarlar (tam genişlik asistan, kenar tuşları) için tam telefon gerekir
     val needsBig = when (kind) {
@@ -532,6 +541,20 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
     }
+}
+
+// ---------------------------------------------------------------- Sayfaya göre önizleme odağı
+/** [mode]: 0 bildirim, 1 müzik; [expanded]: ada açık mı. null = olduğu gibi bırak. */
+private class PreviewFocus(val mode: Int? = null, val expanded: Boolean? = null)
+
+private fun previewFocusFor(title: String?): PreviewFocus? = when (title) {
+    "Kapalı ada", "Konum", "Görünürlük", "Nokta modu" -> PreviewFocus(expanded = false)
+    "Açık ada" -> PreviewFocus(mode = 1, expanded = true)
+    "Bildirimler" -> PreviewFocus(mode = 0, expanded = true)
+    "Gökkuşağı modu", "Albüm arka planı", "Özel arka plan", "Özel albüm kapağı", "Liquid Glass",
+    "İlerleme çubuğu parıltısı", "Beğeni düğmesi", "Çerçeve" -> PreviewFocus(mode = 1, expanded = true)
+    "Renk", "Ekolayzır rengi", "Parıltı (Glow)" -> PreviewFocus(mode = 1, expanded = false)
+    else -> null
 }
 
 // ---------------------------------------------------------------- Yapışan (snap) ayar sayfaları
@@ -732,6 +755,9 @@ private fun PreviewCard(
         PreviewKind.Assistant -> cfg.assistantHeightDp
         PreviewKind.Favorites -> cfg.favoritesHeightDp(cfg.favoritePkgList().size)
         PreviewKind.SideCall -> 64f
+        PreviewKind.Privacy -> 60f
+        PreviewKind.ScreenRec -> 74f
+        PreviewKind.SideBubbles -> cfg.expandedHeightDp
     }
     // 3 boyutlu telefon: normal modda büyük çizilip üst kısmı gösterilir, tam modda tamamı karta sığar
     val phoneWDp = if (showBig) p3dFullWidthDp() else P3D_W_DP

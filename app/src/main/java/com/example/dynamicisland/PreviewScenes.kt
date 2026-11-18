@@ -26,9 +26,10 @@ import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Üstteki önizleme telefonunda hangi ayar grubunun gösterileceği. */
-internal enum class PreviewKind { Island, Assistant, Favorites, SideCall }
+internal enum class PreviewKind { Island, Assistant, Favorites, SideCall, Privacy, ScreenRec, SideBubbles }
 
 /** "Tam genişlik" gibi geniş ayarlar için ayarlar sayfasının üstüne binen, tamamı görünen telefon ölçüsü. */
 internal const val BIG_PHONE_W_DP = 200f
@@ -110,6 +111,9 @@ internal fun PreviewScene(kind: PreviewKind, cfg: IslandSettings) {
         PreviewKind.Assistant -> AssistantScene(cfg)
         PreviewKind.Favorites -> FavoritesScene(cfg)
         PreviewKind.SideCall -> SideCallScene(cfg)
+        PreviewKind.Privacy -> PrivacyScene(cfg)
+        PreviewKind.ScreenRec -> ScreenRecScene(cfg)
+        PreviewKind.SideBubbles -> SideBubblesScene(cfg)
         PreviewKind.Island -> Unit
     }
 }
@@ -123,6 +127,9 @@ internal fun previewHint(kind: PreviewKind, cfg: IslandSettings, bigDismissed: B
     }
     PreviewKind.Favorites -> if (cfg.favoritesEnabled) "Boştaki adaya dokununca açılan favori paneli" else "Favori uygulamalar kapalı"
     PreviewKind.SideCall -> "Gelen aramada kenar tuşları"
+    PreviewKind.Privacy -> if (cfg.privacyIndicator) "Kamera / mikrofon kullanılırken ada böyle haber verir" else "Gösterge kapalı"
+    PreviewKind.ScreenRec -> if (cfg.screenRecEnabled) "Ekran kaydı: geri sayım, kayıt ve kaydedildi" else "Ekran kaydı adası kapalı"
+    PreviewKind.SideBubbles -> "Müzik çalarken ekran kaydı yan baloncukta"
     PreviewKind.Island -> ""
 }
 
@@ -130,7 +137,12 @@ internal fun previewHint(kind: PreviewKind, cfg: IslandSettings, bigDismissed: B
 @Composable
 private fun AssistantScene(cfg: IslandSettings) {
     val open = if (cfg.assistantEnabled) rememberLoopOpen() else false
+    // Gerçek servisteki gibi: asistan açılınca ekran kenarlarında renkli parlama (adanın altında)
+    val glowOn = remember { MutableStateFlow(false) }
+    LaunchedEffect(open) { glowOn.value = open }
+    val cornerPx = with(LocalDensity.current) { 40.dp.toPx() }
     Box(Modifier.fillMaxSize()) {
+        if (cfg.assistantEnabled) ScreenEdgeGlow(glowOn, cornerPx)
         if (cfg.assistantEnabled && cfg.assistantFullWidth) {
             // IslandRoot ile aynı: ada kutusu yok, gerçek AssistantOrb ekranın solundan sağına çizilir
             val barAlpha by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 350 else 250), label = "orbBar")
@@ -204,5 +216,95 @@ private fun SideCallScene(cfg: IslandSettings) {
                 SideCallPill(p, {}, {})
             }
         }
+    }
+}
+
+
+// ---------------------------------------------------------------- Kamera / mikrofon göstergesi
+@Composable
+private fun PrivacyScene(cfg: IslandSettings) {
+    val open = if (cfg.privacyIndicator) rememberLoopOpen() else false
+    var cam by remember { mutableStateOf(true) }
+    LaunchedEffect(open) { if (!open) cam = !cam }     // her turda kamera <-> mikrofon
+    val content = remember(cam) {
+        IslandContent.Status(
+            kind = if (cam) StatusKind.Camera else StatusKind.Mic,
+            title = if (cam) "Kamera" else "Mikrofon",
+            subtitle = if (cam) "Kamera kullanılıyor" else "Mikrofon kullanılıyor",
+        )
+    }
+    val geo = islandGeo(cfg, false).copy(eh = 60.dp)
+    Box(Modifier.fillMaxSize()) {
+        PreviewPill(content, open, geo, cfg, Modifier.align(Alignment.TopCenter))
+    }
+}
+
+// ---------------------------------------------------------------- Gerçek IslandRoot ile döngüsel senaryo
+private suspend fun MutableStateFlow<IslandUiState>.pvOpen(c: IslandContent, side: List<IslandContent> = emptyList()) {
+    value = IslandUiState(content = c, expanded = false, side = side)
+    delay(300)
+    value = IslandUiState(content = c, expanded = true, side = side)
+}
+
+private suspend fun MutableStateFlow<IslandUiState>.pvClose() {
+    value = value.copy(expanded = false)
+    delay(900)
+    value = IslandUiState()
+    delay(500)
+}
+
+/** Gerçek [IslandRoot] (Dene gösterimiyle aynı yöntem): ayarlar canlı uygulanır, senaryo sürekli tekrarlanır. */
+@Composable
+private fun RootScene(cfg: IslandSettings, script: suspend (MutableStateFlow<IslandUiState>) -> Unit) {
+    val eff = cfg.effective()
+    val ui = remember { MutableStateFlow(IslandUiState()) }
+    val cfgFlow = remember { MutableStateFlow(eff) }
+    val lyricsFlow = remember { MutableStateFlow<LyricsState>(LyricsState.Idle) }
+    LaunchedEffect(eff) { cfgFlow.value = eff }
+    LaunchedEffect(Unit) { while (true) { script(ui); delay(300) } }
+    val topV = previewTop(cfg)
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().offset(x = cfg.offsetXDp.dp, y = (topV - eff.windowPadDp()).dp)) {
+            IslandRoot(
+                state = ui, settingsFlow = cfgFlow, lyricsFlow = lyricsFlow,
+                onTap = {}, onCommand = {}, onOutput = {},
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Ekran kaydı
+@Composable
+private fun ScreenRecScene(cfg: IslandSettings) {
+    if (!cfg.screenRecEnabled) return
+    RootScene(cfg) { ui ->
+        for (n in 3 downTo 1) {
+            ui.value = IslandUiState(content = IslandContent.ScreenRec(RecPhase.Countdown, count = n), expanded = false)
+            delay(900)
+        }
+        val t0 = System.currentTimeMillis()
+        ui.pvOpen(IslandContent.ScreenRec(RecPhase.Recording, startedAt = t0))
+        delay(2800)
+        ui.value = IslandUiState(content = IslandContent.ScreenRec(RecPhase.Saved, startedAt = t0, frozenMs = 3000L), expanded = true)
+        delay(1800)
+        ui.pvClose()
+    }
+}
+
+// ---------------------------------------------------------------- Yan baloncuklar
+@Composable
+private fun SideBubblesScene(cfg: IslandSettings) {
+    RootScene(cfg) { ui ->
+        val media = IslandContent.Media(
+            title = "Gece Yarısı", artist = "Demo Sanatçı", playing = true,
+            durationMs = 215_000L, positionMs = 42_000L, speed = 1f,
+            updatedAt = android.os.SystemClock.elapsedRealtime(),
+        )
+        val rec = IslandContent.ScreenRec(RecPhase.Recording, startedAt = System.currentTimeMillis())
+        ui.value = IslandUiState(content = media, expanded = false, side = listOf(rec))
+        delay(2200)
+        ui.value = IslandUiState(content = media, expanded = true, side = listOf(rec))
+        delay(2600)
+        ui.pvClose()
     }
 }
