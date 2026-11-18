@@ -127,7 +127,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
         IslandAccessibilityService.onChanged = { runCatching { reattach() } }
         scope.launch { IslandBus.events.collect(::handle) }
-        runCatching { startPrivacyMonitor() }
+        runCatching { privacy.start() }
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
         // Bildirim dinleyicisi sistem tarafından yeniden bağlanırken zaman alabilir (özellikle uzun süre sonra):
@@ -141,7 +141,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
-        scope.launch { settings.collect { s -> updateAppHidden(); refreshPrivacy(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); preloadFavorites(s) } }
+        scope.launch { settings.collect { s -> appHide.update(); privacy.refresh(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); preloadFavorites(s) } }
         scope.launch { lyrics.collect { update { it } } }
         // Kenar Cevapla / Reddet tuşları ayarı değişince (arama sürerken) güncelle
         scope.launch { SideCallStore.flow(applicationContext).collect { syncSideButtons() } }
@@ -184,7 +184,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.AppSwitched -> {
                 if ((swallowView != null || stretchView != null) && isPlayingMediaApp(e.to)) abortExit()   // müzik uygulamasına geri dönüldü
                 val wasMusic = inMusicApp
-                updateAppHidden(e.to)           // seçili uygulamada ada gizlenir
+                appHide.update(e.to)           // seçili uygulamada ada gizlenir
                 updateInMusicApp(e.to)          // önce "müzik uygulamasında mıyım" güncellenir
                 val started = onAppSwitched(e.from)   // çıkış animasyonu varsa ada yutma durumuna geçer (gizleme atlanır)
                 if (started) exitHold = settings.value.hideInMusicApp && wasMusic   // panel sürerken gelen ikinci olay gizlemeyi bozmasın
@@ -198,7 +198,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 (e.content as? IslandContent.Status)?.let { onTimerStatus(it) }
                 showTemporarily(e.content, e.holdMs)
             }
-            is IslandEvent.Notification -> if (!assistantActive && callKey == null && !appHidden) scope.launch {
+            is IslandEvent.Notification -> if (!assistantActive && callKey == null && !appHide.hidden) scope.launch {
                 val icon = iconFor(e.pkg)
                 val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
                 val st = settings.value
@@ -271,7 +271,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Shazam -> extraBg() && shazam.phase == ShazamPhase.Listening
         Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
         Bg.Notif -> settings.value.dotMode && notifBg != null
-        Bg.Privacy -> privacyContent != null
+        Bg.Privacy -> privacy.content != null
     }
 
     /** Biten olayları listeden çıkarır, yeni başlayanı sona (= en yeni) ekler. */
@@ -286,7 +286,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Shazam -> IslandContent.Shazam(ShazamPhase.Listening)
         Bg.Timer -> timerContent
         Bg.Notif -> notifBg
-        Bg.Privacy -> privacyContent
+        Bg.Privacy -> privacy.content
         Bg.Call -> if (callKey == null) null else IslandContent.Call(
             callName, callIncoming,
             if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince),
@@ -303,7 +303,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Notif -> if (settings.value.dotMode && notifBg == c) Bg.Notif else null
         is IslandContent.Status -> when {
             extraBg() && c.kind == StatusKind.Timer && c.endsAt > System.currentTimeMillis() && timerContent?.endsAt == c.endsAt -> Bg.Timer
-            (c.kind == StatusKind.Camera || c.kind == StatusKind.Mic) && privacyContent == c -> Bg.Privacy
+            (c.kind == StatusKind.Camera || c.kind == StatusKind.Mic) && privacy.content == c -> Bg.Privacy
             else -> null
         }
         else -> null
@@ -337,80 +337,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             timerContent = null
             val cur = ui.value
             if (cur.content is IslandContent.Status && !cur.expanded) rest() else update { it }
-        }
-    }
-
-    // ---------------------------------------------------------------- Uygulamaya özel gizleme
-    private var appHidden = false
-
-    /** Ön plandaki uygulama gizleme listesindeyse ada tamamen gizlenir ve dokunuşu geçirir; çıkınca geri gelir. */
-    private fun updateAppHidden(fg: String? = IslandAccessibilityService.currentFg) {
-        val s = settings.value
-        val hide = s.hideInApps && fg != null && fg in s.hiddenAppList()
-        if (hide == appHidden) return
-        appHidden = hide
-        composeView?.visibility = if (hide) View.INVISIBLE else View.VISIBLE
-        if (hide) setTouchable(false)
-        else scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, sideKey(ui.value))) }
-    }
-
-    // ---------------------------------------------------------------- Kamera / mikrofon göstergesi (nokta modundan bağımsız ayrı ayar)
-    // Kamera: CameraManager "kullanılamıyor" bildirimi; mikrofon: AudioRecordingCallback. İkisi de izin gerektirmez.
-    private var privacyContent: IslandContent.Status? = null
-    private val camBusy = HashSet<String>()
-    private var micBusy = false
-    private var camCb: android.hardware.camera2.CameraManager.AvailabilityCallback? = null
-    private var micCb: android.media.AudioManager.AudioRecordingCallback? = null
-
-    private fun startPrivacyMonitor() {
-        val h = android.os.Handler(android.os.Looper.getMainLooper())
-        val cm = getSystemService(android.hardware.camera2.CameraManager::class.java)
-        val cb = object : android.hardware.camera2.CameraManager.AvailabilityCallback() {
-            override fun onCameraUnavailable(cameraId: String) { camBusy.add(cameraId); runCatching { refreshPrivacy() } }
-            override fun onCameraAvailable(cameraId: String) { camBusy.remove(cameraId); runCatching { refreshPrivacy() } }
-        }
-        camCb = cb
-        runCatching { cm.registerAvailabilityCallback(cb, h) }
-        val am = getSystemService(android.media.AudioManager::class.java)
-        val mcb = object : android.media.AudioManager.AudioRecordingCallback() {
-            override fun onRecordingConfigChanged(configs: List<android.media.AudioRecordingConfiguration>) {
-                micBusy = configs.isNotEmpty()
-                runCatching { refreshPrivacy() }
-            }
-        }
-        micCb = mcb
-        runCatching { am.registerAudioRecordingCallback(mcb, h) }
-        // Servis başlarken zaten süren bir kayıt varsa onu da yakala
-        runCatching { micBusy = am.activeRecordingConfigurations.isNotEmpty() }
-    }
-
-    private fun stopPrivacyMonitor() {
-        camCb?.let { cb -> runCatching { getSystemService(android.hardware.camera2.CameraManager::class.java).unregisterAvailabilityCallback(cb) } }
-        micCb?.let { cb -> runCatching { getSystemService(android.media.AudioManager::class.java).unregisterAudioRecordingCallback(cb) } }
-        camCb = null; micCb = null
-    }
-
-    /** Kamera / mikrofon durumuna göre göstergeyi günceller: başlayınca kısa süre panel açılır, sonra nokta olarak kalır. */
-    private fun refreshPrivacy() {
-        val s = settings.value
-        val on = s.privacyIndicator
-        val cam = on && camBusy.isNotEmpty()
-        val mic = on && micBusy
-        val next = if (!cam && !mic) null else IslandContent.Status(
-            kind = if (cam) StatusKind.Camera else StatusKind.Mic,
-            title = when { cam && mic -> "Kamera ve mikrofon kullanılıyor"; cam -> "Kamera kullanılıyor"; else -> "Mikrofon kullanılıyor" },
-        )
-        val prev = privacyContent
-        if (next == prev) return
-        privacyContent = next
-        val cur = ui.value
-        val curStatus = cur.content as? IslandContent.Status
-        when {
-            next != null && prev?.title != next.title && !assistantActive && callKey == null -> showTemporarily(next, 4_000L)
-            next == null && curStatus != null && (curStatus.kind == StatusKind.Camera || curStatus.kind == StatusKind.Mic) -> {
-                if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } } else rest()
-            }
-            else -> update { it }
         }
     }
 
@@ -696,6 +622,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override val settings: IslandSettings get() = this@IslandOverlayService.settings.value
         override val content: IslandContent get() = ui.value.content
         override val blocked: Boolean get() = assistantActive || (callKey != null && callIncoming)
+        override val expanded: Boolean get() = ui.value.expanded
+        override val busy: Boolean get() = assistantActive || callKey != null
+        override fun showTemporarily(c: IslandContent, holdMs: Long) = this@IslandOverlayService.showTemporarily(c, holdMs)
+        override fun rest() = this@IslandOverlayService.rest()
+        override fun setIslandHidden(hidden: Boolean) {
+            composeView?.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+            if (hidden) setTouchable(false)
+            else this@IslandOverlayService.scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, this@IslandOverlayService.settings.value, ui.value.swallow, sideKey(ui.value))) }
+        }
         override fun update(f: (IslandUiState) -> IslandUiState) = this@IslandOverlayService.update(f)
         override fun cancelCollapse() { collapseJob?.cancel() }
         override fun collapseSoon() { collapseJob?.cancel(); collapseJob = this@IslandOverlayService.scope.launch { collapseAndRest() } }
@@ -704,6 +639,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
     private val shazam by lazy { ShazamController(host) }
     private val rec by lazy { ScreenRecController(host) }
+    private val privacy by lazy { PrivacyController(host) }
+    private val appHide by lazy { AppHideController(host) }
 
     /** Ekran kaydı içeriğini adaya yayınlar; kayıt daha yeni bir olayın arkasındaysa yalnızca yan baloncuğu yenilenir. */
     private fun publishRec(c: IslandContent.ScreenRec, expanded: Boolean) {
@@ -1542,7 +1479,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { attachEdgeGlow() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
-        composeView?.visibility = if (appHidden) View.INVISIBLE else View.VISIBLE
+        composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
         scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, sideKey(ui.value))) }
     }
 
@@ -1958,7 +1895,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val blurOk = pad == 0 && sideExtra == 0   // pay / yan baloncuk varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && s.favoritesReady())) && !appHidden)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && s.favoritesReady())) && !appHide.hidden)
         when {
             k.kind == 0 && s.showIdle -> {
                 // Boşta da görünür: küçük ada boyutunda, dokunuşsuz
@@ -2119,7 +2056,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun bringIslandToFront() {
         runCatching { detachOverlay() }
         safeAttachOverlay()
-        composeView?.visibility = if (appHidden) View.INVISIBLE else View.VISIBLE
+        composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
         scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, sideKey(ui.value))) }
     }
 
@@ -2160,7 +2097,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     override fun onDestroy() {
         IslandAccessibilityService.onChanged = null
-        runCatching { stopPrivacyMonitor() }
+        runCatching { privacy.stop() }
         lyricsJob?.cancel()
         callTickJob?.cancel(); callEndJob?.cancel()
         runCatching { sideCall.hide() }
