@@ -192,8 +192,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandEvent.Call -> onCall(e)
             is IslandEvent.CallEnded -> onCallEnded(e.key)
-            is IslandEvent.ScreenRec -> onScreenRec(e)
-            is IslandEvent.ScreenRecGone -> onScreenRecGone(e)
+            is IslandEvent.ScreenRec -> rec.onScreenRec(e)
+            is IslandEvent.ScreenRecGone -> rec.onScreenRecGone(e)
             is IslandEvent.Status -> if (!assistantActive && callKey == null) {
                 (e.content as? IslandContent.Status)?.let { onTimerStatus(it) }
                 showTemporarily(e.content, e.holdMs)
@@ -206,9 +206,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) showNotif(n)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
-            is IslandEvent.ShazamListening -> onShazamListening()
-            is IslandEvent.ShazamFound -> onShazamFound(e)
-            is IslandEvent.ShazamGone -> onShazamGone()
+            is IslandEvent.ShazamListening -> shazam.onListening()
+            is IslandEvent.ShazamFound -> shazam.onFound(e)
+            is IslandEvent.ShazamGone -> shazam.onGone()
             is IslandEvent.ShowFavorites -> if (!assistantActive && callKey == null && ui.value.content is IslandContent.Idle) openFavorites()
         }
     }
@@ -266,9 +266,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun bgActive(b: Bg): Boolean = when (b) {
         Bg.Media -> mediaBgActive() && !hidingMedia()
-        Bg.Rec -> recPhase.let { it == RecPhase.Countdown || it == RecPhase.Recording || it == RecPhase.Processing }
+        Bg.Rec -> rec.phase.let { it == RecPhase.Countdown || it == RecPhase.Recording || it == RecPhase.Processing }
         Bg.Call -> callKey != null && !callIncoming
-        Bg.Shazam -> extraBg() && shazamPhase == ShazamPhase.Listening
+        Bg.Shazam -> extraBg() && shazam.phase == ShazamPhase.Listening
         Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
         Bg.Notif -> settings.value.dotMode && notifBg != null
         Bg.Privacy -> privacyContent != null
@@ -282,7 +282,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun bgContent(b: Bg): IslandContent? = when (b) {
         Bg.Media -> lastMedia
-        Bg.Rec -> recContent()
+        Bg.Rec -> rec.content()
         Bg.Shazam -> IslandContent.Shazam(ShazamPhase.Listening)
         Bg.Timer -> timerContent
         Bg.Notif -> notifBg
@@ -600,7 +600,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         syncBgOrder()
         if (callKey != null && callIncoming) { publishCall(); return }     // gelen arama hep ortada
         // Shazam hâlâ dinliyorsa (araya bildirim vb. girdiyse) dinleme görünümüne dön
-        if (!extraBg() && shazamPhase == ShazamPhase.Listening) {
+        if (!extraBg() && shazam.phase == ShazamPhase.Listening) {
             update { IslandUiState(IslandContent.Shazam(ShazamPhase.Listening), expanded = false) }
             return
         }
@@ -671,7 +671,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandContent.Status -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
             is IslandContent.Shazam -> {
                 // Bulunan şarkıya dokununca Shazam açılır; dinlerken dokunma "Listening..." panelini açar / küçültür
-                if ((cur.content as IslandContent.Shazam).phase == ShazamPhase.Found) { sendCallIntent(shazamOpen); endShazam() }
+                if ((cur.content as IslandContent.Shazam).phase == ShazamPhase.Found) { sendCallIntent(shazam.open); shazam.end() }
                 else if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
                 else { collapseJob?.cancel(); update { it.copy(expanded = true) } }
             }
@@ -681,87 +681,32 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     RecPhase.Recording ->
                         if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
                         else { update { it.copy(expanded = true) }; scheduleCollapse(6_000) }
-                    RecPhase.Saved -> { sendCallIntent(recOpen); endRec() }   // kaydı galeride aç
+                    RecPhase.Saved -> { sendCallIntent(rec.open); rec.end() }   // kaydı galeride aç
                     else -> Unit
                 }
             }
         }
     }
 
-    // ---------------------------------------------------------------- Shazam (dinleme animasyonu + bulunan şarkı)
-    private var shazamPhase: ShazamPhase? = null
-    private var shazamOpen: android.app.PendingIntent? = null
-    private var shazamJob: Job? = null
-    private val SHAZAM_LISTEN_MAX_MS = 25_000L     // sonuç gelmezse dinleme görünümü en fazla bu kadar kalır
-    private val SHAZAM_GONE_GRACE_MS = 1_500L      // dinleme bildirimi kalkınca sonuç bildiriminin gelmesi için tolerans
-    private val SHAZAM_HOLD_MS = 7_000L            // bulunan şarkı panelinin açık kalma süresi
-
-    private fun shazamBlocked() = assistantActive || (callKey != null && callIncoming)
-
-    /** Shazam dinlemeye başladı: ada kapalı halde kalır, solda Shazam logosu + sağda ses dalgası gösterilir. */
-    private fun onShazamListening() {
-        if (shazamBlocked()) return
-        shazamPhase = ShazamPhase.Listening
-        shazamOpen = null
-        collapseJob?.cancel()
-        update { IslandUiState(IslandContent.Shazam(ShazamPhase.Listening), expanded = false) }
-        shazamJob?.cancel()
-        shazamJob = scope.launch { delay(SHAZAM_LISTEN_MAX_MS); if (shazamPhase == ShazamPhase.Listening) endShazam() }
+    // ---------------------------------------------------------------- Ayrı dosyalara taşınan olaylar
+    // Shazam -> ShazamController.kt, ekran kaydı -> ScreenRecController.kt. Servisle konuşmaları IslandHost üzerinden olur.
+    private val host = object : IslandHost {
+        override val scope: kotlinx.coroutines.CoroutineScope get() = this@IslandOverlayService.scope
+        override val context: android.content.Context get() = this@IslandOverlayService
+        override val settings: IslandSettings get() = this@IslandOverlayService.settings.value
+        override val content: IslandContent get() = ui.value.content
+        override val blocked: Boolean get() = assistantActive || (callKey != null && callIncoming)
+        override fun update(f: (IslandUiState) -> IslandUiState) = this@IslandOverlayService.update(f)
+        override fun cancelCollapse() { collapseJob?.cancel() }
+        override fun collapseSoon() { collapseJob?.cancel(); collapseJob = this@IslandOverlayService.scope.launch { collapseAndRest() } }
+        override fun send(pi: android.app.PendingIntent?) = sendCallIntent(pi)
+        override fun publishScreenRec(c: IslandContent.ScreenRec, expanded: Boolean) = publishRec(c, expanded)
     }
+    private val shazam by lazy { ShazamController(host) }
+    private val rec by lazy { ScreenRecController(host) }
 
-    /** Şarkı bulundu: ada genişler, kapak patlama animasyonuyla belirir; şarkı adı + sanatçı gösterilir. */
-    private fun onShazamFound(e: IslandEvent.ShazamFound) {
-        if (shazamBlocked()) return
-        if (e.title.isBlank() && e.artist.isBlank()) return
-        shazamPhase = ShazamPhase.Found
-        shazamOpen = e.open
-        collapseJob?.cancel()
-        // Dinleme kapalı adadaysa aynı içerik türü: ada yerinde büyür (logo + dalga bulanıp kaybolur)
-        update { IslandUiState(IslandContent.Shazam(ShazamPhase.Found, e.title, e.artist, e.cover), expanded = true) }
-        shazamJob?.cancel()
-        shazamJob = scope.launch { delay(SHAZAM_HOLD_MS); if (shazamPhase == ShazamPhase.Found) endShazam() }
-    }
-
-    /** Dinleme bildirimi kalktı / eşleşme yok: kısa bir tolerans sonra ada eski haline döner. */
-    private fun onShazamGone() {
-        if (shazamPhase != ShazamPhase.Listening) return
-        shazamJob?.cancel()
-        shazamJob = scope.launch { delay(SHAZAM_GONE_GRACE_MS); if (shazamPhase == ShazamPhase.Listening) endShazam() }
-    }
-
-    /** Genişlemiş dinleme panelindeki X: Shazam'ın dinleme bildirimini kapatmayı dener ve adayı kapatır. */
-    private fun onShazamStop() {
-        IslandNotificationListener.stopShazamListening()
-        endShazam()
-    }
-
-    private fun endShazam() {
-        shazamJob?.cancel(); shazamJob = null
-        shazamPhase = null; shazamOpen = null
-        if (ui.value.content is IslandContent.Shazam) {
-            collapseJob?.cancel()
-            collapseJob = scope.launch { collapseAndRest() }
-        } else update { it }      // yan noktadaki Shazam dinleme olayı kalksın
-    }
-
-    // ---------------------------------------------------------------- Ekran kaydı (sistem kaydedici; izin gerektirmez)
-    private var recPhase: RecPhase? = null
-    private var recSince = 0L
-    private var recFrozenMs = 0L
-    private var recCount = 0
-    private var recThumb: ImageBitmap? = null
-    private var recStop: android.app.PendingIntent? = null
-    private var recOpen: android.app.PendingIntent? = null
-    private var recTimeoutJob: Job? = null
-    private var recSavedJob: Job? = null
-    private var recThumbJob: Job? = null
-    private var recViaA11y = false     // kayıt yüzen çubuktaki süre yazısından algılandı (bildirimdeki "bitti" sinyallerini yok say)
-
-    private fun recContent(): IslandContent.ScreenRec? =
-        recPhase?.let { IslandContent.ScreenRec(it, recSince, recFrozenMs, recCount, recThumb) }
-
-    private fun publishRec(expanded: Boolean) {
-        val c = recContent() ?: return
+    /** Ekran kaydı içeriğini adaya yayınlar; kayıt daha yeni bir olayın arkasındaysa yalnızca yan baloncuğu yenilenir. */
+    private fun publishRec(c: IslandContent.ScreenRec, expanded: Boolean) {
         if (assistantActive || (callKey != null && callIncoming)) return
         syncBgOrder()
         // Kayıt, daha yeni bir olayın (müzik / arama) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
@@ -772,161 +717,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         collapseJob?.cancel()
         update { IslandUiState(c, expanded = expanded) }
-    }
-
-    private fun freezeRec() {
-        if (recFrozenMs == 0L && recSince > 0L) recFrozenMs = (System.currentTimeMillis() - recSince).coerceAtLeast(0L)
-    }
-
-    /** Kayıt bitti ama kaydedildi bildirimi gelmediyse (iptal / hata) spinner sonsuza dek dönmesin. */
-    private fun armRecTimeout() {
-        recTimeoutJob?.cancel()
-        recTimeoutJob = scope.launch { delay(20_000); if (recPhase == RecPhase.Processing) endRec() }
-    }
-
-    private fun endRec() {
-        recTimeoutJob?.cancel(); recSavedJob?.cancel(); recThumbJob?.cancel()
-        recPhase = null; recSince = 0L; recFrozenMs = 0L; recCount = 0
-        recThumb = null; recStop = null; recOpen = null; recViaA11y = false
-        if (ui.value.content is IslandContent.ScreenRec) {
-            collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
-        } else {
-            update { it }      // kayıt yan baloncuktaydı: baloncuk adaya geri birleşir
-        }
-    }
-
-    private fun onScreenRec(e: IslandEvent.ScreenRec) {
-        if (!settings.value.screenRecEnabled) return
-        if (e.phase != RecPhase.Processing) recTimeoutJob?.cancel()
-        recSavedJob?.cancel()
-        val now = System.currentTimeMillis()
-        when (e.phase) {
-            RecPhase.Countdown -> {
-                recPhase = RecPhase.Countdown; recCount = e.count; recSince = 0L; recFrozenMs = 0L; recThumb = null
-                publishRec(false)
-                // Rakam bir yerde takılı kalırsa ada geri sayımda kalmasın
-                recTimeoutJob = scope.launch { delay(6_000); if (recPhase == RecPhase.Countdown) endRec() }
-            }
-            RecPhase.Recording -> {
-                val first = recPhase != RecPhase.Recording
-                recPhase = RecPhase.Recording; recStop = e.stop
-                if (first) {
-                    recViaA11y = e.key == "a11y"
-                    recSince = e.startedAt.takeIf { it in 1..now } ?: now
-                    recFrozenMs = 0L; recThumb = null
-                    publishRec(false)
-                } else if (ui.value.content !is IslandContent.ScreenRec) publishRec(false)
-            }
-            RecPhase.Processing -> {
-                // Kayıt görmediysek (ör. yüzen ada hazır beklerken) işleniyor animasyonu başlatma
-                if (recPhase != RecPhase.Recording && recPhase != RecPhase.Processing) return
-                freezeRec()
-                if (recPhase != RecPhase.Processing) { recPhase = RecPhase.Processing; publishRec(false); armRecTimeout() }
-            }
-            RecPhase.Saved -> {
-                // Kayıt başlamadan gelen "kaydedildi" bildirimini (eski kayıt vb.) yok say
-                val already = recPhase == RecPhase.Saved
-                if (!already && recPhase != RecPhase.Recording && recPhase != RecPhase.Processing) return
-                freezeRec()
-                recOpen = e.open ?: recOpen
-                // Galeriden önizleme beklenirken ikinci bir bildirim gelirse bekleme yeniden başlatılmaz
-                if (recThumbJob?.isActive == true && e.thumb == null) return
-                val thumb = e.thumb ?: recThumb
-                if (thumb == null && !already && canReadGallery()) {
-                    // Bildirimde resim yok, galeri izni var: önce işleniyor animasyonu sürer, önizleme bulununca ada genişler
-                    if (recPhase != RecPhase.Processing) { recPhase = RecPhase.Processing; publishRec(false) }
-                    loadRecThumbFromGallery()
-                    return
-                }
-                recThumbJob?.cancel()
-                finishSaved(thumb)
-            }
-        }
-    }
-
-    /** Bildirimde önizleme yoksa: izin verilmişse galerideki son ekran kaydının ilk karesi alınır (isteğe bağlı özellik). */
-    private fun canReadGallery() =
-        androidx.core.content.ContextCompat.checkSelfPermission(this, recPreviewPermission()) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-    /** Kaydedildi görünümü: ada genişler (süre sabit, "Kayıt galeriye kaydedildi", sağda önizleme) ve 5 sn sonra kapanır. */
-    private fun finishSaved(thumb: ImageBitmap?) {
-        recPhase = RecPhase.Saved
-        if (thumb != null) recThumb = thumb
-        publishRec(true)
-        recSavedJob?.cancel()
-        recSavedJob = scope.launch { delay(5_000); endRec() }
-    }
-
-    private fun loadRecThumbFromGallery() {
-        recThumbJob?.cancel()
-        val startMs = if (recSince > 0L) recSince else System.currentTimeMillis() - 60_000L
-        val sinceSec = (startMs / 1000 - 10).coerceAtLeast(0L)
-        recThumbJob = scope.launch {
-            // Dosya galeriye biraz geç düşebilir: kısa aralıklarla birkaç kez denenir
-            repeat(10) {
-                val bmp = withContext(Dispatchers.IO) { queryLatestRecThumb(sinceSec) }
-                if (bmp != null) {
-                    if (recPhase == RecPhase.Processing) finishSaved(bmp.asImageBitmap())
-                    return@launch
-                }
-                delay(400)
-            }
-            // Bulunamadıysa (yaklaşık 4 sn) yine de kaydedildi görünümüne geç, önizleme yerine gri kutu kalır
-            if (recPhase == RecPhase.Processing) finishSaved(null)
-        }
-    }
-
-    private fun queryLatestRecThumb(sinceSec: Long): android.graphics.Bitmap? {
-        val col = android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        var found: Long? = null
-        runCatching {
-            val proj = arrayOf(
-                android.provider.MediaStore.Video.Media._ID,
-                android.provider.MediaStore.Video.Media.DISPLAY_NAME,
-                android.provider.MediaStore.Video.Media.RELATIVE_PATH,
-            )
-            contentResolver.query(
-                col, proj, "${android.provider.MediaStore.Video.Media.DATE_ADDED} >= ?", arrayOf(sinceSec.toString()),
-                "${android.provider.MediaStore.Video.Media.DATE_ADDED} DESC",
-            )?.use { c ->
-                var newest: Long? = null
-                var rec: Long? = null
-                while (rec == null && c.moveToNext()) {
-                    val id = c.getLong(0)
-                    val txt = (c.getString(1).orEmpty() + " " + c.getString(2).orEmpty()).lowercase()
-                    if (listOf("record", "screen", "ekran").any { txt.contains(it) }) rec = id
-                    if (newest == null) newest = id
-                }
-                found = rec ?: newest
-            }
-        }
-        val id = found ?: return null
-        return runCatching {
-            contentResolver.loadThumbnail(android.content.ContentUris.withAppendedId(col, id), android.util.Size(256, 256), null)
-        }.getOrNull()
-    }
-
-    private fun onScreenRecGone(e: IslandEvent.ScreenRecGone) {
-        if (!settings.value.screenRecEnabled) return
-        // Süre yazısından algılanan kaydı yalnızca yine o yol bitirir (bekleme bildirimi kayıt sürerken de güncellenebilir)
-        if (recViaA11y && recPhase == RecPhase.Recording && e.key != "a11y") return
-        when {
-            // Kayıt bildirimi kalktı: kayıt bitti, işleniyor (beyaz dönen halka) -> kaydedildi bildirimi beklenir
-            e.phase == RecPhase.Recording && recPhase == RecPhase.Recording -> {
-                freezeRec(); recPhase = RecPhase.Processing; publishRec(false); armRecTimeout()
-            }
-            // Geri sayım bildirimi kalktı: kayıt başlamadıysa (iptal) kapat
-            e.phase == RecPhase.Countdown && recPhase == RecPhase.Countdown -> {
-                recTimeoutJob?.cancel()
-                recTimeoutJob = scope.launch { delay(1_500); if (recPhase == RecPhase.Countdown) endRec() }
-            }
-        }
-    }
-
-    /** Adadaki durdur düğmesi: sistem kaydının bildirimdeki "Durdur" eylemini tetikler. */
-    private fun onRecStop() {
-        if (recStop != null) sendCallIntent(recStop) else IslandAccessibilityService.stopScreenRec()
-        freezeRec(); recPhase = RecPhase.Processing; publishRec(false); armRecTimeout()
     }
 
     // ---------------------------------------------------------------- Arama (gelen / aktif)
@@ -1287,13 +1077,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 else if (s.notifCollapseSwipeUp) collapseNow()
             }
             is IslandContent.Shazam -> when {
-                c.phase == ShazamPhase.Found -> endShazam()
+                c.phase == ShazamPhase.Found -> shazam.end()
                 dir > 0 && !cur.expanded -> { collapseJob?.cancel(); update { it.copy(expanded = true) } }
                 dir < 0 && cur.expanded -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
             }
             is IslandContent.ScreenRec -> when {
                 // "Kaydedildi" görünümü: herhangi bir dikey kaydırma kapatır (önceden hareketle küçültülemiyordu)
-                c.phase == RecPhase.Saved -> endRec()
+                c.phase == RecPhase.Saved -> rec.end()
                 c.phase == RecPhase.Recording && dir > 0 && !cur.expanded -> { update { it.copy(expanded = true) }; scheduleCollapse(6_000) }
                 c.phase == RecPhase.Recording && dir < 0 && cur.expanded -> collapseNow()
             }
@@ -1960,7 +1750,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
                     onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
                     onAnswer = ::onCallAnswer, onDecline = ::onCallDecline, onSpeaker = ::onCallSpeaker,
-                    onRecStop = ::onRecStop, onShazamStop = ::onShazamStop,
+                    onRecStop = rec::onStop, onShazamStop = shazam::onStop,
                     onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap, onSidePress = ::onSidePress,
                 )
             }
