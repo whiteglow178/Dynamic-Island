@@ -119,6 +119,19 @@ data class IslandSettings(
     // Yan baloncuk
     val notifExpandedSec: Float = 5f,        // bildirim genişletilmiş halde kalma süresi (sn)
     val notifCompactSec: Float = 10f,        // sonra küçültülmüş halde (nokta modunda nokta olarak) kalma süresi (sn); 0 = hemen gider
+    // Kilit ekranı noktası: kilitliyken adanın sol yanında yanıp sönen parıltılı nokta
+    val lockDotEnabled: Boolean = true,
+    val lockDotColorArgb: Int = 0xFF9B4DFF.toInt(),   // mor
+    val lockDotSizeDp: Float = 9f,
+    val lockDotGapDp: Float = 10f,           // adanın sol kenarından noktaya uzaklık (negatif = adanın üstüne doğru)
+    val lockDotOffsetYDp: Float = 0f,
+    val lockDotGlow: Boolean = true,
+    val lockDotGlowDp: Float = 14f,          // parıltının noktanın dışına taşma miktarı
+    val lockDotGlowAlpha: Float = 0.85f,
+    val lockDotBlink: Boolean = true,
+    val lockDotBlinkMs: Int = 400,           // bir yanıp sönme turunun süresi (ms)
+    val lockDotMinAlpha: Float = 0.08f,      // "sönük" anındaki parlaklık
+    val lockDotBlinkStyle: Int = 0,          // 0 yumuşak, 1 sert (ani aç / kapa)
     // Ses efektleri (dosya kopyalanmaz; yalnızca adres tutulur)
     val sfxEnabled: Boolean = true,
     val sfxTap: SoundCue = SoundCue(),
@@ -342,6 +355,9 @@ class SettingsRepository(context: Context) {
         val DOT_ON = booleanPreferencesKey("dot_on"); val DOT_MID = floatPreferencesKey("dot_mid")
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
+        val LD_ON = booleanPreferencesKey("ld_on"); val LD_C = intPreferencesKey("ld_c"); val LD_S = floatPreferencesKey("ld_s"); val LD_G = floatPreferencesKey("ld_g"); val LD_Y = floatPreferencesKey("ld_y")
+        val LD_GL = booleanPreferencesKey("ld_gl"); val LD_GD = floatPreferencesKey("ld_gd"); val LD_GA = floatPreferencesKey("ld_ga")
+        val LD_B = booleanPreferencesKey("ld_b"); val LD_BM = intPreferencesKey("ld_bm"); val LD_BA = floatPreferencesKey("ld_ba"); val LD_BS = intPreferencesKey("ld_bs")
         val SFX_ON = booleanPreferencesKey("sfx_on"); val SFX_TAP = stringPreferencesKey("sfx_tap"); val SFX_CHG = stringPreferencesKey("sfx_chg"); val SFX_UNP = stringPreferencesKey("sfx_unp")
         val SFX_NTF = stringPreferencesKey("sfx_ntf"); val SFX_SIL = stringPreferencesKey("sfx_sil"); val SFX_CALL = stringPreferencesKey("sfx_call")
         val MU_EXP_S = floatPreferencesKey("mu_exp_s"); val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
@@ -431,6 +447,11 @@ class SettingsRepository(context: Context) {
             sideTapPromote = p[K.SIDE_PROMOTE] ?: d.sideTapPromote,
             notifExpandedSec = p[K.NT_EXP_S] ?: d.notifExpandedSec,
             musicExpandedSec = p[K.MU_EXP_S] ?: d.musicExpandedSec,
+            lockDotEnabled = p[K.LD_ON] ?: d.lockDotEnabled, lockDotColorArgb = p[K.LD_C] ?: d.lockDotColorArgb,
+            lockDotSizeDp = p[K.LD_S] ?: d.lockDotSizeDp, lockDotGapDp = p[K.LD_G] ?: d.lockDotGapDp, lockDotOffsetYDp = p[K.LD_Y] ?: d.lockDotOffsetYDp,
+            lockDotGlow = p[K.LD_GL] ?: d.lockDotGlow, lockDotGlowDp = p[K.LD_GD] ?: d.lockDotGlowDp, lockDotGlowAlpha = p[K.LD_GA] ?: d.lockDotGlowAlpha,
+            lockDotBlink = p[K.LD_B] ?: d.lockDotBlink, lockDotBlinkMs = p[K.LD_BM] ?: d.lockDotBlinkMs,
+            lockDotMinAlpha = p[K.LD_BA] ?: d.lockDotMinAlpha, lockDotBlinkStyle = p[K.LD_BS] ?: d.lockDotBlinkStyle,
             sfxEnabled = p[K.SFX_ON] ?: d.sfxEnabled,
             sfxTap = SoundCue.decode(p[K.SFX_TAP]), sfxCharge = SoundCue.decode(p[K.SFX_CHG]), sfxUnplug = SoundCue.decode(p[K.SFX_UNP]),
             sfxNotif = SoundCue.decode(p[K.SFX_NTF]), sfxSilent = SoundCue.decode(p[K.SFX_SIL]), sfxCall = SoundCue.decode(p[K.SFX_CALL]),
@@ -565,6 +586,9 @@ class SettingsRepository(context: Context) {
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
             it[K.NT_EXP_S] = s.notifExpandedSec; it[K.NT_CMP_S] = s.notifCompactSec
             it[K.MU_EXP_S] = s.musicExpandedSec
+            it[K.LD_ON] = s.lockDotEnabled; it[K.LD_C] = s.lockDotColorArgb; it[K.LD_S] = s.lockDotSizeDp; it[K.LD_G] = s.lockDotGapDp; it[K.LD_Y] = s.lockDotOffsetYDp
+            it[K.LD_GL] = s.lockDotGlow; it[K.LD_GD] = s.lockDotGlowDp; it[K.LD_GA] = s.lockDotGlowAlpha
+            it[K.LD_B] = s.lockDotBlink; it[K.LD_BM] = s.lockDotBlinkMs; it[K.LD_BA] = s.lockDotMinAlpha; it[K.LD_BS] = s.lockDotBlinkStyle
             it[K.SFX_ON] = s.sfxEnabled
             it[K.SFX_TAP] = s.sfxTap.encode(); it[K.SFX_CHG] = s.sfxCharge.encode(); it[K.SFX_UNP] = s.sfxUnplug.encode()
             it[K.SFX_NTF] = s.sfxNotif.encode(); it[K.SFX_SIL] = s.sfxSilent.encode(); it[K.SFX_CALL] = s.sfxCall.encode()

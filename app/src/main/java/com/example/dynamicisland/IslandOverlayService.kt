@@ -137,10 +137,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { edgeGlow.attach() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
-        IslandAccessibilityService.onChanged = { runCatching { reattach() } }
+        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() } }
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
+        runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
@@ -700,6 +701,18 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val rec: ScreenRecController by lazy { ScreenRecController(host) }
     private val privacy: PrivacyController by lazy { PrivacyController(host) }
     private val ringer: RingerController by lazy { RingerController(host) }
+
+    // ---- Kilit ekranı noktası
+    private val lockDot by lazy {
+        LockDotController(this, this, this, wm, settings, scope) { s ->
+            val sw = wm.currentWindowMetrics.bounds.width()
+            Triple(
+                sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+                (cutCenterYPx + dp(s.offsetYDp)).toFloat(),
+                dp(compactWidthFor(s, false)) / 2f,
+            )
+        }
+    }
 
     // ---- Ses efektleri
     private val sfxTriggers by lazy { SoundTriggers(applicationContext) { playSfx(it) } }
@@ -1815,6 +1828,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { privacy.stop() }
         runCatching { ringer.stop() }
         runCatching { sfxTriggers.stop() }
+        runCatching { lockDot.stop() }
         IslandSounds.stopAll()
         lyricsJob?.cancel()
         runCatching { fxWindow.detach() }

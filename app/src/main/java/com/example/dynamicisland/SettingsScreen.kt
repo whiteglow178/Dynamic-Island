@@ -573,6 +573,38 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
 
+        sec("Kilit ekranı noktası", "Telefon kilitliyken adanın yanında yanıp sönen renkli nokta") {
+            SwitchRow("Kilit ekranı noktası", "Yalnızca ekran açık ve kilitliyken görünür; kilit açılınca ya da ekran kapanınca kaybolur",
+                draft.lockDotEnabled) { draft = draft.copy(lockDotEnabled = it) }
+            if (draft.lockDotEnabled) {
+                LockDotPreview(draft)
+                SubHeader("Nokta")
+                key(version) { ColorPicker(draft.lockDotColorArgb) { draft = draft.copy(lockDotColorArgb = it) } }
+                SliderRow("Boyut", draft.lockDotSizeDp, 4f..30f, "${draft.lockDotSizeDp.toInt()} dp") { draft = draft.copy(lockDotSizeDp = kotlin.math.round(it)) }
+                SliderRow("Adaya uzaklık (sol)", draft.lockDotGapDp, -30f..80f, "${draft.lockDotGapDp.toInt()} dp") { draft = draft.copy(lockDotGapDp = kotlin.math.round(it)) }
+                SliderRow("Dikey konum", draft.lockDotOffsetYDp, -20f..20f, "${draft.lockDotOffsetYDp.toInt()} dp") { draft = draft.copy(lockDotOffsetYDp = kotlin.math.round(it)) }
+                SectionDivider()
+                SubHeader("Parıltı (glow)")
+                SwitchRow("Parıltı", "Noktanın çevresinde yumuşak ışık halesi", draft.lockDotGlow) { draft = draft.copy(lockDotGlow = it) }
+                if (draft.lockDotGlow) {
+                    SliderRow("Parıltı büyüklüğü", draft.lockDotGlowDp, 2f..40f, "${draft.lockDotGlowDp.toInt()} dp") { draft = draft.copy(lockDotGlowDp = kotlin.math.round(it)) }
+                    SliderRow("Parıltı şiddeti", draft.lockDotGlowAlpha, 0.1f..1f, "%${(draft.lockDotGlowAlpha * 100).toInt()}") { draft = draft.copy(lockDotGlowAlpha = it) }
+                }
+                SectionDivider()
+                SubHeader("Yanıp sönme")
+                SwitchRow("Yanıp sönsün", "Kapalıysa nokta sabit yanar", draft.lockDotBlink) { draft = draft.copy(lockDotBlink = it) }
+                if (draft.lockDotBlink) {
+                    SegmentedTabs(listOf("Yumuşak", "Sert"), draft.lockDotBlinkStyle) { draft = draft.copy(lockDotBlinkStyle = it) }
+                    SliderRow("Tur süresi (küçük = hızlı)", draft.lockDotBlinkMs.toFloat(), 150f..2000f, "${draft.lockDotBlinkMs} ms") {
+                        draft = draft.copy(lockDotBlinkMs = (kotlin.math.round(it / 10f) * 10f).toInt())
+                    }
+                    SliderRow("Sönükken parlaklık", draft.lockDotMinAlpha, 0f..0.8f, "%${(draft.lockDotMinAlpha * 100).toInt()}") { draft = draft.copy(lockDotMinAlpha = it) }
+                }
+                Text("Nokta, erişilebilirlik servisi açıkken kilit ekranının üstünde görünür. Servis kapalıysa bazı telefonlarda kilit ekranında görünmeyebilir.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        }
+
         // ---- Ses
         pendingGroup = "Ses"
         sec("Ses efektleri", "Adada olaylara göre kendi seçtiğin sesler çalsın") {
@@ -1318,5 +1350,23 @@ private fun ColumnScope.SoundCueEditor(
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(onClick = { IslandSounds.play(ctx, cue.copy(enabled = true), "preview") }, modifier = Modifier.weight(1f)) { Text("Dinle") }
         OutlinedButton(onClick = { IslandSounds.stopAll() }, modifier = Modifier.weight(1f)) { Text("Durdur") }
+    }
+}
+
+
+// ---------------------------------------------------------------- Kilit ekranı noktası önizlemesi
+@Composable
+private fun LockDotPreview(s: IslandSettings) {
+    val glow = if (s.lockDotGlow) s.lockDotGlowDp else 0f
+    val total = s.lockDotSizeDp + 2f * glow
+    val cw = 120f
+    Box(
+        Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF15151A)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.width(cw.dp).height(32.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black))
+        Box(
+            Modifier.offset(x = (-(cw / 2f + s.lockDotGapDp + s.lockDotSizeDp / 2f)).dp, y = s.lockDotOffsetYDp.dp).size(total.dp),
+        ) { LockDotView(s) }
     }
 }
