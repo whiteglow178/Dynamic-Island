@@ -121,8 +121,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // istisna yakalanmazsa süreç çöker ve erişilebilirlik servisi "hatalı çalışıyor" olarak işaretlenir.
         if (!runCatching { startAsForeground() }.isSuccess) { stopSelf(); return }
         runCatching { detectCutout() }
-        runCatching { attachStatusCover() }      // ada penceresinden ÖNCE eklenir: ada her zaman üstte kalır
-        runCatching { attachEdgeGlow() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
+        runCatching { statusCover.attach() }      // ada penceresinden ÖNCE eklenir: ada her zaman üstte kalır
+        runCatching { edgeGlow.attach() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
         IslandAccessibilityService.onChanged = { runCatching { reattach() } }
@@ -141,7 +141,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
-        scope.launch { settings.collect { s -> appHide.update(); privacy.refresh(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); preloadFavorites(s) } }
+        scope.launch { settings.collect { s -> appHide.update(); privacy.refresh(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); favorites.preload(s) } }
         scope.launch { lyrics.collect { update { it } } }
         // Kenar Cevapla / Reddet tuşları ayarı değişince (arama sürerken) güncelle
         scope.launch { SideCallStore.flow(applicationContext).collect { call.syncSideButtons() } }
@@ -149,7 +149,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch {
             combine(ui, settings) { u, s -> s.hideStatusBar && u.content is IslandContent.Status }
                 .distinctUntilChanged()
-                .collect { setStatusCover(it) }
+                .collect { statusCover.set(it) }
         }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
@@ -209,7 +209,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.ShazamListening -> shazam.onListening()
             is IslandEvent.ShazamFound -> shazam.onFound(e)
             is IslandEvent.ShazamGone -> shazam.onGone()
-            is IslandEvent.ShowFavorites -> if (!assistantActive && !call.active && ui.value.content is IslandContent.Idle) openFavorites()
+            is IslandEvent.ShowFavorites -> if (!assistantActive && !call.active && ui.value.content is IslandContent.Idle) favorites.open()
         }
     }
 
@@ -371,7 +371,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (active && !settings.value.assistantEnabled) return
         if (active && call.active) return          // arama sürerken asistan animasyonu araya girmesin
         assistantActive = active
-        glowActive.value = active                      // ekran kenarı parlaması: açılırken sağdan sola yayılır, kapanınca söner
+        edgeGlow.setActive(active)                      // ekran kenarı parlaması: açılırken sağdan sola yayılır, kapanınca söner
         collapseJob?.cancel()
         if (active) {
             update { IslandUiState(IslandContent.Assistant, expanded = true) }
@@ -523,22 +523,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     else -> Unit
                 }
             }
-            is IslandContent.Favorites -> {
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (!cur.expanded) {
-                    // Panel kapanırken tekrar dokunuldu: kapanmasını bekletmeden yeniden aç
-                    collapseJob?.cancel()
-                    favOpenedAt = now
-                    update { it.copy(expanded = true) }
-                    scheduleCollapse(7_000)
-                } else if (now - favOpenedAt > FAV_CLOSE_GUARD_MS) {
-                    collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
-                }
-                // Açıldıktan hemen sonra gelen hızlı dokunuşlar paneli kapatmaz
-            }
+            is IslandContent.Favorites -> favorites.onTap()
             IslandContent.Idle -> {
                 val s = settings.value
-                if (s.favoritesReady() && s.favoritesTrigger == 0) openFavorites()
+                if (s.favoritesReady() && s.favoritesTrigger == 0) favorites.open()
             }
             IslandContent.Assistant -> Unit
             is IslandContent.Call -> {
@@ -585,6 +573,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         override fun update(f: (IslandUiState) -> IslandUiState) = this@IslandOverlayService.update(f)
         override fun cancelCollapse() { collapseJob?.cancel() }
+        override fun scheduleCollapse(holdMs: Long) = this@IslandOverlayService.scheduleCollapse(holdMs)
         override fun collapseSoon() { collapseJob?.cancel(); collapseJob = this@IslandOverlayService.scope.launch { collapseAndRest() } }
         override fun send(pi: android.app.PendingIntent?) = call.send(pi)
         override val isPeeking: Boolean get() = peeking()
@@ -623,7 +612,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val cur = ui.value
         val s = settings.value
         if (cur.content is IslandContent.Idle) {
-            if (s.favoritesReady()) openFavorites()
+            if (s.favoritesReady()) favorites.open()
         } else if (cur.content is IslandContent.Media && !cur.expanded) {
             // Küçük müzik adası: basılı tutunca müzik uygulaması açılır ya da ada genişler
             if (s.openCompLong) openMusicApp()
@@ -826,46 +815,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     // ---------------------------------------------------------------- Favori uygulamalar
-    private val favCache = java.util.concurrent.ConcurrentHashMap<String, FavApp>()
-    private var favOpenedAt = 0L
-    private val FAV_CLOSE_GUARD_MS = 450L      // açılır açılmaz gelen hızlı dokunuşlar paneli kapatmasın
-
-    private fun favApp(pkg: String): FavApp? = favCache[pkg] ?: runCatching {
-        val pm = packageManager
-        val label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-        val icon = pm.getApplicationIcon(pkg).toBitmap(112, 112).asImageBitmap()
-        FavApp(pkg, label, icon)
-    }.getOrNull()?.also { favCache[pkg] = it }
-
-    /** Favori uygulamaların simgelerini önceden yükler: ilk açılışta bekleme / takılma olmasın. */
-    private fun preloadFavorites(s: IslandSettings) {
-        if (!s.favoritesReady()) return
-        val pkgs = s.favoritePkgList()
-        favCache.keys.retainAll(pkgs.toSet())
-        val missing = pkgs.filter { !favCache.containsKey(it) }
-        if (missing.isEmpty()) return
-        scope.launch(Dispatchers.Default) { missing.forEach { favApp(it) } }
-    }
-
-    private fun openFavorites() {
-        val s = settings.value
-        if (!s.favoritesReady()) return
-        val pkgs = s.favoritePkgList()
-        val cached = pkgs.mapNotNull { favCache[it] }
-        if (cached.size == pkgs.size) {          // hepsi hazır: anında aç
-            showFavorites(cached)
-            return
-        }
-        scope.launch { showFavorites(withContext(Dispatchers.Default) { pkgs.mapNotNull { favApp(it) } }) }
-    }
-
-    private fun showFavorites(apps: List<FavApp>) {
-        // Yüklenirken müzik/bildirim/asistan geldiyse favorileri açma
-        if (apps.isEmpty() || ui.value.content !is IslandContent.Idle) return
-        favOpenedAt = android.os.SystemClock.elapsedRealtime()
-        update { IslandUiState(IslandContent.Favorites(apps), expanded = true) }
-        scheduleCollapse(7_000)
-    }
+    private val favorites: FavoritesController by lazy { FavoritesController(host) }
 
     // ---------------------------------------------------------------- Favori açılış animasyonu
     private val LAUNCH_LEAD_MS = 170L        // ada küçülmeye başladıktan kaç ms sonra siyah ekran çıksın
@@ -1124,13 +1074,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun reattach() {
         runCatching { detachOverlay() }
-        runCatching { detachStatusCover() }
-        runCatching { detachEdgeGlow() }
+        runCatching { statusCover.detach() }
+        runCatching { edgeGlow.detach() }
         // Erişilebilirlik bağlantısı değişince dış söz penceresinin türü de değişir: yeniden kur.
         // Önce durum çubuğu örtüsü, sonra söz penceresi, en son ada eklenir; böylece ada her zaman üstte kalır ve sözler adanın "içinden" çıkar.
         runCatching { detachOutside() }
-        runCatching { attachStatusCover() }
-        runCatching { attachEdgeGlow() }
+        runCatching { statusCover.attach() }
+        runCatching { edgeGlow.attach() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
         composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
@@ -1145,176 +1095,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
      * - Desteklenmiyorsa: düz siyah.
      * Yalnızca erişilebilirlik servisi bağlıyken çalışır (TYPE_ACCESSIBILITY_OVERLAY durum çubuğunun üstünde durur).
      */
-    private var statusCoverDialog: Dialog? = null
-    private var statusCoverView: View? = null
-    private var coverAnim: android.animation.ValueAnimator? = null
-    private var coverT = 0f            // 0 = görünmez, 1 = tam
-    private var coverBlurPx = 0        // tam görünürken uygulanacak bulanıklık (0 = düz siyah mod)
-
-    private fun statusBarHeightPx(): Int {
-        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
-        val sb = if (id > 0) resources.getDimensionPixelSize(id) else dp(24f)
-        return maxOf(sb, cutCenterYPx * 2)
+    private val statusCover: StatusCover by lazy {
+        StatusCover(
+            this, { wm }, { cutCenterYPx }, { dp(it) }, { stripInsets(it) },
+            { settings.value.hideStatusBar && ui.value.content is IslandContent.Status },
+        )
     }
 
-    private fun coverIsGlass(): Boolean =
-        Build.VERSION.SDK_INT >= 31 && wm.isCrossWindowBlurEnabled
-
-    /** Örtünün rengini ve bulanıklığını moda göre ayarlar (cam: ince koyu ton + bulanıklık, değilse düz siyah). */
-    private fun styleCover() {
-        val glass = coverIsGlass()
-        coverBlurPx = if (glass) COVER_BLUR_PX else 0
-        statusCoverView?.setBackgroundColor(Color.argb(if (glass) COVER_GLASS_TINT else 255, 0, 0, 0))
-    }
-
-    private fun applyCover(t: Float) {
-        coverT = t
-        statusCoverView?.alpha = t
-        if (Build.VERSION.SDK_INT >= 31) {
-            statusCoverDialog?.window?.setBackgroundBlurRadius((coverBlurPx * t).toInt())
-        }
-    }
-
-    private fun attachStatusCover() {
-        val a11y = IslandAccessibilityService.instance ?: return
-        val v = View(this).apply { setBackgroundColor(Color.BLACK); alpha = 0f }
-        val d = Dialog(ContextThemeWrapper(a11y, android.R.style.Theme_Translucent_NoTitleBar))
-        d.setCancelable(false)
-        d.setCanceledOnTouchOutside(false)
-        d.setContentView(v, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        d.window?.apply {
-            setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            addFlags(
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
-            )
-            setGravity(Gravity.TOP or Gravity.START)
-            setDecorFitsSystemWindows(false)
-            decorView.setPadding(0, 0, 0, 0)
-            val lp = WindowManager.LayoutParams().also { it.copyFrom(attributes) }
-            lp.width = WindowManager.LayoutParams.MATCH_PARENT
-            lp.height = statusBarHeightPx()
-            lp.x = 0; lp.y = 0
-            lp.format = PixelFormat.TRANSLUCENT
-            lp.fitInsetsTypes = 0
-            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-            attributes = lp
-        }
-        d.window?.decorView?.let { stripInsets(it) }
-        if (!runCatching { d.show() }.isSuccess) return
-        d.window?.decorView?.let { stripInsets(it) }
-        statusCoverDialog = d; statusCoverView = v
-        // Pencere yeniden kurulduysa mevcut duruma göre hemen uygula
-        styleCover()
-        applyCover(if (settings.value.hideStatusBar && ui.value.content is IslandContent.Status) 1f else 0f)
-    }
-
-    private fun setStatusCover(show: Boolean) {
-        if (statusCoverView == null) return
-        coverAnim?.cancel()
-        if (show) styleCover()
-        coverAnim = android.animation.ValueAnimator.ofFloat(coverT, if (show) 1f else 0f).apply {
-            duration = if (show) 200 else 220
-            addUpdateListener { applyCover(it.animatedValue as Float) }
-            start()
-        }
-    }
-
-    private fun detachStatusCover() {
-        coverAnim?.cancel(); coverAnim = null
-        runCatching { statusCoverDialog?.dismiss() }
-        statusCoverDialog = null; statusCoverView = null
-        coverT = 0f
-    }
-
-    // ---------------------------------------------------------------- Ekran kenarı parlaması (asistan)
-    private val glowActive = MutableStateFlow(false)
-    private var glowView: ComposeView? = null
-    private var glowLp: WindowManager.LayoutParams? = null
-    private var glowWm: WindowManager? = null
-    private var glowTries = 0
-
-    /** Ekranın gerçek köşe yarıçapı (px); alınamazsa 36dp. Çok yuvarlak görünmesin diye 40dp ile sınırlı. */
-    private fun screenCornerPx(): Float {
-        val cap = dp(40f).toFloat()
-        val real = if (Build.VERSION.SDK_INT >= 31) {
-            runCatching {
-                wm.currentWindowMetrics.windowInsets
-                    .getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat()
-            }.getOrNull()
-        } else null
-        return minOf(real ?: dp(36f).toFloat(), cap)
-    }
-
-    /**
-     * Tam ekran, dokunmatik olmayan, şeffaf pencere (LaunchTransition penceresiyle aynı kurulum):
-     * durum çubuğu dahil tüm ekranı kaplar. Sistem pencereyi aşağı iterse ölçüp geri çekeriz.
-     */
-    private fun attachEdgeGlow() {
-        val a11y = IslandAccessibilityService.instance ?: return
-        val corner = screenCornerPx()
-        val view = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@IslandOverlayService)
-            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
-            setContent { ScreenEdgeGlow(glowActive, corner) }
-        }
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            fitInsetsTypes = 0
-            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        }
-        val host = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
-        if (!runCatching { host.addView(view, lp) }.isSuccess) { view.disposeComposition(); return }
-        glowView = view; glowLp = lp; glowWm = host
-        glowTries = 0
-        view.postDelayed(glowCalibrate, 300)
-    }
-
-    /** Pencere ekranın en üstünden başlamıyorsa (durum çubuğu payı) farkı kadar yukarı çeker ve boyunu uzatır. */
-    private val glowCalibrate = object : Runnable {
-        override fun run() {
-            val v = glowView ?: return
-            val lp = glowLp ?: return
-            val host = glowWm ?: return
-            if (!v.isAttachedToWindow) return
-            val loc = IntArray(2)
-            v.getLocationOnScreen(loc)
-            val dy = loc[1]
-            if (abs(dy) <= 1 || glowTries >= 3) return
-            glowTries++
-            val screenH = host.currentWindowMetrics.bounds.height()
-            lp.y -= dy
-            lp.height = screenH + abs(lp.y)
-            runCatching { host.updateViewLayout(v, lp) }
-            v.postDelayed(this, 250)
-        }
-    }
-
-    private fun detachEdgeGlow() {
-        val v = glowView ?: return
-        v.removeCallbacks(glowCalibrate)
-        runCatching { (glowWm ?: wm).removeView(v) }
-        v.disposeComposition()
-        v.setViewTreeLifecycleOwner(null)
-        v.setViewTreeSavedStateRegistryOwner(null)
-        glowView = null; glowLp = null; glowWm = null
-    }
+    // ---------------------------------------------------------------- Ekran kenarı parlaması (asistan) -> EdgeGlow.kt
+    private val edgeGlow: EdgeGlow by lazy { EdgeGlow(this, { wm }, { dp(it) }) }
 
     private fun detachOverlay() {
         composeView?.removeCallbacks(calibrateRunnable)
@@ -1759,8 +1548,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { removeSwallowView() }
         runCatching { removeStretchView() }
         exitWatchdog?.cancel()
-        runCatching { detachStatusCover() }
-        runCatching { detachEdgeGlow() }
+        runCatching { statusCover.detach() }
+        runCatching { edgeGlow.detach() }
         detachOutside()
         collapseJob?.cancel()
         scope.cancel()
@@ -1771,6 +1560,4 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
 }
 
-/** Durum çubuğu örtüsü (bulanık mod): arka plan bulanıklığı (px) ve koyu ton (0..255). */
-private const val COVER_BLUR_PX = 120
-private const val COVER_GLASS_TINT = 110
+

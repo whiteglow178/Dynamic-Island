@@ -39,6 +39,8 @@ interface IslandHost {
     /** Adayı tamamen gizler (dokunuşu da geçirir) ya da geri getirir. */
     fun setIslandHidden(hidden: Boolean)
     /** Bekleyen küçülme işini iptal eder. */
+    /** [holdMs] sonra adayı küçültür (öncekini iptal eder). */
+    fun scheduleCollapse(holdMs: Long)
     fun cancelCollapse()
     /** Adayı küçültür ve dinlenme durumuna döndürür (önceki küçülme işi iptal edilir). */
     fun collapseSoon()
