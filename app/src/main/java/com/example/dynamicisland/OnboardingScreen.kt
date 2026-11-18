@@ -123,7 +123,7 @@ private enum class OnbPerm(
     val required: Boolean, val tint: Color,
 ) {
     Access(
-        "Erişilebilirlik ayarını aç", "Erişilebilirlik hazır",
+        "Erişilebilirlik aç", "Erişilebilirlik hazır",
         "Erişilebilirlik izni gerekli",
         "Adaya dokunabilmen ve sözlerin adadan çıkması için erişilebilirlik servisini açmalısın. Adadaki aramayı Cevapla ile aç.",
         true, Color(0xFF5AC8FA),
@@ -135,25 +135,25 @@ private enum class OnbPerm(
         true, Color(0xFFFF9F0A),
     ),
     Overlay(
-        "Üstte gösterme iznini ver", "Üstte gösterme hazır",
+        "Üstte gösterme aç", "Üstte gösterme hazır",
         "Üstte gösterme izni gerekli",
         "Adanın diğer uygulamaların üzerinde çizilebilmesi için bu izin şart.",
         true, Color(0xFFBF5AF2),
     ),
     Listener(
-        "Bildirim erişimini aç", "Bildirim erişimi hazır",
+        "Bildirim erişimi", "Bildirim erişimi hazır",
         "Bildirim erişimi gerekli",
         "Bildirimleri ve müzik oturumunu okuyabilmek için bildirim erişimini aç.",
         true, Color(0xFF30D158),
     ),
     Battery(
-        "Pil kısıtlamasını kaldır", "Pil kısıtlaması kaldırıldı",
+        "Pil izni ver", "Pil kısıtlaması kaldırıldı",
         "Pil kısıtlaması yok (önerilir)",
         "Sistemin uygulamayı arka planda kapatmasını azaltır.",
         false, Color(0xFFFFD60A),
     ),
     Autostart(
-        "Arka planda başlatmayı aç", "Otomatik başlatma tamam",
+        "Otomatik başlatma", "Otomatik başlatma tamam",
         "Arka planda otomatik başlatma",
         "Kapalıysa uygulamayı son uygulamalardan silince erişilebilirlik servisi durur. Ayarlarda \"İzin ver\" yap. " +
             "Bu ayar algılanamadığı için açsan da açmasan da devam edebilirsin.",
@@ -420,9 +420,9 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
     Box(Modifier.fillMaxSize().background(cs.background)) {
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
             // ---- 3 boyutlu telefon: yalnızca üst kısım (ada bölgesi) görünür
-            Box(Modifier.fillMaxWidth().height(240.dp).clipToBounds(), contentAlignment = Alignment.TopCenter) {
+            Box(Modifier.fillMaxWidth().height(280.dp).clipToBounds(), contentAlignment = Alignment.TopCenter) {
                 Box(
-                    Modifier.padding(top = 18.dp).graphicsLayer {
+                    Modifier.padding(top = 44.dp).graphicsLayer {
                         val s = zoom * (1f - 0.55f * exit)
                         scaleX = s; scaleY = s
                         transformOrigin = TransformOrigin(0.5f, 0f)
@@ -496,6 +496,20 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                         }
                     }
                 }
+            }
+
+            // ---- alt kısım: izin listesi (Welcome / izin adımlarında)
+            if (phase == OnbPhase.Welcome || phase == OnbPhase.Perms) {
+                OnbChecklist(
+                    items = ONB_ORDER.map { perm ->
+                        perm to when {
+                            isDone(perm) -> 2
+                            phase == OnbPhase.Perms && perm == p -> 1
+                            else -> 0
+                        }
+                    },
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp).graphicsLayer { alpha = 1f - exit },
+                )
             }
         }
 
@@ -688,5 +702,45 @@ private fun RealIslandHost(mode: OnbIsland, shakeX: Float, onAnswer: () -> Unit,
             onTap = {}, onCommand = {}, onOutput = {},
             onAnswer = onAnswer, onDecline = onDecline,
         )
+    }
+}
+
+private fun onbLabel(p: OnbPerm) = when (p) {
+    OnbPerm.Access -> "Erişilebilirlik"
+    OnbPerm.PostNotif -> "Bildirim gösterme"
+    OnbPerm.Overlay -> "Üstte gösterme"
+    OnbPerm.Listener -> "Bildirim erişimi"
+    OnbPerm.Battery -> "Pil kısıtlaması yok"
+    OnbPerm.Autostart -> "Arka planda otomatik başlatma"
+}
+
+/** durum: 2 = hazır, 1 = sırada, 0 = bekliyor */
+@Composable
+private fun OnbChecklist(items: List<Pair<OnbPerm, Int>>, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(22.dp)
+    val ok = Color(0xFF4CD964)
+    Column(
+        modifier.fillMaxWidth().clip(shape).background(cs.surface).border(1.dp, cs.outlineVariant, shape)
+            .padding(horizontal = 18.dp, vertical = 6.dp),
+    ) {
+        items.forEach { (perm, st) ->
+            Row(
+                Modifier.fillMaxWidth().height(36.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(Modifier.size(10.dp).background(when (st) { 2 -> ok; 1 -> Color(0xFFFFB340); else -> cs.outline }, CircleShape))
+                Text(
+                    onbLabel(perm), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (st == 0) cs.onSurfaceVariant else cs.onSurface, fontSize = 14.sp,
+                    fontWeight = if (st == 1) FontWeight.SemiBold else FontWeight.Medium,
+                )
+                Text(
+                    when (st) { 2 -> "Hazır"; 1 -> "Sırada"; else -> "Bekliyor" },
+                    color = when (st) { 2 -> ok; 1 -> Color(0xFFFFB340); else -> cs.onSurfaceVariant },
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
     }
 }
