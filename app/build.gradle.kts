@@ -5,15 +5,30 @@ plugins {
 }
 
 android {
+    // namespace kaynak kod paketidir, aynı kalır; mağazadaki kimlik applicationId'dir
     namespace = "com.example.dynamicisland"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.example.dynamicisland"
+        applicationId = "com.whiteglow.omniisland"
         minSdk = 30
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
+
+    // Sabit imza: GitHub Secrets doluysa kullanılır, yoksa debug anahtarına düşer
+    val ksPath = System.getenv("KEYSTORE_PATH")
+    signingConfigs {
+        if (ksPath != null && file(ksPath).exists()) {
+            create("release") {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             // Debug derlemede Compose çok yavaş çalışır; release'te R8 + baseline profile ile hızlanır
@@ -21,8 +36,7 @@ android {
             isShrinkResources = true
             isDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Kendi anahtarın yok: GitHub'ın debug anahtarıyla imzalanır, telefona direkt kurulabilir
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     buildFeatures { compose = true }
