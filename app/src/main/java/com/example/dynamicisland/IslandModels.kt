@@ -32,6 +32,9 @@ sealed interface IslandContent {
     /** Boştayken adaya dokununca/basılı tutunca açılan favori uygulamalar paneli. */
     data class Favorites(val apps: List<FavApp>) : IslandContent
 
+    /** Boştayken adaya dokununca açılan çeviri paneli (üstte dil seçimi, altta yazı alanı + sonuç). Durum [TranslateSession]'dadır. */
+    data object Translate : IslandContent
+
     data class Notif(
         val pkg: String, val title: String, val text: String,
         val icon: ImageBitmap? = null,

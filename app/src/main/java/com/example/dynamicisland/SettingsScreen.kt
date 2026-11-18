@@ -207,6 +207,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
         page("Favori uygulamalar", PreviewKind.Favorites, "Boştayken adaya dokununca açılan uygulama paneli") { FavoritesSection(draft) { draft = it } }
+        page("Çeviri", subtitle = "Boştayken adaya dokununca açılan çeviri paneli") { TranslateSection(draft) { draft = it } }
 
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
             SubHeader("Bildirim türü")
@@ -878,7 +879,7 @@ internal fun MockStatusBar() {
 private fun lyricsPages(draft: IslandSettings, version: Int, set: (IslandSettings) -> Unit, onReset: () -> Unit): List<SettingsPage> {
     val cs = MaterialTheme.colorScheme
     return buildPages {
-    sec("Şarkı sözleri", "Önce LRCLIB, bulunamazsa NetEase'te aranır") {
+    sec("Şarkı sözleri", "LRCLIB'de aranır (şarkı adı ve sanatçı gönderilir)") {
         SwitchRow("Şarkı sözleri",
             "Başlık, sanatçı ve süre sunucuya gönderilir. Bildirimi olan her oynatıcıyla çalışır (Spotify, YouTube Music, Yandex Müzik, VK…).",
             draft.lyricsEnabled) { set(draft.copy(lyricsEnabled = it)) }

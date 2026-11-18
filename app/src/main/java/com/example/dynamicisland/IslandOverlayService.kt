@@ -15,9 +15,11 @@ import android.util.LruCache
 import android.view.ContextThemeWrapper
 import android.view.Display
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
@@ -41,6 +43,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -98,7 +101,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var resizeListener: View.OnLayoutChangeListener? = null
     private var dotWin = false     // nokta modu açık mı (pencere küçülürken gizleme eşiği için)
 
-    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0, val stackW: Int = 0, val stackH: Int = 0)
+    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0, val stackW: Int = 0, val stackH: Int = 0, val extraH: Int = 0)
 
     // ---- Çoklu olay: en yeni olay ortada, öncekiler sağ / sol baloncukta
     private enum class Bg { Media, Rec, Call, Shazam, Timer, Notif, Privacy }   // Notif: yalnızca nokta modunda; Shazam / Timer: 4 ya da 5 nokta modunda   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
@@ -117,6 +120,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         settings = SettingsRepository(applicationContext).flow
             .map { it.effective() }
             .stateIn(scope, SharingStarted.Eagerly, IslandSettings())
+        // Çeviri paneli: panelden kapatma isteği + panelde seçilen dilleri ayarlara kaydetme
+        TranslateSession.closeRequest = ::closeTranslate
+        TranslateSession.onLangsChanged = { src, tgt -> scope.launch { runCatching { saveTranslateLangs(src, tgt) } } }
         // Arka plandan (örn. sistem START_STICKY ile yeniden başlatınca) foreground'a geçiş reddedilebilir;
         // istisna yakalanmazsa süreç çöker ve erişilebilirlik servisi "hatalı çalışıyor" olarak işaretlenir.
         if (!runCatching { startAsForeground() }.isSuccess) { stopSelf(); return }
@@ -154,7 +160,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
-            combine(ui, settings) { u, s -> winKey(u, s) }
+            combine(ui, settings, TranslateSession.bodyDp) { u, s, _ -> winKey(u, s) }
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
         }
@@ -172,6 +178,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Media -> 2
         IslandContent.Assistant -> 3
         is IslandContent.Favorites -> 4
+        IslandContent.Translate -> 12
         is IslandContent.Call -> if (c.isIncoming) 5 else 6
         is IslandContent.Status -> if (c.isPill()) 8 else 7
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
@@ -195,11 +202,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.CallEnded -> call.onEnded(e.key)
             is IslandEvent.ScreenRec -> rec.onScreenRec(e)
             is IslandEvent.ScreenRecGone -> rec.onScreenRecGone(e)
-            is IslandEvent.Status -> if (!assistantActive && !call.active) {
+            is IslandEvent.Status -> if (!assistantActive && !call.active && ui.value.content !is IslandContent.Translate) {
                 (e.content as? IslandContent.Status)?.let { onTimerStatus(it) }
                 showTemporarily(e.content, e.holdMs)
             }
-            is IslandEvent.Notification -> if (!assistantActive && !call.active && !appHide.hidden) scope.launch {
+            is IslandEvent.Notification -> if (!assistantActive && !call.active && !appHide.hidden && ui.value.content !is IslandContent.Translate) scope.launch {
                 val icon = iconFor(e.pkg)
                 val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
                 val st = settings.value
@@ -264,6 +271,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             stack = st, stackClosing = stackClosing && st.isNotEmpty(),
         )
         syncRevert(ui.value)
+        // Çeviri paneli başka bir içerikle değişti ya da kapandı: bekleyen çeviri iptal, yazı temizlenir
+        if (translateOpen && ui.value.content !is IslandContent.Translate) { translateOpen = false; TranslateSession.close() }
     }
 
     /** Yan baloncuktan açılan (ortaya kalıcı geçmemiş) olay şu an ortada açık mı? Öyleyse arka plan yayınları ortayı geri almaz. */
@@ -279,6 +288,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow, sideKey(u),
             stackW = if (stacked) kotlin.math.ceil(stackWidthDp(u.stack, s, screenWDp)).toInt() else 0,
             stackH = if (stacked) kotlin.math.ceil(stackHeightDp(u.stack, s)).toInt() else 0,
+            extraH = if (u.content is IslandContent.Translate) TranslateSession.bodyDp.value else 0,
         )
     }
 
@@ -488,6 +498,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cc is IslandContent.Notif -> update { it }
             cc is IslandContent.Status -> update { it }
             cc is IslandContent.Favorites -> update { it }              // favori paneli açıkken müzik paneline geçme
+            cc is IslandContent.Translate -> update { it }              // çeviri yazılırken müzik paneline geçme
             cc is IslandContent.Shazam -> update { it }                 // Shazam dinlerken / sonucu gösterirken müzik ortayı almaz
             cc is IslandContent.ScreenRec && cc.phase == RecPhase.Saved -> update { it }   // "kaydedildi" görünümü bozulmasın
             // Müzik yeni başladı: en yeni olay olarak ortaya geçer, önceki ortadaki olay yan baloncuğa ayrılır
@@ -610,9 +621,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 }
             }
             is IslandContent.Favorites -> favorites.onTap()
+            IslandContent.Translate -> Unit      // panelin içi kendi dokunuşlarını işler (yazı alanı, dil, kapat)
             IslandContent.Idle -> {
                 val s = settings.value
-                if (s.favoritesReady() && s.favoritesTrigger == 0) favorites.open()
+                if (s.translateReady() && s.translateTrigger == 0) openTranslate()
+                else if (s.favoritesReady() && s.favoritesTrigger == 0) favorites.open()
             }
             IslandContent.Assistant -> Unit
             is IslandContent.Call -> {
@@ -699,7 +712,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val cur = ui.value
         val s = settings.value
         if (cur.content is IslandContent.Idle) {
-            if (s.favoritesReady()) favorites.open()
+            if (s.translateReady() && s.translateTrigger == 1) openTranslate()
+            else if (s.favoritesReady()) favorites.open()
         } else if (cur.content is IslandContent.Media && !cur.expanded) {
             // Küçük müzik adası: basılı tutunca müzik uygulaması açılır ya da ada genişler
             if (s.openCompLong) openMusicApp()
@@ -875,6 +889,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (cur.swallow) return
         if (dir > 0 && openStack()) return
         when (val c = cur.content) {
+            // Yukarı kaydırma yalnızca yazı yokken kapatır (yazarken kazara kaydırınca yazdığın kaybolmasın)
+            IslandContent.Translate -> { if (dir < 0 && cur.expanded && TranslateSession.state.value.input.isBlank()) closeTranslate() }
             is IslandContent.Media -> {
                 if (dir > 0 && !cur.expanded && s.swipeDownExpand) {
                     update { it.copy(expanded = true) }; scheduleCollapse(8_000)
@@ -900,6 +916,72 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             else -> Unit
         }
+    }
+
+    // ---------------------------------------------------------------- Çeviri paneli
+    private var translateOpen = false
+    private var translateHadFocus = false
+
+    /** Sonuç alanında bir satıra sığan yaklaşık harf sayısı (panel yüksekliği buna göre hesaplanır). */
+    private fun translateCharsPerLine(s: IslandSettings): Int =
+        ((s.expandedWidthDp - 28f - 24f - 64f) / 8.4f).toInt().coerceIn(12, 60)
+
+    /** Adayı çeviri paneli olarak açar: gerektiği kadar genişler, pencere klavye için odaklanabilir olur ([syncWindow]). */
+    private fun openTranslate() {
+        if (assistantActive || call.active) return
+        val s = settings.value
+        collapseJob?.cancel()
+        translateOpen = true
+        translateHadFocus = false
+        TranslateSession.open(s.translateSrc, s.translateTgt, translateCharsPerLine(s))
+        update { IslandUiState(IslandContent.Translate, expanded = true) }     // süre dolunca kapanmaz: kapat tuşu / geri / yukarı kaydırma
+    }
+
+    /** Klavyeyi ve odağı bırakır, adayı küçültür. */
+    private fun closeTranslate() {
+        if (ui.value.content !is IslandContent.Translate) return
+        setFocusable(false)
+        collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+    }
+
+    /**
+     * Çeviri açıkken pencere odak alabilir (klavye açılsın); diğer zamanlarda NOT_FOCUSABLE kalır ki ada,
+     * alttaki uygulamanın klavyesini / odağını çalmasın.
+     */
+    private fun setFocusable(on: Boolean) {
+        val win = dialog?.window ?: return
+        val flag = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        val blocked = (win.attributes.flags and flag) != 0
+        if (on && blocked) {
+            // Klavye pencereyi yeniden boyutlandırmasın / kaydırmasın: panel üstte, klavye altta açılır
+            win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING or WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED)
+            win.clearFlags(flag)
+        } else if (!on && !blocked) {
+            composeView?.let { v ->
+                runCatching { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(v.windowToken, 0) }
+            }
+            win.addFlags(flag)
+        }
+    }
+
+    /** Pencere odağı değişti: çeviri açıkken kullanıcı başka yere dokunup odağı alırsa (örn. uygulamaya geçti) panel kapanır. */
+    private fun onOverlayFocus(has: Boolean) {
+        val cur = ui.value
+        if (cur.content !is IslandContent.Translate || !cur.expanded) { translateHadFocus = false; return }
+        if (has) { translateHadFocus = true; return }
+        if (!translateHadFocus) return
+        // Klavye / sistem penceresi kısa süre odağı alıp bırakabilir: biraz bekleyip hâlâ odak yoksa kapat
+        composeView?.postDelayed({
+            val c = ui.value
+            if (composeView?.hasWindowFocus() != true && c.content is IslandContent.Translate && c.expanded) closeTranslate()
+        }, 450)
+    }
+
+    /** Panelde seçilen dil çiftini ayarlara yazar (ayar kopyası değil, kayıtlı asıl ayar üzerinden). */
+    private suspend fun saveTranslateLangs(src: String, tgt: String) {
+        val repo = SettingsRepository(applicationContext)
+        val raw = repo.flow.first()
+        if (raw.translateSrc != src || raw.translateTgt != tgt) repo.save(raw.copy(translateSrc = src, translateTgt = tgt))
     }
 
     // ---------------------------------------------------------------- Favori uygulamalar
@@ -1226,12 +1308,20 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         composeView = view
         startXWatch(view)
+        view.viewTreeObserver.addOnWindowFocusChangeListener { has -> onOverlayFocus(has) }
 
         // Dialog penceresi: Window.setBackgroundBlurRadius SADECE pencere sınırlarını bulanıklaştırır
         // (WindowManager FLAG_BLUR_BEHIND ise tüm ekranı bulanıklaştırıyordu).
         val d = Dialog(ContextThemeWrapper(host, android.R.style.Theme_Translucent_NoTitleBar))
         d.setCancelable(false)
         d.setCanceledOnTouchOutside(false)
+        // Çeviri açıkken Geri tuşu (klavye kapalıysa) paneli kapatır; klavye açıkken ilk Geri klavyeyi kapatır
+        d.setOnKeyListener { _, code, ev ->
+            if (code == KeyEvent.KEYCODE_BACK && ui.value.content is IslandContent.Translate) {
+                if (ev.action == KeyEvent.ACTION_UP) closeTranslate()
+                true
+            } else false
+        }
         d.setContentView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         d.window?.apply {
             setType(type)
@@ -1434,6 +1524,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private suspend fun syncWindow(k: WinKey) {
         val s = k.s
         dotWin = s.dotMode
+        setFocusable(k.kind == 12 && k.expanded)          // çeviri paneli: klavye için odak
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
         val cw = dp(if (s.dotMode) s.compactWidthDp else if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val music = k.kind == 2
@@ -1456,6 +1547,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
                 k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
+                k.kind == 12 -> s.translateHeightDp(k.extraH)   // çeviri paneli: sonuç uzunluğuna göre
                 else -> s.expandedHeightDp + if (music) s.musicExtraDp() else 0f
             }
         )
@@ -1474,7 +1566,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val blurOk = pad == 0 && sideExtra == 0   // pay / yan baloncuk varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && s.favoritesReady())) && !appHide.hidden)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady()))) && !appHide.hidden)
         when {
             k.stackH > 0 -> {
                 // Yığın görünümü: pencere kartların toplam boyutunda
@@ -1514,9 +1606,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val winW = ew + 2 * pad + 2 * sideExp
                 val maxShSide = ((screenW - winW) / 2).coerceAtLeast(0)
                 val xWin = if (k.kind == 11) baseX else if (sideExp > 0) baseX.coerceIn(-maxShSide, maxShSide) else xExp
+                // Çeviri sonucu kısalınca pencere, panel küçülme animasyonunu bitirene kadar küçülmez (içerik kırpılmasın)
+                if (k.kind == 12 && eh + 2 * pad < curH - 2) delay(240)
                 setGeometry(winW, eh + 2 * pad, xWin, y)
                 winSide = sideExp
-                if (blurOk && !assistant) { delay(settle); setBlur(true, s) }
+                if (blurOk && !assistant && k.kind != 12) { delay(settle); setBlur(true, s) }
             }
             else -> {
                 setBlur(false, s)
@@ -1685,6 +1779,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     override fun onDestroy() {
         IslandAccessibilityService.onChanged = null
+        TranslateSession.closeRequest = null
+        TranslateSession.onLangsChanged = null
+        runCatching { TranslateSession.release() }
         runCatching { privacy.stop() }
         runCatching { ringer.stop() }
         lyricsJob?.cancel()

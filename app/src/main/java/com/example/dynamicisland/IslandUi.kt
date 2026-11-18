@@ -245,6 +245,7 @@ private const val EXPAND_WAIT_MAX_MS = 220L    // pencere büyümezse en fazla b
 internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float = when (c) {
     IslandContent.Assistant -> cfg.assistantHeightDp
     is IslandContent.Favorites -> cfg.favoritesHeightDp(c.apps.size)
+    IslandContent.Translate -> cfg.translateHeightDp(TranslateSession.bodyDp.value)
     is IslandContent.Call -> if (c.isIncoming) 74f else 88f
     is IslandContent.Status -> if (c.isPill()) chargePillHeightDp(cfg) else cfg.expandedHeightDp
     is IslandContent.ScreenRec -> REC_PILL_H_DP
@@ -280,6 +281,9 @@ fun IslandRoot(
     val lyrics by lyricsFlow.collectAsState()
     val content = s.content
     val media = content as? IslandContent.Media
+    // Çeviri paneli: sonuç uzadıkça / kısaldıkça panel yumuşakça büyür / küçülür (pencereyi servis boyutlandırır)
+    val trBody by TranslateSession.bodyDp.collectAsState()
+    val trHeight by animateDpAsState(cfg.translateHeightDp(trBody).dp, tween(200, easing = FastOutSlowInEasing), label = "trH")
 
     // Kapak dönme: şarkı değişince eski kapak yarım tur dönüp yenisiyle değişir (yön: sonraki / önceki)
     val artFlip = remember { ArtFlip() }
@@ -398,6 +402,7 @@ fun IslandRoot(
             var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
+            if (content is IslandContent.Translate) geo = geo.copy(eh = trHeight)
             if (content is IslandContent.Call) geo = geo.copy(cw = if (cfg.dotMode) cw else maxOf(cw, CALL_COMPACT_W_DP.dp), eh = if (content.isIncoming) 74.dp else 88.dp)
             if (content is IslandContent.Status && content.isPill()) {
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
@@ -861,6 +866,7 @@ fun IslandPill(
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
+                    IslandContent.Translate -> TranslatePanel(cfg.compactHeightDp.dp)
                     is IslandContent.ScreenRec -> ScreenRecContent(content, onRecStop)
                     is IslandContent.Shazam -> ShazamContent(content, onShazamStop)
                     IslandContent.Idle -> Unit

@@ -196,6 +196,12 @@ data class IslandSettings(
     val dotMergeKeep: Boolean = false,       // birleşik modda olaylar adadan ayrılmaz, hapın içinde kalır
     val dotMerge: Boolean = false,           // boştaki noktalar birleşip tek bir ada gibi görünür; olay görünümü değişmez
     val stackExpand: Boolean = true,         // birden fazla olay varken adaya basınca hepsi alt alta kartlar halinde açılsın
+
+    // Çeviri paneli (boştayken adaya dokununca / basılı tutunca açılır)
+    val translateEnabled: Boolean = false,
+    val translateTrigger: Int = 0,           // 0 = dokununca, 1 = basılı tutunca
+    val translateSrc: String = "tr",         // son kullanılan kaynak dil (ML Kit dil kodu)
+    val translateTgt: String = "en",         // son kullanılan hedef dil
 ) {
     /**
      * Servisin / arayüzün kullandığı etkin ayarlar. Üç nokta modunda kapalı ada, ortadaki noktanın çapında bir daire olur;
@@ -229,6 +235,12 @@ data class IslandSettings(
         val rows = maxOf(1, ceil(count / FAV_COLUMNS.toFloat()).toInt())
         return compactHeightDp + 6f + rows * FAV_ROW_DP + 8f
     }
+
+    /** Özellik gerçekten çalışabilir mi: açık ve ada boştayken görünür. */
+    fun translateReady(): Boolean = translateEnabled && showIdle
+
+    /** Çeviri panelinin yüksekliği: kamera bölgesi + dil satırı + gövde (yazı alanı, sonuç ya da dil listesi). */
+    fun translateHeightDp(bodyDp: Int): Float = compactHeightDp + 6f + TR_ROW_DP + 8f + bodyDp + 14f
 
     /** Geçiş animasyonunun yaklaşık bitiş süresi (pencere boyutunu ona göre değiştiririz). */
     fun settleMs(): Long = if (!animEnabled) 60L else when (animStyle) {
@@ -308,6 +320,8 @@ class SettingsRepository(context: Context) {
         val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
         val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
         val STACK_EXP = booleanPreferencesKey("stack_exp")
+        val TRN_ON = booleanPreferencesKey("trn_on"); val TRN_TRIG = intPreferencesKey("trn_trig")
+        val TRN_SRC = stringPreferencesKey("trn_src"); val TRN_TGT = stringPreferencesKey("trn_tgt")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -445,6 +459,10 @@ class SettingsRepository(context: Context) {
             hiddenAppPkgs = p[K.HIDE_PKGS] ?: d.hiddenAppPkgs,
             uiHaptics = p[K.UI_HAPTIC] ?: d.uiHaptics,
             stackExpand = p[K.STACK_EXP] ?: d.stackExpand,
+            translateEnabled = p[K.TRN_ON] ?: d.translateEnabled,
+            translateTrigger = p[K.TRN_TRIG] ?: d.translateTrigger,
+            translateSrc = p[K.TRN_SRC] ?: d.translateSrc,
+            translateTgt = p[K.TRN_TGT] ?: d.translateTgt,
         )
     }.distinctUntilChanged()
 
@@ -505,6 +523,8 @@ class SettingsRepository(context: Context) {
             it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
             it[K.STACK_EXP] = s.stackExpand
+            it[K.TRN_ON] = s.translateEnabled; it[K.TRN_TRIG] = s.translateTrigger
+            it[K.TRN_SRC] = s.translateSrc; it[K.TRN_TGT] = s.translateTgt
         }
     }
 

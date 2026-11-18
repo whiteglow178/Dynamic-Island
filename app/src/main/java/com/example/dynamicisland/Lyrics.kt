@@ -67,17 +67,10 @@ object LrcParser {
 // ---------------------------------------------------------------- Çevrimiçi arama
 object LyricsRepository {
     private const val UA = "DynamicIsland/1.0 (https://github.com/whiteglow178/Dynamic-Island)"
-    private val NETEASE_HEADERS = mapOf(
-        "Referer" to "https://music.163.com",
-        "User-Agent" to "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36",
-        "Cookie" to "appver=2.0.2",
-    )
-    private val CREDIT = Regex("""^\s*(作词|作曲|编曲|制作人|词|曲|Lyrics|Composer|Producer)\s*[:：]""", RegexOption.IGNORE_CASE)
-
     private val cache = LruCache<String, LyricsState>(40)
     fun cached(key: String): LyricsState? = cache.get(key)
 
-    /** Önce LRCLIB, senkron söz bulunamazsa NetEase. Hiçbiri yoksa NotFound (ağ hatası önbelleğe alınmaz). */
+    /** LRCLIB'de aranır. Bulunamazsa NotFound (ağ hatası önbelleğe alınmaz). */
     suspend fun fetch(key: String, title: String, artist: String, durationMs: Long): LyricsState =
         withContext(Dispatchers.IO) {
             val cands = candidates(title, artist)
@@ -92,17 +85,6 @@ object LyricsRepository {
                         if (best == null) best = r
                     }
                 } catch (e: IOException) { netError = true } catch (e: Exception) { /* bozuk yanıt: sıradakini dene */ }
-            }
-            if (best == null || !best.synced) {
-                for ((t, a) in cands.take(2)) {
-                    try {
-                        val r = netease(t, a, durationMs)
-                        if (r != null) {
-                            if (r.synced) { best = r; break }
-                            if (best == null) best = r
-                        }
-                    } catch (e: IOException) { netError = true } catch (e: Exception) { }
-                }
             }
             val result: LyricsState = best ?: LyricsState.NotFound
             if (best != null || !netError) cache.put(key, result)
@@ -149,36 +131,6 @@ object LyricsRepository {
             if (l.isNotEmpty()) return LyricsState.Ready(l, false, "LRCLIB")
         }
         return null
-    }
-
-    // ------------------------------------------------------------ NetEase (resmi olmayan API)
-    private fun netease(title: String, artist: String, durMs: Long): LyricsState.Ready? {
-        val q = enc("$title $artist".trim())
-        val body = httpGet(
-            "https://music.163.com/api/search/get/web?csrf_token=&hlpretag=&hlposttag=&s=$q&type=1&offset=0&total=true&limit=8",
-            NETEASE_HEADERS,
-        ) ?: return null
-        val songs = JSONObject(body).optJSONObject("result")?.optJSONArray("songs") ?: return null
-        val tNorm = norm(title)
-        var id = 0L
-        var bestD = Long.MAX_VALUE
-        for (i in 0 until songs.length()) {
-            val o = songs.optJSONObject(i) ?: continue
-            val nm = norm(o.str("name"))
-            if (tNorm.isNotEmpty() && nm.isNotEmpty() && !(nm.contains(tNorm) || tNorm.contains(nm))) continue
-            val dur = o.optLong("duration", 0L)
-            val d = if (durMs > 0 && dur > 0) abs(dur - durMs) else 0L
-            if (durMs > 0 && dur > 0 && d > 6000) continue
-            if (d < bestD) { bestD = d; id = o.optLong("id", 0L) }
-        }
-        if (id == 0L) return null
-        val lb = httpGet("https://music.163.com/api/song/lyric?id=$id&lv=1&kv=1&tv=-1", NETEASE_HEADERS) ?: return null
-        val lrc = JSONObject(lb).optJSONObject("lrc")?.str("lyric").orEmpty()
-        if (lrc.isBlank()) return null
-        val synced = LrcParser.parse(lrc).filter { !CREDIT.containsMatchIn(it.text) }
-        if (synced.isNotEmpty()) return LyricsState.Ready(synced, true, "NetEase")
-        val spread = LrcParser.spread(lrc, durMs)
-        return if (spread.isEmpty()) null else LyricsState.Ready(spread, false, "NetEase")
     }
 
     // ------------------------------------------------------------ Yardımcılar
