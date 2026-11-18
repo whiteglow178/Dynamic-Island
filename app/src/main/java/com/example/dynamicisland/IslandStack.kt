@@ -26,7 +26,7 @@ import kotlinx.coroutines.delay
 const val STACK_GAP_DP = 8f
 const val STACK_MIN_ITEMS = 2
 const val STACK_HOLD_MS = 9_000L
-const val STACK_CLOSE_MS = 260L
+const val STACK_CLOSE_MS = 520L
 
 fun stackCardWidthDp(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = when (c) {
     is IslandContent.ScreenRec -> recExpandedWidthDp(cfg, screenWDp)
@@ -52,9 +52,18 @@ private fun stackKeyOf(c: IslandContent): String = when (c) {
     else -> c::class.java.simpleName
 }
 
+/** Kartın kapalı (ada) genişliği: ilk kart adadan bu boyuttan büyüyerek açılır. */
+private fun stackCompactWidthDp(c: IslandContent, cfg: IslandSettings): Float = when {
+    cfg.dotMode -> cfg.compactWidthDp
+    c is IslandContent.Call -> maxOf(cfg.compactWidthDp, CALL_COMPACT_W_DP)
+    c is IslandContent.ScreenRec && (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) -> maxOf(cfg.compactWidthDp, CALL_COMPACT_W_DP)
+    else -> cfg.compactWidthDp
+}
+
 /**
  * Birden fazla olay varken adaya basınca açılan görünüm: her olay kendi açık paneliyle (müzik, arama, ekran kaydı...)
- * alt alta bir kart olarak dizilir. Kartlar mevcut IslandPill ile çizilir (ilerleme sabit = açık), yani düğmeler çalışır.
+ * alt alta bir kart olarak dizilir. İlk (en yeni) kart, adanın kendisi gibi küçük halinden büyüyerek açılır; diğer kartlar
+ * onun altından kayarak çıkar. Kapanırken aynı yol tersine, daha yavaş oynar.
  */
 @Composable
 fun IslandStackPanel(
@@ -73,7 +82,20 @@ fun IslandStackPanel(
     onShazamStop: () -> Unit,
 ) {
     val screenWDp = LocalConfiguration.current.screenWidthDp.toFloat()
-    val openProgress = remember { IslandProgress(mutableStateOf(1f), mutableStateOf(1f)) }
+    val fullProgress = remember { IslandProgress(mutableStateOf(1f), mutableStateOf(1f)) }
+    // İlk kartın açılma ilerlemesi: 0 = kapalı ada, 1 = tam kart
+    val lead = remember { Animatable(0f) }
+    val leadProgress = remember { IslandProgress(lead.asState(), lead.asState()) }
+    LaunchedEffect(closing) {
+        if (closing) {
+            if (cfg.animEnabled) lead.animateTo(0f, tween((STACK_CLOSE_MS - 60L).toInt(), easing = FastOutSlowInEasing))
+            else lead.snapTo(0f)
+        } else {
+            delay(30L)      // pencere önce büyüsün
+            if (cfg.animEnabled) lead.animateTo(1f, spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow))
+            else lead.snapTo(1f)
+        }
+    }
     val lyricsOn = cfg.lyricsEnabled && cfg.lyricsInPanel
     Column(
         Modifier.fillMaxSize(),
@@ -82,15 +104,16 @@ fun IslandStackPanel(
     ) {
         items.forEachIndexed { index, c ->
             key(stackKeyOf(c)) {
-                val p = remember { Animatable(0f) }
-                LaunchedEffect(closing) {
-                    if (closing) {
-                        p.animateTo(0f, tween(200, easing = FastOutSlowInEasing))
-                    } else {
-                        // Pencere önce büyüsün; kartlar sırayla adadan aşağı doğru açılır
-                        delay(60L + index * 50L)
-                        if (cfg.animEnabled) p.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow))
-                        else p.snapTo(1f)
+                val first = index == 0
+                val p = remember { Animatable(if (first) 1f else 0f) }
+                if (!first) {
+                    LaunchedEffect(closing) {
+                        if (closing) p.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+                        else {
+                            delay(90L + index * 45L)
+                            if (cfg.animEnabled) p.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
+                            else p.snapTo(1f)
+                        }
                     }
                 }
                 val media = c as? IslandContent.Media
@@ -100,20 +123,22 @@ fun IslandStackPanel(
                 )
                 val w = stackCardWidthDp(c, cfg, screenWDp).dp
                 val h = expandedHeightDpFor(c, cfg).dp
-                val geo = Geo(cw = cfg.compactWidthDp.dp, ch = cfg.compactHeightDp.dp, ew = w, eh = h)
+                val geo = Geo(cw = stackCompactWidthDp(c, cfg).dp, ch = cfg.compactHeightDp.dp, ew = w, eh = h)
                 Box(
                     Modifier.graphicsLayer {
-                        val v = p.value
-                        alpha = v.coerceIn(0f, 1f)
-                        val sc = 0.55f + 0.45f * v.coerceIn(0f, 1f)
-                        scaleX = sc; scaleY = sc
-                        transformOrigin = TransformOrigin(0.5f, 0f)
-                        translationY = -(1f - v) * (index * 80.dp.toPx())
+                        if (!first) {
+                            val v = p.value.coerceIn(0f, 1f)
+                            alpha = v
+                            val sc = 0.92f + 0.08f * v
+                            scaleX = sc; scaleY = sc
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                            translationY = -(1f - v) * 28.dp.toPx()
+                        }
                     },
                 ) {
                     IslandPill(
-                        content = c, progress = openProgress, geo = geo, cfg = cfg, lyrics = lyrics, frame = frame,
-                        compactLyrics = false,
+                        content = c, progress = if (first) leadProgress else fullProgress, geo = geo, cfg = cfg,
+                        lyrics = lyrics, frame = frame, compactLyrics = false,
                         onTap = onClose, onCommand = onCommand, onOutput = onOutput,
                         onAnswer = onAnswer, onDecline = onDecline, onSpeaker = onSpeaker,
                         onOpenMusic = onOpenMusic,

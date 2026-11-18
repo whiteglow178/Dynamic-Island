@@ -247,9 +247,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Yığın açıkken içerik canlı güncellenir; olay sayısı 2'nin altına inerse ya da başka bir panel açılırsa yığın kapanır
         var st: List<IslandContent> = emptyList()
         if (stackOpen) {
-            st = stackItems()
-            if (n.expanded || n.swallow || !s.stackExpand || st.size < STACK_MIN_ITEMS) {
-                stackOpen = false; stackClosing = false; stackJob?.cancel(); st = emptyList()
+            val live = stackItems()
+            if (n.expanded || n.swallow || !s.stackExpand) {
+                stackOpen = false; stackClosing = false; stackJob?.cancel()
+            } else {
+                // Olay sayısı 2'nin altına inerse yığın ani kaybolmaz: son görüntüsüyle animasyonlu kapanır
+                if (live.size < STACK_MIN_ITEMS && !stackClosing) beginStackClose()
+                st = if (live.size >= STACK_MIN_ITEMS) live else lastStack
+                if (live.size >= STACK_MIN_ITEMS) lastStack = live
             }
         }
         ui.value = n.copy(
@@ -293,7 +298,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (!settings.value.stackExpand || stackOpen || cur.expanded || cur.swallow || cur.fromSide != 0) return false
         if (centerBg(cur.content) == null || stackItems().size < STACK_MIN_ITEMS) return false
         collapseJob?.cancel()
-        stackOpen = true; stackClosing = false
+        stackOpen = true; stackClosing = false; lastStack = emptyList()
         update { it.copy(expanded = false) }
         if (!stackOpen) return false
         stackJob?.cancel()
@@ -301,16 +306,22 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         return true
     }
 
-    private fun closeStack() {
-        if (!stackOpen || stackClosing) return
-        stackJob?.cancel()
+    private var lastStack: List<IslandContent> = emptyList()
+
+    private fun beginStackClose() {
         stackClosing = true
-        update { it }
+        stackJob?.cancel()
         stackJob = scope.launch {
             delay(STACK_CLOSE_MS)
             stackOpen = false; stackClosing = false
             update { it }
         }
+    }
+
+    private fun closeStack() {
+        if (!stackOpen || stackClosing) return
+        beginStackClose()
+        update { it }
     }
 
     // Genişlemişken yalnızca gerçekten çizilecek baloncuklar pay ayırır; kapalıyken baloncuğa geri küçülme için fromSide de sayılır
@@ -1270,14 +1281,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
-    private fun setGeometry(w: Int, h: Int, x: Int, y: Int, recalibrate: Boolean = true) {
+    private fun setGeometry(w: Int, h: Int, x: Int, y: Int, recalibrate: Boolean = true, force: Boolean = false) {
         val win = dialog?.window ?: return
         val big = w > 1 && h > 1
         wantX = x; wantY = y
         val ay = if (big) y - calibDy else y
         val ah = if (big) h + calibDy else h
         val cur = win.attributes
-        if (cur.width == w && cur.height == ah && cur.x == x && cur.y == ay) return
+        if (!force && cur.width == w && cur.height == ah && cur.x == x && cur.y == ay) return
         // Yeni nesne: aynı nesneyi geri atamak WindowManager güncellemesini tetiklemez
         val lp = WindowManager.LayoutParams().also { it.copyFrom(cur) }
         lp.width = w; lp.height = ah; lp.x = x; lp.y = ay
@@ -1331,10 +1342,18 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val loc = IntArray(2)
         v.getLocationOnScreen(loc)
         val dy = loc[1] - wantY
-        if (abs(dy) <= 2 || calibTries >= 3) return
+        // Yatay konum: pencere ortalı (gravity) + x kadar kaymış olmalı. Sistem pencereyi küçülürken yana kaydırıp
+        // orada bırakırsa (ada ekranın bir yanında kalır) konum yeniden uygulanır.
+        val screenW = wm.currentWindowMetrics.bounds.width()
+        val dx = if (curW < screenW) loc[0] - ((screenW - curW) / 2 + wantX) else 0
+        if ((abs(dy) <= 2 && abs(dx) <= 2) || calibTries >= 3) return
         calibTries++
-        calibDy = (calibDy + dy).coerceIn(-300, 600)
-        setGeometry(curW, curH, wantX, wantY, recalibrate = false)
+        if (abs(dy) > 2) calibDy = (calibDy + dy).coerceIn(-300, 600)
+        if (abs(dx) > 2) {
+            // Aynı değerleri yeniden atamak sistemde işlem yapmayabilir: 1 px kaydırıp hemen gerçek konuma getir
+            setGeometry(curW, curH, wantX + 1, wantY, recalibrate = false, force = true)
+            v.postDelayed({ setGeometry(curW, curH, wantX - 1, wantY, recalibrate = false) }, 32)
+        } else setGeometry(curW, curH, wantX, wantY, recalibrate = false)
     }
 
     /** Boşta görünen adaya dokunuş yakalamasın: durum çubuğu altından normal çalışsın. */
