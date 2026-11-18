@@ -246,7 +246,7 @@ internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float =
     IslandContent.Assistant -> cfg.assistantHeightDp
     is IslandContent.Favorites -> cfg.favoritesHeightDp(c.apps.size)
     is IslandContent.Call -> if (c.isIncoming) 74f else 88f
-    is IslandContent.Status -> if (c.kind == StatusKind.Charging) chargePillHeightDp(cfg) else cfg.expandedHeightDp
+    is IslandContent.Status -> if (c.isPill()) chargePillHeightDp(cfg) else cfg.expandedHeightDp
     is IslandContent.ScreenRec -> REC_PILL_H_DP
     is IslandContent.Shazam -> SHAZAM_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
@@ -399,7 +399,7 @@ fun IslandRoot(
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
             if (content is IslandContent.Call) geo = geo.copy(cw = if (cfg.dotMode) cw else maxOf(cw, CALL_COMPACT_W_DP.dp), eh = if (content.isIncoming) 74.dp else 88.dp)
-            if (content is IslandContent.Status && content.kind == StatusKind.Charging) {
+            if (content is IslandContent.Status && content.isPill()) {
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
             // Ekran kaydı: geri sayım / işleniyor aşamasında kapalı ada biraz genişler (sağda rakam / halka için)
@@ -853,7 +853,11 @@ fun IslandPill(
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
                     is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline, onSpeaker)
                     is IslandContent.Status ->
-                        if (content.kind == StatusKind.Charging) ChargeContent(content, rb) else StatusContent(content, rb)
+                        when (content.kind) {
+                            StatusKind.Charging -> ChargeContent(content, rb)
+                            StatusKind.Ringer -> RingerContent(content, rb)
+                            else -> StatusContent(content, rb)
+                        }
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)

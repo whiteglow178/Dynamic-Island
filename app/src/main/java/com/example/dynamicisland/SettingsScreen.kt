@@ -168,6 +168,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         }
         sec("Görünürlük", "Ada ne zaman görünsün") {
             SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
+            SwitchRow("Zil / sessiz göstergesi", "Telefonu sessize, titreşime ya da sesliye alınca ada kısa süre Zil, Sessiz ya da Titreşim yazısıyla açılır", draft.ringerIndicator) { draft = draft.copy(ringerIndicator = it) }
             SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
         }
         sec("Kamera / mikrofon göstergesi", "Bir uygulama kamerayı ya da mikrofonu kullanırken ada haber verir", PreviewKind.Privacy) {

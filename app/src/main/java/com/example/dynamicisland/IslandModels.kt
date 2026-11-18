@@ -13,6 +13,9 @@ data class FavApp(val pkg: String, val label: String, val icon: ImageBitmap?)
 
 enum class StatusKind { Ringer, Charging, Timer, Alarm, Camera, Mic }
 
+/** Dar "hap" şeklinde açılan durumlar: şarj ve zil modu (Zil / Sessiz / Titreşim). */
+fun IslandContent.Status.isPill(): Boolean = kind == StatusKind.Charging || kind == StatusKind.Ringer
+
 /** Sistem ekran kaydı aşamaları. */
 enum class RecPhase { Countdown, Recording, Processing, Saved }
 
@@ -56,6 +59,7 @@ sealed interface IslandContent {
         val endsAt: Long = 0L,           // zamanlayıcı: bitiş zamanı (System.currentTimeMillis)
         val totalMs: Long = 0L,          // zamanlayıcı: toplam süre
         val silent: Boolean = false,     // zil modu: sessiz mi
+        val vibrate: Boolean = false,    // zil modu: titreşim mi (silent=false, vibrate=true -> titreşim)
     ) : IslandContent
 
     /** Sistem ekran kaydı: geri sayım / kayıt / işleniyor / kaydedildi. Süre UI'da startedAt'ten hesaplanır. */

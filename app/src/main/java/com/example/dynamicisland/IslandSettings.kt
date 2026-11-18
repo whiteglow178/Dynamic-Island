@@ -188,6 +188,7 @@ data class IslandSettings(
     val dotRight2Dp: Float = 20f,            // sağdaki dış nokta çapı (4 ve 5 nokta)
     val dotOffsetXDp: Float = 0f,            // üç nokta konumu: normal Konum ayarına eklenir (+ sağa)
     val dotOffsetYDp: Float = 0f,            // (+ aşağı)
+    val ringerIndicator: Boolean = true,           // zil / sessiz / titreşim modu değişince ada haber verir
     val privacyIndicator: Boolean = false,         // nokta modu: kamera / mikrofon kullanılırken yeşil / turuncu nokta olayı
     val hideInApps: Boolean = false,         // seçili uygulamalar ön plandayken ada gizlensin
     val hiddenAppPkgs: String = "",          // gizlenecek uygulamaların paket adları (virgülle ayrılmış)
@@ -305,7 +306,7 @@ class SettingsRepository(context: Context) {
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
         val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
-        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
+        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
         val STACK_EXP = booleanPreferencesKey("stack_exp")
     }
 
@@ -439,6 +440,7 @@ class SettingsRepository(context: Context) {
             dotMerge = p[K.DOT_MERGE] ?: d.dotMerge,
             dotMergeKeep = p[K.DOT_MERGE_KEEP] ?: d.dotMergeKeep,
             privacyIndicator = p[K.PRIV_IND] ?: d.privacyIndicator,
+            ringerIndicator = p[K.RINGER_IND] ?: d.ringerIndicator,
             hideInApps = p[K.HIDE_APPS] ?: d.hideInApps,
             hiddenAppPkgs = p[K.HIDE_PKGS] ?: d.hiddenAppPkgs,
             uiHaptics = p[K.UI_HAPTIC] ?: d.uiHaptics,
@@ -499,6 +501,7 @@ class SettingsRepository(context: Context) {
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
             it[K.NT_EXP_S] = s.notifExpandedSec; it[K.NT_CMP_S] = s.notifCompactSec
             it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
+            it[K.RINGER_IND] = s.ringerIndicator
             it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
             it[K.STACK_EXP] = s.stackExpand

@@ -128,6 +128,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandAccessibilityService.onChanged = { runCatching { reattach() } }
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
+        runCatching { ringer.start() }
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
         // Bildirim dinleyicisi sistem tarafından yeniden bağlanırken zaman alabilir (özellikle uzun süre sonra):
@@ -172,7 +173,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandContent.Assistant -> 3
         is IslandContent.Favorites -> 4
         is IslandContent.Call -> if (c.isIncoming) 5 else 6
-        is IslandContent.Status -> if (c.kind == StatusKind.Charging) 8 else 7
+        is IslandContent.Status -> if (c.isPill()) 8 else 7
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
         is IslandContent.Shazam -> 11
     }
@@ -670,6 +671,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val shazam: ShazamController by lazy { ShazamController(host) }
     private val rec: ScreenRecController by lazy { ScreenRecController(host) }
     private val privacy: PrivacyController by lazy { PrivacyController(host) }
+    private val ringer: RingerController by lazy { RingerController(host) }
     private val appHide: AppHideController by lazy { AppHideController(host) }
     private val notif: NotifController by lazy { NotifController(host) }
 
@@ -1684,6 +1686,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     override fun onDestroy() {
         IslandAccessibilityService.onChanged = null
         runCatching { privacy.stop() }
+        runCatching { ringer.stop() }
         lyricsJob?.cancel()
         runCatching { call.destroy() }
         runCatching { notifBanner.release() }

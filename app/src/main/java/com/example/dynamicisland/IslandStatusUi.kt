@@ -225,3 +225,70 @@ internal fun StatusContent(c: IslandContent.Status, rb: RainbowStyle?) {
         }
     }
 }
+
+
+// ---------------------------------------------------------------- Zil modu: Zil / Sessiz / Titreşim (iOS tarzı hap)
+/** Solda animasyonlu simge, sağda yazı. Ortada kamera deliği için boşluk kalır. */
+@Composable
+internal fun RingerContent(c: IslandContent.Status, rb: RainbowStyle?) {
+    val color = when {
+        c.silent -> Color(0xFFFF3B30)      // sessiz: kırmızı
+        c.vibrate -> Color(0xFFFF9500)     // titreşim: turuncu
+        else -> Color.White                // zil: beyaz
+    }
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RingerGlyph(c, color, Modifier.size(18.dp))
+        Spacer(Modifier.weight(1f))
+        Text(
+            c.title, color = color, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, maxLines = 1,
+            modifier = if (c.silent || c.vibrate) Modifier else Modifier.rainbowFill(rb),
+        )
+    }
+}
+
+@Composable
+private fun RingerGlyph(c: IslandContent.Status, color: Color, modifier: Modifier = Modifier) {
+    val swing = remember(c.title) { Animatable(0f) }
+    val slash = remember(c.title) { Animatable(if (c.silent) 0f else 1f) }
+    LaunchedEffect(c.title) {
+        when {
+            c.silent -> { delay(140); slash.animateTo(1f, tween(260, easing = FastOutSlowInEasing)) }
+            c.vibrate -> {
+                repeat(7) { i ->
+                    val a = 1.3f * (1f - i / 7f)
+                    swing.animateTo(a, tween(45)); swing.animateTo(-a, tween(45))
+                }
+                swing.animateTo(0f, tween(45))
+            }
+            else -> for (a in floatArrayOf(22f, -18f, 13f, -9f, 5f, 0f)) {
+                swing.animateTo(a, tween(95, easing = FastOutSlowInEasing))
+            }
+        }
+    }
+    Canvas(modifier) {
+        val sc = size.width / 24f
+        withTransform({ scale(sc, sc, Offset.Zero) }) {
+            if (c.vibrate) {
+                withTransform({ translate(swing.value, 0f) }) { drawVibratePhone(color) }
+            } else {
+                withTransform({ rotate(swing.value, Offset(12f, 3f)) }) { drawPath(BellPath, color) }
+                val p = slash.value
+                if (c.silent && p > 0.01f) {
+                    val end = Offset(3.5f + 17f * p, 3.5f + 17f * p)
+                    drawLine(Color.Black, Offset(3.5f, 3.5f), end, strokeWidth = 5f, cap = StrokeCap.Round)   // çizginin kenarında boşluk
+                    drawLine(color, Offset(3.5f, 3.5f), end, strokeWidth = 2.4f, cap = StrokeCap.Round)
+                }
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawVibratePhone(color: Color) {
+    drawRoundRect(color, Offset(8f, 3.5f), Size(8f, 17f), CornerRadius(2.2f, 2.2f), style = Stroke(width = 2f))
+    for ((x, y0, y1) in listOf(
+        Triple(4.5f, 8f, 16f), Triple(1.8f, 10f, 14f), Triple(19.5f, 8f, 16f), Triple(22.2f, 10f, 14f),
+    )) drawLine(color, Offset(x, y0), Offset(x, y1), strokeWidth = 2f, cap = StrokeCap.Round)
+}
