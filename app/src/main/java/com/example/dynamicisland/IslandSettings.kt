@@ -53,6 +53,7 @@ data class IslandSettings(
     val musicBottomFx: Boolean = true,       // müzik çalarken adanın altında albüm renginde hareketli ışık
     val customArtEnabled: Boolean = false,
     val customArtUri: String = "",
+    val customArtVideoUri: String = "",      // boş = video yok; doluysa kapak yerine video çalar (kopyalanmaz)
     // Liquid Glass
     val glassEnabled: Boolean = false,
     val glassAlpha: Float = 0.55f,
@@ -285,7 +286,7 @@ class SettingsRepository(context: Context) {
         val ART_BG = booleanPreferencesKey("art_bg"); val ART_BG_C = booleanPreferencesKey("art_bg_c")
         val CB_ON = booleanPreferencesKey("cb_on"); val CB_SEP = booleanPreferencesKey("cb_sep"); val CB_DIM = floatPreferencesKey("cb_dim")
         val CB_U_BOTH = stringPreferencesKey("cb_u_both"); val CB_U_C = stringPreferencesKey("cb_u_c"); val CB_U_E = stringPreferencesKey("cb_u_e")
-        val CB_V = stringPreferencesKey("cb_v"); val MB_FX = booleanPreferencesKey("mb_fx")
+        val CB_V = stringPreferencesKey("cb_v"); val CA_V = stringPreferencesKey("ca_v"); val MB_FX = booleanPreferencesKey("mb_fx")
         val CA_ON = booleanPreferencesKey("ca_on"); val CA_U = stringPreferencesKey("ca_u")
         val GLASS = booleanPreferencesKey("glass"); val ALPHA = floatPreferencesKey("alpha"); val BLUR = intPreferencesKey("blur")
         val LQ_ON = booleanPreferencesKey("lq_on"); val LQ_R = floatPreferencesKey("lq_r")
@@ -352,6 +353,7 @@ class SettingsRepository(context: Context) {
             musicBottomFx = p[K.MB_FX] ?: d.musicBottomFx,
             customArtEnabled = p[K.CA_ON] ?: d.customArtEnabled,
             customArtUri = p[K.CA_U] ?: d.customArtUri,
+            customArtVideoUri = p[K.CA_V] ?: d.customArtVideoUri,
             glassEnabled = p[K.GLASS] ?: d.glassEnabled,
             glassAlpha = p[K.ALPHA] ?: d.glassAlpha,
             blurRadiusPx = p[K.BLUR] ?: d.blurRadiusPx,
@@ -481,7 +483,7 @@ class SettingsRepository(context: Context) {
             it[K.CB_ON] = s.customBgEnabled; it[K.CB_SEP] = s.customBgSeparate; it[K.CB_DIM] = s.customBgDim
             it[K.CB_U_BOTH] = s.customBgBothUri; it[K.CB_U_C] = s.customBgCompactUri; it[K.CB_U_E] = s.customBgExpandedUri
             it[K.CB_V] = s.customBgVideoUri; it[K.MB_FX] = s.musicBottomFx
-            it[K.CA_ON] = s.customArtEnabled; it[K.CA_U] = s.customArtUri
+            it[K.CA_ON] = s.customArtEnabled; it[K.CA_U] = s.customArtUri; it[K.CA_V] = s.customArtVideoUri
             it[K.GLASS] = s.glassEnabled; it[K.ALPHA] = s.glassAlpha; it[K.BLUR] = s.blurRadiusPx
             it[K.LQ_ON] = s.liquidEnabled; it[K.LQ_R] = s.liquidRefraction
             it[K.LQ_D] = s.liquidDispersion; it[K.LQ_S] = s.liquidSpecular

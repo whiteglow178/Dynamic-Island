@@ -134,6 +134,7 @@ fun MusicPanel(
     onOpenMusic: () -> Unit = {},     // kapağa / şarkı adına basınca çalan müzik uygulamasını aç (ayarlardan)
     artFlip: ArtFlip? = null,         // kapak dönme animasyonu durumu
     artSpin: () -> Float = { 0f },    // ada açılırken / küçülürken kapağın dönüş açısı (derece)
+    artVideo: String = "",            // doluysa kapak yerine bu video çalar
 ) {
     val ctx = LocalContext.current
     val rb = rememberRainbowStyle(cfg)
@@ -163,7 +164,7 @@ fun MusicPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier) {
-                FlipAlbumArt(customArt ?: m.art, 60.dp, artFlip, artSpin, 12.dp, customArt == null)   // sol köşe
+                FlipAlbumArt(customArt ?: m.art, 60.dp, artFlip, artSpin, 12.dp, customArt == null && artVideo.isEmpty(), video = artVideo)   // sol köşe
             }
             // Kapak yüksekliğinde alan: şarkı adı ortada, sanatçı adı kapağın alt kenarıyla hizalı
             Box(

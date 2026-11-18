@@ -127,6 +127,22 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             if (old != u) CustomVideo.releaseUnused(ctx, old, draft)
         }
     }
+    // Kapak videosu: aynı seçici mantığı, ayrı adres
+    val artVideoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            CustomVideo.grant(ctx, uri)
+            val u = uri.toString()
+            val old = draft.customArtVideoUri
+            draft = draft.copy(customArtVideoUri = u)
+            if (old != u) CustomVideo.releaseUnused(ctx, old, draft)
+        }
+    }
+    val pickArtVideo: () -> Unit = { artVideoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) }
+    val removeArtVideo: () -> Unit = {
+        val old = draft.customArtVideoUri
+        draft = draft.copy(customArtVideoUri = "")
+        CustomVideo.releaseUnused(ctx, old, draft)
+    }
     val pickVideo: () -> Unit = { videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) }
     val removeVideo: () -> Unit = {
         val old = draft.customBgVideoUri
@@ -377,6 +393,9 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             if (draft.customArtEnabled) {
                 ImagePickRow("Kapak fotoğrafı", "Her şarkıda bu fotoğraf gösterilir",
                     CustomImages.Slot.ART, draft.customArtUri, pick, remove)
+                SectionDivider()
+                VideoPickRow(draft.customArtVideoUri, pickArtVideo, removeArtVideo,
+                    title = "Kapak videosu", hint = "Seçersen kapak fotoğrafının yerine video çalar (sessiz, döngülü).")
                 Text("Fotoğraf seçilmezse gerçek albüm kapağı gösterilir. Ada rengi ve parıltılar yine çalan şarkının kapağından alınır.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             }
@@ -724,15 +743,17 @@ private fun ImagePickRow(
 
 // ---------------------------------------------------------------- Video seçme satırı
 @Composable
-private fun VideoPickRow(uri: String, onPick: () -> Unit, onRemove: () -> Unit) {
+private fun VideoPickRow(
+    uri: String, onPick: () -> Unit, onRemove: () -> Unit,
+    title: String = "Video arka plan", hint: String = "Seçersen fotoğraf yerine video çalar. Pil tüketimini artırabilir.",
+) {
     val cs = MaterialTheme.colorScheme
     val has = uri.isNotEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("Video arka plan", color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(title, color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Text(
-                if (has) "Video seçildi; fotoğrafların yerine çalar (sessiz, döngülü). Silinir veya taşınırsa arka plan kaybolur."
-                else "Seçersen fotoğraf yerine video çalar. Pil tüketimini artırabilir.",
+                if (has) "Video seçildi (sessiz, döngülü). Silinir veya taşınırsa kaybolur." else hint,
                 color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
             )
         }

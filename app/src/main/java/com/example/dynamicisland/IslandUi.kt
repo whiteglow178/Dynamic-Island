@@ -149,7 +149,7 @@ private fun foldDeg(a: Float): Float = ((a + 90f) % 180f + 180f) % 180f - 90f
 @Composable
 fun FlipAlbumArt(
     art: ImageBitmap?, size: Dp, flip: ArtFlip?, spin: () -> Float, corner: Dp,
-    allowOld: Boolean = true, modifier: Modifier = Modifier,
+    allowOld: Boolean = true, modifier: Modifier = Modifier, video: String = "",
 ) {
     val showOld by remember(flip) { derivedStateOf { flip != null && flip.from != null && flip.trackDeg < 90f } }
     val old = flip?.from
@@ -174,7 +174,9 @@ fun FlipAlbumArt(
             },
         contentAlignment = Alignment.Center,
     ) {
-        if (shown != null) {
+        if (video.isNotEmpty()) {
+            VideoBackdrop(video, 0f)
+        } else if (shown != null) {
             Image(
                 bitmap = shown, contentDescription = null, contentScale = ContentScale.Crop,
                 filterQuality = FilterQuality.Medium, modifier = Modifier.fillMaxSize(),
@@ -736,6 +738,7 @@ fun IslandPill(
     val bgCompact = rememberCustomImage(CustomImages.Slot.BG_COMPACT, if (bgOn && cfg.customBgSeparate) cfg.customBgCompactUri else "")
     val bgExpanded = rememberCustomImage(CustomImages.Slot.BG_EXPANDED, if (bgOn && cfg.customBgSeparate) cfg.customBgExpandedUri else "")
     val bgVideo = if (bgOn) cfg.customBgVideoUri else ""
+    val artVideo = if (cfg.customArtEnabled) cfg.customArtVideoUri else ""
     val customArt = rememberCustomImage(CustomImages.Slot.ART, if (cfg.customArtEnabled) cfg.customArtUri else "")
 
     // Asistanda cam gövde en az %60 koyu kalır: renk bantları koyu zeminde okunur
@@ -871,7 +874,7 @@ fun IslandPill(
                             StatusKind.Ringer -> RingerContent(content, rb)
                             else -> StatusContent(content, rb)
                         }
-                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin)
+                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin, artVideo)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     IslandContent.Translate -> TranslatePanel(cfg.compactHeightDp.dp)
@@ -1011,15 +1014,17 @@ fun IslandPill(
                 }
                 val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
                 val shownArt = customArt ?: content.art ?: artFlip?.held
-                shownArt?.let { art ->
+                val artShown = shownArt != null || artVideo.isNotEmpty()
+                if (artShown) {
                     FlipAlbumArt(
-                        art, artSize, artFlip, artSpin, 7.dp, customArt == null,
+                        shownArt, artSize, artFlip, artSpin, 7.dp, customArt == null && artVideo.isEmpty(),
                         Modifier.align(Alignment.CenterStart).padding(start = 8.dp).then(fade),
+                        video = artVideo,
                     )
                 }
                 if (compactLyrics && cfg.lyricsEnabled && cfg.lyricsCompact && lyrics is LyricsState.Ready) {
                     // Albüm kapağı ile equalizer arasındaki orta boşluk
-                    val startPad = if (shownArt != null) 8.dp + artSize + 8.dp else 14.dp
+                    val startPad = if (artShown) 8.dp + artSize + 8.dp else 14.dp
                     val endPad = 10.dp + 23.dp + 8.dp
                     CompactLyrics(
                         cfg, lyrics, frame,

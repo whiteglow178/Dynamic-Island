@@ -37,7 +37,7 @@ object CustomVideo {
 
     /** Video kaldırılınca/değişince verilen izni geri bırakır (başka yerde kullanılmıyorsa). */
     fun releaseUnused(ctx: Context, old: String, now: IslandSettings) {
-        if (old.isEmpty() || now.customBgVideoUri == old) return
+        if (old.isEmpty() || now.customBgVideoUri == old || now.customArtVideoUri == old) return
         if (CustomImages.Slot.values().any { now.imageUri(it) == old }) return
         try {
             ctx.applicationContext.contentResolver.releasePersistableUriPermission(Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION)
