@@ -568,7 +568,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Ayrı dosyalara taşınan olaylar
     // Shazam -> ShazamController.kt, ekran kaydı -> ScreenRecController.kt. Servisle konuşmaları IslandHost üzerinden olur.
-    private val host = object : IslandHost {
+    private val host: IslandHost = object : IslandHost {
         override val scope: kotlinx.coroutines.CoroutineScope get() = this@IslandOverlayService.scope
         override val context: android.content.Context get() = this@IslandOverlayService
         override val settings: IslandSettings get() = this@IslandOverlayService.settings.value
@@ -593,11 +593,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override suspend fun collapseAndRest() = this@IslandOverlayService.collapseAndRest()
         override fun publishScreenRec(c: IslandContent.ScreenRec, expanded: Boolean) = publishRec(c, expanded)
     }
-    private val shazam by lazy { ShazamController(host) }
-    private val rec by lazy { ScreenRecController(host) }
-    private val privacy by lazy { PrivacyController(host) }
-    private val appHide by lazy { AppHideController(host) }
-    private val notif by lazy { NotifController(host) }
+    private val shazam: ShazamController by lazy { ShazamController(host) }
+    private val rec: ScreenRecController by lazy { ScreenRecController(host) }
+    private val privacy: PrivacyController by lazy { PrivacyController(host) }
+    private val appHide: AppHideController by lazy { AppHideController(host) }
+    private val notif: NotifController by lazy { NotifController(host) }
 
     /** Ekran kaydı içeriğini adaya yayınlar; kayıt daha yeni bir olayın arkasındaysa yalnızca yan baloncuğu yenilenir. */
     private fun publishRec(c: IslandContent.ScreenRec, expanded: Boolean) {
@@ -614,9 +614,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     // ---------------------------------------------------------------- Arama (gelen / aktif) -> CallController.kt
-    private val sideCall by lazy { SideCallOverlay(this, this, this, wm) }
+    private val sideCall: SideCallOverlay by lazy { SideCallOverlay(this, this, this, wm) }
     private val notifBanner by lazy { NotifBannerOverlay(this, this, this, wm, scope) { n -> openNotification(n) } }
-    private val call by lazy { CallController(host, sideCall) }
+    private val call: CallController by lazy { CallController(host, sideCall) }
 
     /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */
     private fun onPillLongPress() {
