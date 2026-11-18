@@ -61,4 +61,6 @@ dependencies {
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
     // Compose'un hazır baseline profile'ını kurulumda derletir (ilk açılış ve kaydırma akıcı olur)
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    // Çeviri paneli: cihazda çalışan ML Kit çeviri (ücretsiz, API anahtarı yok; dil modeli ilk kullanımda iner)
+    implementation("com.google.mlkit:translate:17.0.3")
 }
