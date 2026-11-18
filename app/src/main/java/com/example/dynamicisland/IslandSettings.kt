@@ -230,6 +230,18 @@ data class IslandSettings(
     val uiHaptics: Boolean = true,           // ayar ekranında anahtar / kaydırıcı titreşimi
     val dotMergeKeep: Boolean = false,       // birleşik modda olaylar adadan ayrılmaz, hapın içinde kalır
     val dotMerge: Boolean = false,           // boştaki noktalar birleşip tek bir ada gibi görünür; olay görünümü değişmez
+    // ---------------------------------------------------------- iPhone modu (hap şeklinde ada + yanında siyah daire)
+    val iphoneMode: Boolean = false,         // iPhone 14 Pro tarzı: hap ada + yanında ayrı siyah daire
+    val iphoneCircle: Boolean = true,        // yandaki siyah daire görünsün
+    val iphoneEvents: Boolean = true,        // olaylar (ikinci olay: müzik, kayıt, arama...) dairede görünsün
+    val iphoneCircleSide: Int = 0,           // 0 = daire adanın solunda, 1 = sağında
+    val iphonePillWDp: Float = 126f,         // kapalı ada (hap) genişliği
+    val iphonePillHDp: Float = 37f,          // kapalı ada (hap) yüksekliği
+    val iphoneCircleDp: Float = 37f,         // daire çapı (en çok ada yüksekliği kadar)
+    val iphoneGapDp: Float = 10f,            // ada ile daire arası boşluk
+    val iphoneCenterGroup: Boolean = true,   // ada + daire ikilisi kameranın ortasında dursun (kapalıysa ada kameranın üstünde, daire yanında)
+    val iphoneOffsetXDp: Float = 0f,         // iPhone modu konumu: normal Konum ayarına eklenir (+ sağa)
+    val iphoneOffsetYDp: Float = 0f,         // (+ aşağı)
     val stackExpand: Boolean = true,         // birden fazla olay varken adaya basınca hepsi alt alta kartlar halinde açılsın
 
     // Çeviri paneli (boştayken adaya dokununca / basılı tutunca açılır)
@@ -242,13 +254,32 @@ data class IslandSettings(
      * Servisin / arayüzün kullandığı etkin ayarlar. Üç nokta modunda kapalı ada, ortadaki noktanın çapında bir daire olur;
      * kullanıcının kaydedilmiş ada boyutları değişmez (yalnızca bu kopya değişir).
      */
-    fun effective(): IslandSettings =
-        if (!dotMode) this
-        else copy(
+    fun effective(): IslandSettings = when {
+        dotMode -> copy(
             compactWidthDp = dotMidDp, compactHeightDp = dotMidDp,
             offsetXDp = offsetXDp + dotOffsetXDp, offsetYDp = offsetYDp + dotOffsetYDp,
             showIdle = true, lyricsCompact = false, lyricsOutside = lyricsOutside,
         )
+        // iPhone modu: kapalı ada hap boyutunda; daire açıksa ve "ortala" seçiliyse ada + daire ikilisi kameranın ortasına oturur
+        iphoneMode -> {
+            val shift = if (iphoneCircle && iphoneCenterGroup) -iphoneDir() * (iphoneCircleSizeDp() + iphoneGapDp) / 2f else 0f
+            copy(
+                compactWidthDp = iphonePillWDp, compactHeightDp = iphonePillHDp,
+                offsetXDp = offsetXDp + iphoneOffsetXDp + shift, offsetYDp = offsetYDp + iphoneOffsetYDp,
+                showIdle = true,
+            )
+        }
+        else -> this
+    }
+
+    /** iPhone modunda dairenin adaya göre yönü: +1 sağ, -1 sol. */
+    fun iphoneDir(): Int = if (iphoneCircleSide == 1) 1 else -1
+
+    /** Daire çapı (dp): pencere yüksekliği ada yüksekliği olduğu için en çok o kadar. */
+    fun iphoneCircleSizeDp(): Float = kotlin.math.min(iphoneCircleDp, iphonePillHDp)
+
+    /** iPhone modu açık ve yandaki siyah daire görünür mü? (Nokta modu açıkken iPhone modu çalışmaz.) */
+    fun iphoneCircleOn(): Boolean = iphoneMode && !dotMode && iphoneCircle
 
     /** Pencerenin ada etrafında bırakacağı pay (parıltı / zıplama taşması için). */
     fun windowPadDp(): Float = maxOf(
@@ -363,6 +394,10 @@ class SettingsRepository(context: Context) {
         val MU_EXP_S = floatPreferencesKey("mu_exp_s"); val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
         val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
         val STACK_EXP = booleanPreferencesKey("stack_exp")
+        val IP_ON = booleanPreferencesKey("ip_on"); val IP_CIRCLE = booleanPreferencesKey("ip_circle"); val IP_EV = booleanPreferencesKey("ip_ev")
+        val IP_SIDE = intPreferencesKey("ip_side"); val IP_PW = floatPreferencesKey("ip_pw"); val IP_PH = floatPreferencesKey("ip_ph")
+        val IP_CD = floatPreferencesKey("ip_cd"); val IP_GAP = floatPreferencesKey("ip_gap"); val IP_CTR = booleanPreferencesKey("ip_ctr")
+        val IP_OX = floatPreferencesKey("ip_ox"); val IP_OY = floatPreferencesKey("ip_oy")
         val TRN_ON = booleanPreferencesKey("trn_on"); val TRN_TRIG = intPreferencesKey("trn_trig")
         val TRN_SRC = stringPreferencesKey("trn_src"); val TRN_TGT = stringPreferencesKey("trn_tgt")
     }
@@ -523,6 +558,17 @@ class SettingsRepository(context: Context) {
             hiddenAppPkgs = p[K.HIDE_PKGS] ?: d.hiddenAppPkgs,
             uiHaptics = p[K.UI_HAPTIC] ?: d.uiHaptics,
             stackExpand = p[K.STACK_EXP] ?: d.stackExpand,
+            iphoneMode = p[K.IP_ON] ?: d.iphoneMode,
+            iphoneCircle = p[K.IP_CIRCLE] ?: d.iphoneCircle,
+            iphoneEvents = p[K.IP_EV] ?: d.iphoneEvents,
+            iphoneCircleSide = (p[K.IP_SIDE] ?: d.iphoneCircleSide).coerceIn(0, 1),
+            iphonePillWDp = p[K.IP_PW] ?: d.iphonePillWDp,
+            iphonePillHDp = p[K.IP_PH] ?: d.iphonePillHDp,
+            iphoneCircleDp = p[K.IP_CD] ?: d.iphoneCircleDp,
+            iphoneGapDp = p[K.IP_GAP] ?: d.iphoneGapDp,
+            iphoneCenterGroup = p[K.IP_CTR] ?: d.iphoneCenterGroup,
+            iphoneOffsetXDp = p[K.IP_OX] ?: d.iphoneOffsetXDp,
+            iphoneOffsetYDp = p[K.IP_OY] ?: d.iphoneOffsetYDp,
             translateEnabled = p[K.TRN_ON] ?: d.translateEnabled,
             translateTrigger = p[K.TRN_TRIG] ?: d.translateTrigger,
             translateSrc = p[K.TRN_SRC] ?: d.translateSrc,
@@ -597,6 +643,9 @@ class SettingsRepository(context: Context) {
             it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
             it[K.STACK_EXP] = s.stackExpand
+            it[K.IP_ON] = s.iphoneMode; it[K.IP_CIRCLE] = s.iphoneCircle; it[K.IP_EV] = s.iphoneEvents; it[K.IP_SIDE] = s.iphoneCircleSide
+            it[K.IP_PW] = s.iphonePillWDp; it[K.IP_PH] = s.iphonePillHDp; it[K.IP_CD] = s.iphoneCircleDp; it[K.IP_GAP] = s.iphoneGapDp
+            it[K.IP_CTR] = s.iphoneCenterGroup; it[K.IP_OX] = s.iphoneOffsetXDp; it[K.IP_OY] = s.iphoneOffsetYDp
             it[K.TRN_ON] = s.translateEnabled; it[K.TRN_TRIG] = s.translateTrigger
             it[K.TRN_SRC] = s.translateSrc; it[K.TRN_TGT] = s.translateTgt
         }

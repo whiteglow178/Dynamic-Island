@@ -114,11 +114,13 @@ fun dotExtentDp(cfg: IslandSettings, dir: Int): Float =
     sideSizeDp(cfg, dir) + if (dotHasOuter(cfg, dir)) sideGapDp(cfg) + dotOuterSizeDp(cfg, dir) else 0f
 
 /** Ada ile yan baloncuk arasındaki boşluk (dp). Üç nokta modunda ayardan gelir. */
-fun sideGapDp(cfg: IslandSettings): Float = if (cfg.dotMode) cfg.dotGapDp else SIDE_GAP_DP
+fun sideGapDp(cfg: IslandSettings): Float = if (cfg.dotMode) cfg.dotGapDp else if (cfg.iphoneCircleOn()) cfg.iphoneGapDp else SIDE_GAP_DP
 
 /** Yan baloncuğun çapı (dp). [dir]: +1 sağ, -1 sol. Üç nokta modunda sağ / sol nokta ayrı ayrı ayarlanır. */
 fun sideSizeDp(cfg: IslandSettings, dir: Int): Float =
-    if (cfg.dotMode) (if (dir > 0) cfg.dotRightDp else cfg.dotLeftDp) else min(72f, cfg.compactHeightDp)
+    if (cfg.dotMode) (if (dir > 0) cfg.dotRightDp else cfg.dotLeftDp)
+    else if (cfg.iphoneCircleOn()) cfg.iphoneCircleSizeDp()
+    else min(72f, cfg.compactHeightDp)
 
 /** Açık haldeki ada genişliği (dp). Servis, genişleyen panelin yanına baloncuk sığıp sığmadığını buradan hesaplar. */
 fun expandedWidthDpFor(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = when (c) {
@@ -193,6 +195,14 @@ internal fun IslandSides(
     sides: List<IslandContent>, geo: Geo, progress: IslandProgress, cfg: IslandSettings, color: State<Color>, fromSide: Int,
     animExpanded: Boolean, wantExpanded: Boolean, onPress: (Int) -> Unit, onTap: (Int) -> Unit,
 ) {
+    // iPhone modu: adanın bir yanında her zaman siyah daire durur; ikinci olay (index 0) bu dairede görünür, ada genişleyince daire solar
+    if (cfg.iphoneCircleOn()) {
+        val dir = cfg.iphoneDir()
+        val inCircle = if (cfg.iphoneEvents) sides.getOrNull(0) else null
+        DotPlaceholder(dir, 1, inCircle != null, geo, progress, cfg, color)
+        if (cfg.iphoneEvents) SideSlot(sides.getOrNull(0), dir, 1, geo, progress, cfg, color, fromSide == dir, animExpanded, wantExpanded, { onPress(0) }) { onTap(0) }
+        return
+    }
     // Üç nokta modu: boştaki yuvalar da siyah nokta olarak görünür (ada genişleyince solar)
     if (cfg.dotMode && cfg.dotMerge) {
         // Birleşik mod: boş yuvalar tek bir hap olarak çizilir; dolu yuva baloncuğu adadan ayrılır (SideSlot, değişmedi)

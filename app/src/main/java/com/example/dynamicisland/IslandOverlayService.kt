@@ -420,7 +420,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun extraBg(): Boolean = settings.value.let { it.dotMode && it.dotCount >= 4 }
 
     /** Yan noktaların sayısı: 3 nokta = 2, 4 nokta = 3, 5 nokta = 4; nokta modu kapalıyken 2 yan baloncuk. */
-    private fun maxSides(): Int = settings.value.let { if (it.dotMode) (it.dotCount - 1).coerceIn(2, 4) else 2 }
+    private fun maxSides(): Int = settings.value.let {
+        if (it.dotMode) (it.dotCount - 1).coerceIn(2, 4)
+        else if (it.iphoneCircleOn()) (if (it.iphoneEvents) 1 else 0)     // iPhone modu: tek daire (olaylar kapalıysa baloncuk yok)
+        else 2
+    }
 
     // Çalışan zamanlayıcı (4 / 5 nokta modunda bitene kadar yan noktada kalır)
     private var timerContent: IslandContent.Status? = null
@@ -709,7 +713,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             Triple(
                 sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
                 (cutCenterYPx + dp(s.offsetYDp)).toFloat(),
-                dp(compactWidthFor(s, false)) / 2f,
+                // iPhone modunda daire adanın solundaysa kilit noktası dairenin de soluna geçer
+                dp(compactWidthFor(s, false)) / 2f + (if (s.iphoneCircleOn() && s.iphoneDir() < 0) dp(s.iphoneCircleSizeDp() + s.iphoneGapDp) else 0),
             )
         }
     }
@@ -814,7 +819,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             else -> return      // Shazam dinleme noktası dokununca açılmaz
         }
         // 0 = sağ iç, 1 = sol iç, 2 = sağ dış, 3 = sol dış (dış yuvalar ±2: animasyon dış noktadan başlar)
-        val from = when (index) { 0 -> 1; 1 -> -1; 2 -> 2; else -> -2 }
+        val from = if (settings.value.iphoneCircleOn()) settings.value.iphoneDir() else when (index) { 0 -> 1; 1 -> -1; 2 -> 2; else -> -2 }
         // Dokunulan olay ortaya geçer ve genişler. Ayar "kalıcı" değilse küçüldükten ~1 sn sonra eski sıra geri gelir
         // (önceki ortadaki olay ortaya döner, dokunulan olay yine baloncuk olur).
         val permanent = settings.value.sideTapPromote
@@ -1566,7 +1571,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
      */
     private suspend fun syncWindow(k: WinKey) {
         val s = k.s
-        dotWin = s.dotMode
+        val persistSides = s.dotMode || s.iphoneCircleOn()     // yan noktalar / iPhone dairesi boştayken de görünür: pencere iki yanda hep pay ayırır
+        dotWin = persistSides
         setFocusable(k.kind == 12 && k.expanded)          // çeviri paneli: klavye için odak
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
         val cw = dp(if (s.dotMode) s.compactWidthDp else if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
@@ -1605,7 +1611,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Yan baloncuklar varsa pencere iki yanda (simetrik) baloncuk payı kadar genişler; ada pencerenin ortasında kalır
         // Genişlemişken de baloncuk varsa pencere iki yanda pay ayırır (baloncuk genişleyen panelin yanında durur)
         // Üç nokta modunda yan noktalar her zaman görünür: pencere iki yanda her zaman pay ayırır (boştayken de)
-        val sideExtra = if (s.dotMode || (k.side > 0 && k.kind != 0)) dp(sideExtraDp(s)) else 0
+        val sideExtra = if (persistSides || (k.side > 0 && k.kind != 0)) dp(sideExtraDp(s)) else 0
         val blurOk = pad == 0 && sideExtra == 0   // pay / yan baloncuk varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
@@ -1645,7 +1651,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 setBlur(false, s)
                 // Nokta modunda genişlemişken yalnızca gerçekten çizilen yan baloncuklar pay ayırır (boş noktalar solar).
                 // Aksi halde pencere ekrandan geniş olur, yatay konum 0'a zorlanır ve küçülürken ada göz kırpar.
-                val sideExp = if (s.dotMode && k.side == 0) 0 else sideExtra
+                val sideExp = if (persistSides && k.side == 0) 0 else sideExtra
                 val winW = ew + 2 * pad + 2 * sideExp
                 val maxShSide = ((screenW - winW) / 2).coerceAtLeast(0)
                 val xWin = if (k.kind == 11) baseX else if (sideExp > 0) baseX.coerceIn(-maxShSide, maxShSide) else xExp
@@ -1668,7 +1674,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (blurOk) setBlur(true, s)
             }
         }
-        if ((k.kind == 0 && !s.dotMode) || (k.expanded && sideExtra == 0)) winSide = 0
+        if ((k.kind == 0 && !persistSides) || (k.expanded && sideExtra == 0)) winSide = 0
     }
 
     private fun startAsForeground() {

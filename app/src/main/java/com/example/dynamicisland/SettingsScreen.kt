@@ -239,7 +239,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 "Nokta modu",
                 "Ortadaki nokta kameranın üstünde durur. Yeni olay ortadaki noktada, öncekiler yan noktalarda görünür; dokununca ada gibi genişler",
                 draft.dotMode,
-            ) { draft = draft.copy(dotMode = it) }
+            ) { draft = draft.copy(dotMode = it, iphoneMode = if (it) false else draft.iphoneMode) }
             if (draft.dotMode) {
                 SegmentedTabs(listOf("3 nokta", "4 nokta", "5 nokta"), draft.dotCount - 3) { draft = draft.copy(dotCount = it + 3) }
                 SliderRow("Orta nokta (kamera)", draft.dotMidDp, 12f..48f, "${draft.dotMidDp.toInt()} dp") { draft = draft.copy(dotMidDp = it) }
@@ -260,6 +260,35 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SliderRow("Noktalar arası boşluk", draft.dotGapDp, 2f..30f, "${draft.dotGapDp.toInt()} dp") { draft = draft.copy(dotGapDp = it) }
                 SliderRow("Konum: yatay (sağ +)", draft.dotOffsetXDp, -120f..120f, "${draft.dotOffsetXDp.toInt()} dp") { draft = draft.copy(dotOffsetXDp = it) }
                 SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }
+            }
+        }
+        sec("iPhone modu", "iPhone 14 Pro gibi: hap şeklinde ada ve yanında ayrı siyah daire") {
+            SwitchRow(
+                "iPhone modu",
+                "Ada hap şeklinde olur, yanında siyah bir daire durur. Nokta modu ile birlikte çalışmaz (biri açılınca öteki kapanır)",
+                draft.iphoneMode,
+            ) { draft = draft.copy(iphoneMode = it, dotMode = if (it) false else draft.dotMode) }
+            if (draft.iphoneMode) {
+                SwitchRow("Siyah daire", "Adanın yanındaki ayrı siyah daire (iPhone'daki kamera deliği gibi)", draft.iphoneCircle) { draft = draft.copy(iphoneCircle = it) }
+                if (draft.iphoneCircle) {
+                    SegmentedTabs(listOf("Daire solda", "Daire sağda"), draft.iphoneCircleSide) { draft = draft.copy(iphoneCircleSide = it) }
+                    SwitchRow(
+                        "Olaylar dairede görünsün",
+                        "İkinci bir olay başlayınca (müzik, ekran kaydı, arama, kamera / mikrofon...) öncekisi dairede görünür; dokununca ada gibi açılır. Kapalıysa daire süs olarak kalır",
+                        draft.iphoneEvents,
+                    ) { draft = draft.copy(iphoneEvents = it) }
+                    SliderRow("Daire boyutu (en çok ada yüksekliği)", draft.iphoneCircleDp, 16f..48f, "${draft.iphoneCircleDp.toInt()} dp") { draft = draft.copy(iphoneCircleDp = it) }
+                    SliderRow("Ada ile daire arası", draft.iphoneGapDp, 2f..30f, "${draft.iphoneGapDp.toInt()} dp") { draft = draft.copy(iphoneGapDp = it) }
+                    SwitchRow(
+                        "İkiliyi ortala",
+                        "Ada + daire birlikte kameranın ortasında durur (iPhone gibi). Kapalıysa ada kameranın üstünde kalır, daire yanına gelir",
+                        draft.iphoneCenterGroup,
+                    ) { draft = draft.copy(iphoneCenterGroup = it) }
+                }
+                SliderRow("Ada genişliği", draft.iphonePillWDp, 60f..220f, "${draft.iphonePillWDp.toInt()} dp") { draft = draft.copy(iphonePillWDp = it) }
+                SliderRow("Ada yüksekliği", draft.iphonePillHDp, 20f..56f, "${draft.iphonePillHDp.toInt()} dp") { draft = draft.copy(iphonePillHDp = it) }
+                SliderRow("Konum: yatay (sağ +)", draft.iphoneOffsetXDp, -120f..120f, "${draft.iphoneOffsetXDp.toInt()} dp") { draft = draft.copy(iphoneOffsetXDp = it) }
+                SliderRow("Konum: dikey (aşağı +)", draft.iphoneOffsetYDp, -60f..80f, "${draft.iphoneOffsetYDp.toInt()} dp") { draft = draft.copy(iphoneOffsetYDp = it) }
             }
         }
         page("Favori uygulamalar", PreviewKind.Favorites, "Boştayken adaya dokununca açılan uygulama paneli") { FavoritesSection(draft) { draft = it } }
@@ -999,6 +1028,16 @@ private fun PreviewCard(
                                     )
                                 }
                             }
+                        }
+                        // iPhone modu önizlemesi: adanın yanındaki siyah daire
+                        if (cfg.iphoneCircleOn() && !expanded) {
+                            val d = cfg.iphoneCircleSizeDp()
+                            val dx = cfg.iphoneDir() * (geo.cw.value / 2f + cfg.iphoneGapDp + d / 2f)
+                            Box(
+                                Modifier.align(Alignment.TopCenter)
+                                    .offset(x = (cfg.offsetXDp + dx).dp, y = (islandTopV + (geo.ch.value - d) / 2f).dp)
+                                    .size(d.dp).clip(CircleShape).background(Color(cfg.islandColorArgb)),
+                            )
                         }
                         // Telefonun içindeki ada: dokununca açılır / kapanır
                         Box(Modifier.align(Alignment.TopCenter).offset(x = cfg.offsetXDp.dp, y = islandTopV.dp)) {
