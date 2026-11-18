@@ -119,6 +119,7 @@ data class IslandSettings(
     // Yan baloncuk
     val notifExpandedSec: Float = 5f,        // bildirim genişletilmiş halde kalma süresi (sn)
     val notifCompactSec: Float = 10f,        // sonra küçültülmüş halde (nokta modunda nokta olarak) kalma süresi (sn); 0 = hemen gider
+    val musicExpandedSec: Float = 8f,        // müzik adası genişletilince açık kalma süresi (sn); 0 = kendiliğinden kapanmasın
     val sideTapPromote: Boolean = false,     // baloncuğa dokununca o olay kalıcı olarak ortaya geçsin (kapalıysa yalnızca paneli açılır)
     val hideStatusBar: Boolean = false,      // şarj / zil modu gibi durum görünümleri açıkken durum çubuğunu gizle
     val notifLaunchAnim: Boolean = true,     // ... ve açılırken adadan siyah ekran animasyonu oynasın
@@ -333,7 +334,7 @@ class SettingsRepository(context: Context) {
         val DOT_ON = booleanPreferencesKey("dot_on"); val DOT_MID = floatPreferencesKey("dot_mid")
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
-        val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
+        val MU_EXP_S = floatPreferencesKey("mu_exp_s"); val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
         val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
         val STACK_EXP = booleanPreferencesKey("stack_exp")
         val TRN_ON = booleanPreferencesKey("trn_on"); val TRN_TRIG = intPreferencesKey("trn_trig")
@@ -419,6 +420,7 @@ class SettingsRepository(context: Context) {
             notifDeleteSwipeUp = p[K.NT_DEL_UP] ?: d.notifDeleteSwipeUp,
             sideTapPromote = p[K.SIDE_PROMOTE] ?: d.sideTapPromote,
             notifExpandedSec = p[K.NT_EXP_S] ?: d.notifExpandedSec,
+            musicExpandedSec = p[K.MU_EXP_S] ?: d.musicExpandedSec,
             notifCompactSec = p[K.NT_CMP_S] ?: d.notifCompactSec,
             hideStatusBar = p[K.HIDE_SB] ?: d.hideStatusBar,
             notifLaunchAnim = p[K.NT_ANIM] ?: d.notifLaunchAnim,
@@ -549,6 +551,7 @@ class SettingsRepository(context: Context) {
             it[K.DOT_L] = s.dotLeftDp; it[K.DOT_R] = s.dotRightDp; it[K.DOT_GAP] = s.dotGapDp
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
             it[K.NT_EXP_S] = s.notifExpandedSec; it[K.NT_CMP_S] = s.notifCompactSec
+            it[K.MU_EXP_S] = s.musicExpandedSec
             it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
             it[K.RINGER_IND] = s.ringerIndicator
             it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics

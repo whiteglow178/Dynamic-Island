@@ -1009,6 +1009,12 @@ private fun lyricsPages(draft: IslandSettings, version: Int, set: (IslandSetting
             set(draft.copy(longPressMs = (it / 50f).toInt() * 50))
         }
     }
+    sec("Açık kalma süresi", "Müzik adasını genişletince (dokunarak, kaydırarak ya da yan baloncuktan)") {
+        SliderRow("Genişletilmiş kalma süresi", draft.musicExpandedSec, 0f..60f,
+            if (draft.musicExpandedSec < 1f) "Kapanmasın" else "${draft.musicExpandedSec.toInt()} sn") { set(draft.copy(musicExpandedSec = kotlin.math.round(it))) }
+        Text("Süre dolunca ada kendiliğinden küçülür. En sola çekersen ada sen kapatana kadar (dokun / yukarı kaydır) açık kalır.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+    }
     sec("Kaydırma hareketleri", "Müzik adada görünürken") {
         SwitchRow("Aşağı kaydırınca genişlesin", "Küçük adayı aşağı çekince açılır", draft.swipeDownExpand) { set(draft.copy(swipeDownExpand = it)) }
         SwitchRow("Yukarı kaydırınca küçülsün", "Açık adayı yukarı kaydırınca küçülür", draft.swipeUpCollapse) { set(draft.copy(swipeUpCollapse = it)) }

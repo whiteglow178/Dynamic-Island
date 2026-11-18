@@ -560,6 +560,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scheduleCollapse(holdMs)
     }
 
+    /** Müzik adası genişletilince açık kalma süresi (ayardan); 0 = kendiliğinden kapanmasın. */
+    private fun scheduleMusicCollapse() {
+        val ms = (settings.value.musicExpandedSec * 1000f).toLong()
+        if (ms <= 0L) collapseJob?.cancel() else scheduleCollapse(ms)
+    }
+
     private fun scheduleCollapse(holdMs: Long) {
         collapseJob?.cancel()
         collapseJob = scope.launch { delay(holdMs); collapseAndRest() }
@@ -614,7 +620,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     else { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
                 } else {
                     if (s.openCompTap) openMusicApp()
-                    else { update { it.copy(expanded = true) }; scheduleCollapse(8_000) }
+                    else { update { it.copy(expanded = true) }; scheduleMusicCollapse() }
                 }
             }
             is IslandContent.Notif -> {
@@ -723,7 +729,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         } else if (cur.content is IslandContent.Media && !cur.expanded) {
             // Küçük müzik adası: basılı tutunca müzik uygulaması açılır ya da ada genişler
             if (s.openCompLong) openMusicApp()
-            else if (s.expandOnLong || !s.openCompTap) { update { it.copy(expanded = true) }; scheduleCollapse(8_000) }
+            else if (s.expandOnLong || !s.openCompTap) { update { it.copy(expanded = true) }; scheduleMusicCollapse() }
         } else if (cur.content is IslandContent.Notif) {
             // Bildirim: basılı tutunca ayara göre uygulamayı aç ya da küçült (ayar yoksa bir şey yapmaz)
             when {
@@ -794,7 +800,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         sideLayout = if (prevBg != null && index in slots.indices) { slots[index] = prevBg; slots } else null
         collapseJob?.cancel()
         when (b) {
-            Bg.Media -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(8_000) }
+            Bg.Media -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleMusicCollapse() }
             Bg.Rec -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
             Bg.Call -> { call.expanded = true; call.fromSide = from; call.publish(); call.scheduleCollapse() }
             Bg.Timer -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
@@ -899,7 +905,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             IslandContent.Translate -> { if (dir < 0 && cur.expanded && TranslateSession.state.value.input.isBlank()) closeTranslate() }
             is IslandContent.Media -> {
                 if (dir > 0 && !cur.expanded && s.swipeDownExpand) {
-                    update { it.copy(expanded = true) }; scheduleCollapse(8_000)
+                    update { it.copy(expanded = true) }; scheduleMusicCollapse()
                 } else if (dir < 0 && cur.expanded && s.swipeUpCollapse) {
                     collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
                 }
@@ -1188,7 +1194,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun onCommand(c: MediaCommand) {
         IslandBus.send(c)
-        if (ui.value.expanded) scheduleCollapse(8_000)
+        if (ui.value.expanded) scheduleMusicCollapse()
     }
 
     /** Panelin sağ alt köşesindeki yayın simgesi: sistemin ses / medya çıkışı paneli. */
@@ -1196,7 +1202,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching {
             startActivity(Intent(android.provider.Settings.Panel.ACTION_VOLUME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
-        if (ui.value.expanded) scheduleCollapse(8_000)
+        if (ui.value.expanded) scheduleMusicCollapse()
     }
 
     private suspend fun iconFor(pkg: String): ImageBitmap? {
