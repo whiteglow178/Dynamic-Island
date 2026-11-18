@@ -141,6 +141,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
+        runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
         // Bildirim dinleyicisi sistem tarafından yeniden bağlanırken zaman alabilir (özellikle uzun süre sonra):
@@ -204,8 +205,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (started) exitHold = settings.value.hideInMusicApp && wasMusic   // panel sürerken gelen ikinci olay gizlemeyi bozmasın
                 refreshMediaVisibility()        // animasyon başlamadıysa müzik göster / gizle
             }
-            is IslandEvent.Call -> call.onCall(e)
-            is IslandEvent.CallEnded -> call.onEnded(e.key)
+            is IslandEvent.Call -> { call.onCall(e); onCallSfx() }
+            is IslandEvent.CallEnded -> { call.onEnded(e.key); onCallSfx() }
             is IslandEvent.ScreenRec -> rec.onScreenRec(e)
             is IslandEvent.ScreenRecGone -> rec.onScreenRecGone(e)
             is IslandEvent.Status -> if (!assistantActive && !call.active && ui.value.content !is IslandContent.Translate) {
@@ -213,6 +214,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 showTemporarily(e.content, e.holdMs)
             }
             is IslandEvent.Notification -> if (!assistantActive && !call.active && !appHide.hidden && ui.value.content !is IslandContent.Translate) scope.launch {
+                playSfx(SoundEvent.Notif)
                 val icon = iconFor(e.pkg)
                 val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
                 val st = settings.value
@@ -605,6 +607,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun onPillTap() {
+        playSfx(SoundEvent.Tap)
         if (openStack()) return          // birden fazla olay varsa hepsi alt alta açılır
         val cur = ui.value
         when (cur.content) {
@@ -697,6 +700,21 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val rec: ScreenRecController by lazy { ScreenRecController(host) }
     private val privacy: PrivacyController by lazy { PrivacyController(host) }
     private val ringer: RingerController by lazy { RingerController(host) }
+
+    // ---- Ses efektleri
+    private val sfxTriggers by lazy { SoundTriggers(applicationContext) { playSfx(it) } }
+    private var sfxRinging = false
+    private fun playSfx(e: SoundEvent) {
+        val s = settings.value
+        if (!s.sfxEnabled) return
+        IslandSounds.play(applicationContext, s.cue(e), e.name)
+    }
+    /** Gelen arama ada üzerinde yeni belirdiğinde bir kez çalar (aynı aramada tekrarlamaz). */
+    private fun onCallSfx() {
+        val ringing = call.active && call.incoming
+        if (ringing && !sfxRinging) playSfx(SoundEvent.Call)
+        sfxRinging = ringing
+    }
     private val appHide: AppHideController by lazy { AppHideController(host) }
     private val notif: NotifController by lazy { NotifController(host) }
 
@@ -1796,6 +1814,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { TranslateSession.release() }
         runCatching { privacy.stop() }
         runCatching { ringer.stop() }
+        runCatching { sfxTriggers.stop() }
+        IslandSounds.stopAll()
         lyricsJob?.cancel()
         runCatching { fxWindow.detach() }
         FxBridge.clear()

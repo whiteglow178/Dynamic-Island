@@ -119,6 +119,14 @@ data class IslandSettings(
     // Yan baloncuk
     val notifExpandedSec: Float = 5f,        // bildirim genişletilmiş halde kalma süresi (sn)
     val notifCompactSec: Float = 10f,        // sonra küçültülmüş halde (nokta modunda nokta olarak) kalma süresi (sn); 0 = hemen gider
+    // Ses efektleri (dosya kopyalanmaz; yalnızca adres tutulur)
+    val sfxEnabled: Boolean = true,
+    val sfxTap: SoundCue = SoundCue(),
+    val sfxCharge: SoundCue = SoundCue(),
+    val sfxUnplug: SoundCue = SoundCue(),
+    val sfxNotif: SoundCue = SoundCue(),
+    val sfxSilent: SoundCue = SoundCue(),
+    val sfxCall: SoundCue = SoundCue(),
     val musicExpandedSec: Float = 8f,        // müzik adası genişletilince açık kalma süresi (sn); 0 = kendiliğinden kapanmasın
     val sideTapPromote: Boolean = false,     // baloncuğa dokununca o olay kalıcı olarak ortaya geçsin (kapalıysa yalnızca paneli açılır)
     val hideStatusBar: Boolean = false,      // şarj / zil modu gibi durum görünümleri açıkken durum çubuğunu gizle
@@ -334,6 +342,8 @@ class SettingsRepository(context: Context) {
         val DOT_ON = booleanPreferencesKey("dot_on"); val DOT_MID = floatPreferencesKey("dot_mid")
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
+        val SFX_ON = booleanPreferencesKey("sfx_on"); val SFX_TAP = stringPreferencesKey("sfx_tap"); val SFX_CHG = stringPreferencesKey("sfx_chg"); val SFX_UNP = stringPreferencesKey("sfx_unp")
+        val SFX_NTF = stringPreferencesKey("sfx_ntf"); val SFX_SIL = stringPreferencesKey("sfx_sil"); val SFX_CALL = stringPreferencesKey("sfx_call")
         val MU_EXP_S = floatPreferencesKey("mu_exp_s"); val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
         val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
         val STACK_EXP = booleanPreferencesKey("stack_exp")
@@ -421,6 +431,9 @@ class SettingsRepository(context: Context) {
             sideTapPromote = p[K.SIDE_PROMOTE] ?: d.sideTapPromote,
             notifExpandedSec = p[K.NT_EXP_S] ?: d.notifExpandedSec,
             musicExpandedSec = p[K.MU_EXP_S] ?: d.musicExpandedSec,
+            sfxEnabled = p[K.SFX_ON] ?: d.sfxEnabled,
+            sfxTap = SoundCue.decode(p[K.SFX_TAP]), sfxCharge = SoundCue.decode(p[K.SFX_CHG]), sfxUnplug = SoundCue.decode(p[K.SFX_UNP]),
+            sfxNotif = SoundCue.decode(p[K.SFX_NTF]), sfxSilent = SoundCue.decode(p[K.SFX_SIL]), sfxCall = SoundCue.decode(p[K.SFX_CALL]),
             notifCompactSec = p[K.NT_CMP_S] ?: d.notifCompactSec,
             hideStatusBar = p[K.HIDE_SB] ?: d.hideStatusBar,
             notifLaunchAnim = p[K.NT_ANIM] ?: d.notifLaunchAnim,
@@ -552,6 +565,9 @@ class SettingsRepository(context: Context) {
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
             it[K.NT_EXP_S] = s.notifExpandedSec; it[K.NT_CMP_S] = s.notifCompactSec
             it[K.MU_EXP_S] = s.musicExpandedSec
+            it[K.SFX_ON] = s.sfxEnabled
+            it[K.SFX_TAP] = s.sfxTap.encode(); it[K.SFX_CHG] = s.sfxCharge.encode(); it[K.SFX_UNP] = s.sfxUnplug.encode()
+            it[K.SFX_NTF] = s.sfxNotif.encode(); it[K.SFX_SIL] = s.sfxSilent.encode(); it[K.SFX_CALL] = s.sfxCall.encode()
             it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
             it[K.RINGER_IND] = s.ringerIndicator
             it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
@@ -564,7 +580,7 @@ class SettingsRepository(context: Context) {
 
     // ---------------------------------------------------------------- Yedekleme
     /** Galeri adresleri başka cihazda / yeniden kurulumda geçerli olmadığı için yedeğe girmez. */
-    private val exportSkip = setOf("cb_u_both", "cb_u_c", "cb_u_e", "ca_u")
+    private val exportSkip = setOf("cb_u_both", "cb_u_c", "cb_u_e", "ca_u", "sfx_tap", "sfx_chg", "sfx_unp", "sfx_ntf", "sfx_sil", "sfx_call")
 
     /** Tüm kayıtlı ayarları JSON metni olarak verir. */
     suspend fun exportJson(): String {

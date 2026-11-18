@@ -149,6 +149,30 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         draft = draft.copy(customBgVideoUri = "")
         CustomVideo.releaseUnused(ctx, old, draft)
     }
+    // Ses efektleri: dosya kopyalanmaz; sistemin belge seçicisiyle yalnızca adres ve kalıcı okuma izni alınır (depolama izni gerekmez)
+    var pendingSfx by rememberSaveable { mutableStateOf(-1) }
+    val sfxPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val ev = SoundEvent.values().getOrNull(pendingSfx)
+        pendingSfx = -1
+        if (uri != null && ev != null) scope.launch {
+            IslandSounds.grant(ctx, uri)
+            val loaded = IslandSounds.load(ctx, uri, draft.cue(ev))
+            if (loaded != null) {
+                val old = draft.cue(ev).uri
+                draft = draft.withCue(ev, loaded)
+                IslandSounds.releaseGrant(ctx, old, draft.sfxUris())
+            } else {
+                IslandSounds.releaseGrant(ctx, uri.toString(), draft.sfxUris())
+                Toast.makeText(ctx.applicationContext, "Ses dosyası açılamadı", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val pickSfx: (SoundEvent) -> Unit = { ev -> pendingSfx = ev.ordinal; sfxPicker.launch(arrayOf("audio/*")) }
+    val removeSfx: (SoundEvent) -> Unit = { ev ->
+        val old = draft.cue(ev).uri
+        draft = draft.withCue(ev, SoundCue())
+        IslandSounds.releaseGrant(ctx, old, draft.sfxUris())
+    }
     val remove: (CustomImages.Slot) -> Unit = { slot ->
         val old = draft.imageUri(slot)
         draft = draft.withImageUri(slot, "")
@@ -547,6 +571,18 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     }
                 }
             }
+        }
+
+        // ---- Ses
+        pendingGroup = "Ses"
+        sec("Ses efektleri", "Adada olaylara göre kendi seçtiğin sesler çalsın") {
+            SwitchRow("Ses efektleri", "Kapalıyken hiçbir ses çalmaz; seçtiğin sesler ve ayarlar silinmez",
+                draft.sfxEnabled) { draft = draft.copy(sfxEnabled = it) }
+            Text("Her olay için ayrı bir sayfa var: ses seç, yüksekliğini ve çalacak bölümünü ayarla. Ses dosyaları uygulamaya kopyalanmaz, yalnızca adresi tutulur; izin istenmez, kayıt (log) tutulmaz. Dosyayı silersen ya da taşırsan o ses çalmaz. Sesler medya ses düzeyiyle çalar, çalan müziği durdurmaz.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+        SoundEvent.values().forEach { ev ->
+            sec(ev.title, ev.hint) { SoundCueEditor(ev, draft.cue(ev), pickSfx, removeSfx) { draft = draft.withCue(ev, it) } }
         }
 
         // ---- Uygulama
@@ -1232,5 +1268,55 @@ private fun RecPreviewPermissionRow() {
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Uygulama ayarlarını aç") }
         }
+    }
+}
+
+
+// ---------------------------------------------------------------- Ses efekti düzenleyici (bir olay için)
+private fun fmtSec(ms: Int): String = "%.1f sn".format(ms / 1000f)
+
+@Composable
+private fun ColumnScope.SoundCueEditor(
+    ev: SoundEvent, cue: SoundCue,
+    onPick: (SoundEvent) -> Unit, onRemove: (SoundEvent) -> Unit, onChange: (SoundCue) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val has = cue.uri.isNotEmpty()
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("Ses efekti", color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(
+            if (has) "${cue.name} · ${fmtSec(cue.durMs)}" else "Henüz ses seçilmedi. Dosya kopyalanmaz, yalnızca adresi saklanır. Süresi fark etmez; istersen yalnızca bir kısmını kullanırsın.",
+            color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(onClick = { onPick(ev) }, modifier = Modifier.weight(1f)) { Text(if (has) "Sesi değiştir" else "Ses seç") }
+        if (has) OutlinedButton(onClick = { onRemove(ev) }, modifier = Modifier.weight(1f)) { Text("Kaldır") }
+    }
+    if (!has) return
+    SwitchRow("Bu olayda çal", "Kapalıyken ses seçili kalır ama çalmaz", cue.enabled) { onChange(cue.copy(enabled = it)) }
+    SliderRow("Ses yüksekliği", cue.volume, 0f..1f, "%${(cue.volume * 100).toInt()}") { onChange(cue.copy(volume = it)) }
+    SwitchRow("Yalnızca bir kısmını çal", "Kapalıyken sesin tamamı çalar. Açıkken başlangıç ve bitişi sen seçersin",
+        cue.partial) { onChange(cue.copy(partial = it)) }
+    if (cue.partial) {
+        val dur = cue.durMs.coerceAtLeast(1000)
+        val endEff = (if (cue.endMs in 1..dur) cue.endMs else dur)
+        val startEff = cue.startMs.coerceIn(0, (endEff - 100).coerceAtLeast(0))
+        val maxS = dur / 1000f
+        SliderRow("Başlangıç", startEff / 1000f, 0f..maxS, fmtSec(startEff)) { v ->
+            val ms = (kotlin.math.round(v * 10f) * 100f).toInt().coerceIn(0, (endEff - 100).coerceAtLeast(0))
+            onChange(cue.copy(startMs = ms, endMs = if (cue.endMs <= 0) 0 else endEff))
+        }
+        SliderRow("Bitiş", endEff / 1000f, 0f..maxS, fmtSec(endEff)) { v ->
+            val ms = (kotlin.math.round(v * 10f) * 100f).toInt().coerceIn((startEff + 100).coerceAtMost(dur), dur)
+            onChange(cue.copy(startMs = startEff, endMs = ms))
+        }
+        Text("Çalacak bölüm: ${fmtSec(startEff)} – ${fmtSec(endEff)} (${fmtSec(endEff - startEff)})",
+            color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(onClick = { IslandSounds.play(ctx, cue.copy(enabled = true), "preview") }, modifier = Modifier.weight(1f)) { Text("Dinle") }
+        OutlinedButton(onClick = { IslandSounds.stopAll() }, modifier = Modifier.weight(1f)) { Text("Durdur") }
     }
 }
