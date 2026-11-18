@@ -295,7 +295,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Ayar açık, ada kapalı ve en az 2 olay varsa yığını açar; açtıysa true döner. */
     private fun openStack(): Boolean {
         val cur = ui.value
-        if (!settings.value.stackExpand || stackOpen || cur.expanded || cur.swallow || cur.fromSide != 0) return false
+        if (stackOpen) { if (stackClosing) { reopenStack(); return true }; return false }
+        if (!settings.value.stackExpand || cur.expanded || cur.swallow || cur.fromSide != 0) return false
         if (centerBg(cur.content) == null || stackItems().size < STACK_MIN_ITEMS) return false
         collapseJob?.cancel()
         stackOpen = true; stackClosing = false; lastStack = emptyList()
@@ -323,6 +324,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         beginStackClose()
         update { it }
     }
+
+    /** Kapanış animasyonu sürerken yeniden dokunulursa kapanış durur, kartlar bulundukları yerden geri açılır. */
+    private fun reopenStack() {
+        if (!stackOpen || !stackClosing) return
+        stackClosing = false
+        stackJob?.cancel()
+        update { it }
+        if (!stackOpen) return
+        stackJob = scope.launch { delay(STACK_HOLD_MS); closeStack() }
+    }
+
+    /** Yığındaki karta dokunma / yukarı kaydırma: açıksa kapatır, kapanıyorsa geri açar. */
+    private fun onStackTap() { if (stackClosing) reopenStack() else closeStack() }
 
     // Genişlemişken yalnızca gerçekten çizilecek baloncuklar pay ayırır; kapalıyken baloncuğa geri küçülme için fromSide de sayılır
     private fun sideKey(u: IslandUiState) =
@@ -1204,11 +1218,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onAnswer = call::onAnswer, onDecline = call::onDecline, onSpeaker = call::onSpeaker,
                     onRecStop = rec::onStop, onShazamStop = shazam::onStop,
                     onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap, onSidePress = ::onSidePress,
-                    onStackClose = ::closeStack,
+                    onStackClose = ::onStackTap,
                 )
             }
         }
         composeView = view
+        startXWatch(view)
 
         // Dialog penceresi: Window.setBackgroundBlurRadius SADECE pencere sınırlarını bulanıklaştırır
         // (WindowManager FLAG_BLUR_BEHIND ise tüm ekranı bulanıklaştırıyordu).
@@ -1285,6 +1300,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val win = dialog?.window ?: return
         val big = w > 1 && h > 1
         wantX = x; wantY = y
+        lastGeoAt = android.os.SystemClock.uptimeMillis()
         val ay = if (big) y - calibDy else y
         val ah = if (big) h + calibDy else h
         val cur = win.attributes
@@ -1330,6 +1346,43 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (recalibrate) calibTries = 0
             composeView?.let { it.removeCallbacks(calibrateRunnable); it.postDelayed(calibrateRunnable, 150) }
         }
+    }
+
+    private var lastGeoAt = 0L
+    private var xFixing = false
+
+    /**
+     * Sistem pencereyi (özellikle küçülürken / hızlı aç-kapa sırasında) yana kaydırıp orada bırakabiliyor; durum
+     * değişene kadar ada yanda kalıyordu. Pencerenin gerçek yatay konumu düzenli aralıkla ölçülür, yanlışsa yeniden uygulanır.
+     */
+    private fun startXWatch(view: View) {
+        val r = object : Runnable {
+            override fun run() {
+                if (view !== composeView) return
+                if (view.isAttachedToWindow && curW > 1 && curH > 1 && !xFixing &&
+                    android.os.SystemClock.uptimeMillis() - lastGeoAt > 250L
+                ) {
+                    val sw = wm.currentWindowMetrics.bounds.width()
+                    if (curW < sw) {
+                        val loc = IntArray(2)
+                        view.getLocationOnScreen(loc)
+                        val dx = loc[0] - ((sw - curW) / 2 + wantX)
+                        if (abs(dx) > 2) {
+                            xFixing = true
+                            val ox = wantX
+                            setGeometry(curW, curH, ox + 1, wantY, recalibrate = false, force = true)
+                            view.postDelayed({
+                                // Bu arada başka bir geometri uygulandıysa (wantX değiştiyse) ona dokunma
+                                if (wantX == ox + 1) setGeometry(curW, curH, ox, wantY, recalibrate = false)
+                                xFixing = false
+                            }, 32)
+                        }
+                    }
+                }
+                view.postDelayed(this, 250L)
+            }
+        }
+        view.postDelayed(r, 300L)
     }
 
     /**
