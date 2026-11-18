@@ -144,7 +144,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { settings.collect { s -> appHide.update(); privacy.refresh(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); preloadFavorites(s) } }
         scope.launch { lyrics.collect { update { it } } }
         // Kenar Cevapla / Reddet tuşları ayarı değişince (arama sürerken) güncelle
-        scope.launch { SideCallStore.flow(applicationContext).collect { syncSideButtons() } }
+        scope.launch { SideCallStore.flow(applicationContext).collect { call.syncSideButtons() } }
         // Durum görünümü (şarj, zil modu...) açıkken durum çubuğunu kapat
         scope.launch {
             combine(ui, settings) { u, s -> s.hideStatusBar && u.content is IslandContent.Status }
@@ -190,15 +190,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (started) exitHold = settings.value.hideInMusicApp && wasMusic   // panel sürerken gelen ikinci olay gizlemeyi bozmasın
                 refreshMediaVisibility()        // animasyon başlamadıysa müzik göster / gizle
             }
-            is IslandEvent.Call -> onCall(e)
-            is IslandEvent.CallEnded -> onCallEnded(e.key)
+            is IslandEvent.Call -> call.onCall(e)
+            is IslandEvent.CallEnded -> call.onEnded(e.key)
             is IslandEvent.ScreenRec -> rec.onScreenRec(e)
             is IslandEvent.ScreenRecGone -> rec.onScreenRecGone(e)
-            is IslandEvent.Status -> if (!assistantActive && callKey == null) {
+            is IslandEvent.Status -> if (!assistantActive && !call.active) {
                 (e.content as? IslandContent.Status)?.let { onTimerStatus(it) }
                 showTemporarily(e.content, e.holdMs)
             }
-            is IslandEvent.Notification -> if (!assistantActive && callKey == null && !appHide.hidden) scope.launch {
+            is IslandEvent.Notification -> if (!assistantActive && !call.active && !appHide.hidden) scope.launch {
                 val icon = iconFor(e.pkg)
                 val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
                 val st = settings.value
@@ -209,7 +209,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.ShazamListening -> shazam.onListening()
             is IslandEvent.ShazamFound -> shazam.onFound(e)
             is IslandEvent.ShazamGone -> shazam.onGone()
-            is IslandEvent.ShowFavorites -> if (!assistantActive && callKey == null && ui.value.content is IslandContent.Idle) openFavorites()
+            is IslandEvent.ShowFavorites -> if (!assistantActive && !call.active && ui.value.content is IslandContent.Idle) openFavorites()
         }
     }
 
@@ -231,7 +231,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (cur.content is IslandContent.Media) { collapseJob?.cancel(); update { IslandUiState() } }
         } else {
             val m = lastMedia
-            if (cur.content is IslandContent.Idle && m != null && m.playing && callKey == null && !assistantActive) {
+            if (cur.content is IslandContent.Idle && m != null && m.playing && !call.active && !assistantActive) {
                 update { IslandUiState(m, false) }
             }
         }
@@ -267,7 +267,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun bgActive(b: Bg): Boolean = when (b) {
         Bg.Media -> mediaBgActive() && !hidingMedia()
         Bg.Rec -> rec.phase.let { it == RecPhase.Countdown || it == RecPhase.Recording || it == RecPhase.Processing }
-        Bg.Call -> callKey != null && !callIncoming
+        Bg.Call -> call.ongoing
         Bg.Shazam -> extraBg() && shazam.phase == ShazamPhase.Listening
         Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
         Bg.Notif -> settings.value.dotMode && notif.bg != null
@@ -287,11 +287,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Timer -> timerContent
         Bg.Notif -> notif.bg
         Bg.Privacy -> privacy.content
-        Bg.Call -> if (callKey == null) null else IslandContent.Call(
-            callName, callIncoming,
-            if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince),
-            callAvatar, callSpeaker,
-        )
+        Bg.Call -> call.content()
     }
 
     /** Ortadaki içerik hangi arka plan olayına ait? (bildirim, durum, favoriler vb. için null) */
@@ -373,7 +369,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun onAssistant(active: Boolean) {
         if (active == assistantActive) return
         if (active && !settings.value.assistantEnabled) return
-        if (active && callKey != null) return          // arama sürerken asistan animasyonu araya girmesin
+        if (active && call.active) return          // arama sürerken asistan animasyonu araya girmesin
         assistantActive = active
         glowActive.value = active                      // ekran kenarı parlaması: açılırken sağdan sola yayılır, kapanınca söner
         collapseJob?.cancel()
@@ -483,7 +479,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         peekBg = null
         if (revertOrder == null) sideLayout = null
         syncBgOrder()
-        if (callKey != null && callIncoming) { publishCall(); return }     // gelen arama hep ortada
+        if (call.ringing) { call.publish(); return }     // gelen arama hep ortada
         // Shazam hâlâ dinliyorsa (araya bildirim vb. girdiyse) dinleme görünümüne dön
         if (!extraBg() && shazam.phase == ShazamPhase.Listening) {
             update { IslandUiState(IslandContent.Shazam(ShazamPhase.Listening), expanded = false) }
@@ -495,7 +491,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val c = top?.let { bgContent(it) }
         when {
             c == null -> update { IslandUiState() }
-            top == Bg.Call -> update { IslandUiState(c, expanded = callExpanded) }
+            top == Bg.Call -> update { IslandUiState(c, expanded = call.expanded) }
             else -> update { IslandUiState(c, false) }
         }
     }
@@ -547,16 +543,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             IslandContent.Assistant -> Unit
             is IslandContent.Call -> {
                 // Gelen arama hep açık (düğmeler kendi dokunuşunu işler). Aktif aramada dokununca aç / küçült.
-                if (!callIncoming && peeking()) collapseNow()          // baloncuktan açılmış arama: dokununca baloncuğa geri küçülür
-                else if (!callIncoming) {
-                    if (callExpanded) { callExpanded = false; callCollapseJob?.cancel(); publishCall() }
-                    else { callExpanded = true; publishCall(); scheduleCallCollapse() }
-                }
+                if (!call.incoming && peeking()) collapseNow()          // baloncuktan açılmış arama: dokununca baloncuğa geri küçülür
+                else if (!call.incoming) call.toggleExpanded()
             }
             is IslandContent.Status -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
             is IslandContent.Shazam -> {
                 // Bulunan şarkıya dokununca Shazam açılır; dinlerken dokunma "Listening..." panelini açar / küçültür
-                if ((cur.content as IslandContent.Shazam).phase == ShazamPhase.Found) { sendCallIntent(shazam.open); shazam.end() }
+                if ((cur.content as IslandContent.Shazam).phase == ShazamPhase.Found) { call.send(shazam.open); shazam.end() }
                 else if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
                 else { collapseJob?.cancel(); update { it.copy(expanded = true) } }
             }
@@ -566,7 +559,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     RecPhase.Recording ->
                         if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
                         else { update { it.copy(expanded = true) }; scheduleCollapse(6_000) }
-                    RecPhase.Saved -> { sendCallIntent(rec.open); rec.end() }   // kaydı galeride aç
+                    RecPhase.Saved -> { call.send(rec.open); rec.end() }   // kaydı galeride aç
                     else -> Unit
                 }
             }
@@ -580,9 +573,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override val context: android.content.Context get() = this@IslandOverlayService
         override val settings: IslandSettings get() = this@IslandOverlayService.settings.value
         override val content: IslandContent get() = ui.value.content
-        override val blocked: Boolean get() = assistantActive || (callKey != null && callIncoming)
+        override val blocked: Boolean get() = assistantActive || (call.ringing)
         override val expanded: Boolean get() = ui.value.expanded
-        override val busy: Boolean get() = assistantActive || callKey != null
+        override val busy: Boolean get() = assistantActive || call.active
         override fun showTemporarily(c: IslandContent, holdMs: Long) = this@IslandOverlayService.showTemporarily(c, holdMs)
         override fun rest() = this@IslandOverlayService.rest()
         override fun setIslandHidden(hidden: Boolean) {
@@ -593,7 +586,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override fun update(f: (IslandUiState) -> IslandUiState) = this@IslandOverlayService.update(f)
         override fun cancelCollapse() { collapseJob?.cancel() }
         override fun collapseSoon() { collapseJob?.cancel(); collapseJob = this@IslandOverlayService.scope.launch { collapseAndRest() } }
-        override fun send(pi: android.app.PendingIntent?) = sendCallIntent(pi)
+        override fun send(pi: android.app.PendingIntent?) = call.send(pi)
+        override val isPeeking: Boolean get() = peeking()
+        override val newerThanCall: Boolean get() = bgOrder.lastOrNull().let { it != null && it != Bg.Call }
+        override fun syncBgOrder() = this@IslandOverlayService.syncBgOrder()
+        override suspend fun collapseAndRest() = this@IslandOverlayService.collapseAndRest()
         override fun publishScreenRec(c: IslandContent.ScreenRec, expanded: Boolean) = publishRec(c, expanded)
     }
     private val shazam by lazy { ShazamController(host) }
@@ -604,7 +601,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     /** Ekran kaydı içeriğini adaya yayınlar; kayıt daha yeni bir olayın arkasındaysa yalnızca yan baloncuğu yenilenir. */
     private fun publishRec(c: IslandContent.ScreenRec, expanded: Boolean) {
-        if (assistantActive || (callKey != null && callIncoming)) return
+        if (assistantActive || (call.ringing)) return
         syncBgOrder()
         // Kayıt, daha yeni bir olayın (müzik / arama) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
         if (!expanded && c.phase != RecPhase.Saved && ui.value.content !is IslandContent.ScreenRec &&
@@ -616,170 +613,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         update { IslandUiState(c, expanded = expanded) }
     }
 
-    // ---------------------------------------------------------------- Arama (gelen / aktif)
-    private var callKey: String? = null
-    private var callName = ""
-    private var callAvatar: ImageBitmap? = null
-    private var callIncoming = true
-    private var callSince = 0L
-    private var callAnswer: android.app.PendingIntent? = null
-    private var callDecline: android.app.PendingIntent? = null
-    private var callTickJob: Job? = null
-    private var callEndJob: Job? = null
-    private var callSpeaker = false
+    // ---------------------------------------------------------------- Arama (gelen / aktif) -> CallController.kt
     private val sideCall by lazy { SideCallOverlay(this, this, this, wm) }
     private val notifBanner by lazy { NotifBannerOverlay(this, this, this, wm, scope) { n -> openNotification(n) } }
-    private var callExpanded = true
-    private var callFromSide = 0      // aramaya yan baloncuktan dokunulduysa açılış yönü (animasyon için)
-    private var callCollapseJob: Job? = null
-
-    private fun onCall(e: IslandEvent.Call) {
-        callEndJob?.cancel()
-        if (e.incoming || !peeking()) collapseJob?.cancel()      // baloncuktan açılan panelin kapanma zamanlayıcısı bozulmasın
-        val justAnswered = !e.incoming && (callKey == null || callIncoming)   // yeni aktif arama / az önce cevaplandı
-        callKey = e.key
-        callName = e.name
-        callAvatar = e.avatar
-        callIncoming = e.incoming
-        callAnswer = e.answer
-        callDecline = e.decline
-        callTickJob?.cancel()
-        if (e.incoming) {
-            callSince = 0L
-            callExpanded = true; callCollapseJob?.cancel()      // gelen arama hep açık
-        } else {
-            val now = System.currentTimeMillis()
-            if (callSince == 0L) callSince = e.startedAt.takeIf { it in 1..now } ?: now
-            callTickJob = scope.launch { while (true) { delay(1_000); publishCall() } }
-        }
-        if (justAnswered) { callExpanded = false; callCollapseJob?.cancel() }   // cevaplanınca küçük ada
-        publishCall()
-        syncSideButtons()
-    }
-
-    private fun publishCall() {
-        syncBgOrder()
-        // Aktif arama, daha yeni bir olayın (müzik / ekran kaydı) arkasında kaldıysa ortayı almaz: yalnızca yan baloncuğu yenilenir
-        val dur = if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince)
-        // Yan baloncuktan açılan olay (müzik / kayıt / arama) ortadayken: açık / kapalı durumunu yalnızca peek yönetir.
-        // Saniyelik süre güncellemesi paneli ne kapatır ne de ortayı geri alır; arama paneliyse yalnızca süre yenilenir.
-        if (!callIncoming && peeking()) {
-            update { st ->
-                if (st.content is IslandContent.Call) st.copy(content = IslandContent.Call(callName, false, dur, callAvatar, callSpeaker)) else st
-            }
-            return
-        }
-        if (!callIncoming && ui.value.content !is IslandContent.Call &&
-            bgOrder.lastOrNull().let { it != null && it != Bg.Call }) { update { it }; return }
-        if (!callExpanded) callFromSide = 0
-        update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = callExpanded, fromSide = callFromSide) }
-    }
-
-    private fun formatCallDuration(ms: Long): String {
-        val t = (ms / 1000).coerceAtLeast(0)
-        val h = t / 3600; val m = (t % 3600) / 60; val s = t % 60
-        return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
-    }
-
-    /** Bildirim kalkınca adayı kapatır. Gelen -> aktif geçişinde bildirim değiştiği için kısa süre beklenir (titreme olmasın). */
-    private fun onCallEnded(key: String) {
-        if (key != callKey) return
-        callEndJob?.cancel()
-        callEndJob = scope.launch {
-            delay(600)
-            if (callKey != key) return@launch
-            callTickJob?.cancel()
-            callKey = null; callSince = 0L; callAnswer = null; callDecline = null; callAvatar = null
-            setSpeaker(false)
-            callExpanded = true; callCollapseJob?.cancel()
-            syncSideButtons()
-            if (ui.value.content is IslandContent.Call) collapseAndRest() else update { it }
-        }
-    }
-
-    private fun sendCallIntent(pi: android.app.PendingIntent?) {
-        if (pi == null) return
-        runCatching {
-            val opts = if (Build.VERSION.SDK_INT >= 34) {
-                android.app.ActivityOptions.makeBasic()
-                    .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
-                    .toBundle()
-            } else null
-            pi.send(this, 0, null, null, null, null, opts)
-        }
-    }
-
-    private fun onCallAnswer() {
-        if (callKey == DEMO_CALL_KEY) {
-            // Ana Sayfa > Dene: sahte arama. Cevapla -> aktif aramaya geç
-            IslandBus.post(IslandEvent.Call(DEMO_CALL_KEY, "demo", callName, false, System.currentTimeMillis(), callAvatar, null, null))
-            return
-        }
-        sendCallIntent(callAnswer)
-    }
-    /** Hoparlörü açar / kapatır (aktif arama ekranındaki hoparlör düğmesi). */
-    private fun setSpeaker(on: Boolean) {
-        callSpeaker = on
-        runCatching {
-            val am = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-            if (Build.VERSION.SDK_INT >= 31) {
-                if (on) {
-                    am.availableCommunicationDevices
-                        .firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                        ?.let { am.setCommunicationDevice(it) }
-                } else am.clearCommunicationDevice()
-            } else {
-                @Suppress("DEPRECATION")
-                am.isSpeakerphoneOn = on
-            }
-        }
-    }
-
-    private fun onCallSpeaker() {
-        setSpeaker(!callSpeaker)
-        publishCall()
-        if (callExpanded) scheduleCallCollapse()   // düğmeyle uğraşırken küçülmesin
-    }
-
-    /** Açılmış aktif arama ekranı bir süre sonra kendiliğinden küçülür. */
-    private fun scheduleCallCollapse(holdMs: Long = CALL_AUTO_COLLAPSE_MS) {
-        callCollapseJob?.cancel()
-        callCollapseJob = scope.launch {
-            delay(holdMs)
-            if (callKey != null && !callIncoming) { callExpanded = false; publishCall() }
-        }
-    }
-
-    private fun onCallDecline() {
-        // Reddet / kapat: bildirimin kalkmasını bekleme, adayı hemen kapat
-        if (callKey != DEMO_CALL_KEY) sendCallIntent(callDecline)
-        endCallNow()
-    }
-
-    /** Aramayı yerelde anında bitirir: bekleme yok, ada hemen küçülüp kapanır. */
-    private fun endCallNow() {
-        callEndJob?.cancel(); callTickJob?.cancel(); callCollapseJob?.cancel()
-        callKey = null; callSince = 0L; callAnswer = null; callDecline = null; callAvatar = null
-        setSpeaker(false)
-        callExpanded = true
-        syncSideButtons()
-        collapseJob?.cancel()
-        collapseJob = scope.launch { collapseAndRest() }
-    }
-
-    /** Gelen aramada (ve ayar açıksa) kenar Cevapla / Reddet tuşlarını gösterir; aksi halde gizler. */
-    private fun syncSideButtons() {
-        val p = SideCallStore.flow(applicationContext).value
-        val should = p.enabled && callKey != null && callIncoming &&
-            android.provider.Settings.canDrawOverlays(this)
-        if (should) {
-            sideCall.show(
-                p,
-                onAnswer = { sideCall.hide(); onCallAnswer() },
-                onDecline = { sideCall.hide(); onCallDecline() },
-            )
-        } else sideCall.hide()
-    }
+    private val call by lazy { CallController(host, sideCall) }
 
     /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */
     private fun onPillLongPress() {
@@ -863,7 +700,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         when (b) {
             Bg.Media -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(8_000) }
             Bg.Rec -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
-            Bg.Call -> { callExpanded = true; callFromSide = from; publishCall(); scheduleCallCollapse() }
+            Bg.Call -> { call.expanded = true; call.fromSide = from; call.publish(); call.scheduleCollapse() }
             Bg.Timer -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
             Bg.Notif -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse((settings.value.notifExpandedSec * 1000f).toLong()) }
             Bg.Privacy -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(4_000) }
@@ -1154,7 +991,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastExitAt < EXIT_MIN_GAP_MS) return false      // hızlı arka arkaya geçişte animasyon atlanır (ana iş parçacığı yorulmasın)
         val m = lastMedia ?: return false
-        if (!m.playing || callKey != null || assistantActive) return false
+        if (!m.playing || call.active || assistantActive) return false
         val c = ui.value.content
         if (c !is IslandContent.Media && c !is IslandContent.Idle) return false
         if (!isPlayingMediaApp(from)) return false
@@ -1646,7 +1483,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onTap = ::onPillTap, onCommand = ::onCommand, onOutput = ::openOutputPanel,
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
                     onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
-                    onAnswer = ::onCallAnswer, onDecline = ::onCallDecline, onSpeaker = ::onCallSpeaker,
+                    onAnswer = call::onAnswer, onDecline = call::onDecline, onSpeaker = call::onSpeaker,
                     onRecStop = rec::onStop, onShazamStop = shazam::onStop,
                     onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap, onSidePress = ::onSidePress,
                 )
@@ -2059,8 +1896,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandAccessibilityService.onChanged = null
         runCatching { privacy.stop() }
         lyricsJob?.cancel()
-        callTickJob?.cancel(); callEndJob?.cancel()
-        runCatching { sideCall.hide() }
+        runCatching { call.destroy() }
         runCatching { notifBanner.release() }
         runCatching { removeLaunchView() }
         runCatching { removeSwallowView() }
@@ -2077,12 +1913,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
 }
-
-/** Ana Sayfa > Dene bölümündeki sahte arama olayının anahtarı. */
-const val DEMO_CALL_KEY = "demo_call"
-
-/** Dokunup açılan aktif arama ekranının kendiliğinden küçülme süresi (ms). */
-const val CALL_AUTO_COLLAPSE_MS = 5_000L
 
 /** Durum çubuğu örtüsü (bulanık mod): arka plan bulanıklığı (px) ve koyu ton (0..255). */
 private const val COVER_BLUR_PX = 120

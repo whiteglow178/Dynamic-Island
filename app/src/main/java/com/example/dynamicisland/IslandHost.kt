@@ -22,7 +22,16 @@ interface IslandHost {
     /** Asistan açık ya da herhangi bir arama (gelen / aktif) var. */
     val busy: Boolean
 
+    /** Panel bir yan baloncuktan "peek" ile açılmış mı? */
+    val isPeeking: Boolean
+    /** Arka planda, aramadan daha yeni bir olay (müzik / kayıt...) var mı? */
+    val newerThanCall: Boolean
+
     fun update(f: (IslandUiState) -> IslandUiState)
+    /** Arka plan olay sırasını güncel etkin olaylara göre yeniler. */
+    fun syncBgOrder()
+    /** Adayı küçültüp dinlenme durumuna döndürür (bekleyerek; coroutine içinden çağrılır). */
+    suspend fun collapseAndRest()
     /** İçeriği genişletilmiş gösterir, [holdMs] sonra küçültür. */
     fun showTemporarily(c: IslandContent, holdMs: Long)
     /** Ortaya en yeni etkin olayı yerleştirir (hiçbiri yoksa ada boşa döner). */
