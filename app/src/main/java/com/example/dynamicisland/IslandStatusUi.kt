@@ -1,0 +1,227 @@
+package com.example.dynamicisland
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import kotlinx.coroutines.flow.first
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.abs
+import kotlin.math.acos
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+// ---------------------------------------------------------------- Durum (zil modu / şarj / zamanlayıcı / alarm)
+private const val BELL_PATH =
+    "M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5" +
+    "s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"
+private val BellPath: Path by lazy { PathParser().parsePathString(BELL_PATH).toPath() }
+
+internal fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
+    StatusKind.Ringer -> if (c.silent) Color(0xFFFF3B30) else Color(0xFFFF9500)
+    StatusKind.Charging -> Color(0xFF34C759)
+    StatusKind.Timer -> Color(0xFF0A84FF)
+    StatusKind.Alarm -> Color(0xFFFF9500)
+    StatusKind.Camera -> Color(0xFF34C759)
+    StatusKind.Mic -> Color(0xFFFF9F0A)
+}
+
+@Composable
+private fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val sc = size.width / 24f
+        withTransform({ scale(sc, sc, Offset.Zero) }) {
+            val w = Color.White
+            val st = Stroke(width = 2f, cap = StrokeCap.Round)
+            when (c.kind) {
+                StatusKind.Ringer -> {
+                    drawPath(BellPath, w)
+                    if (c.silent) drawLine(w, Offset(3.5f, 3.5f), Offset(20.5f, 20.5f), strokeWidth = 2.4f, cap = StrokeCap.Round)
+                }
+                StatusKind.Charging -> {
+                    val bolt = Path().apply {
+                        moveTo(13.5f, 2f); lineTo(5f, 13.5f); lineTo(11f, 13.5f)
+                        lineTo(10f, 22f); lineTo(19f, 9.5f); lineTo(13f, 9.5f); close()
+                    }
+                    drawPath(bolt, w)
+                }
+                StatusKind.Timer -> {
+                    drawCircle(w, radius = 8f, center = Offset(12f, 13.5f), style = st)
+                    drawLine(w, Offset(12f, 13.5f), Offset(12f, 9f), strokeWidth = 2f, cap = StrokeCap.Round)
+                    drawLine(w, Offset(9.5f, 2.5f), Offset(14.5f, 2.5f), strokeWidth = 2f, cap = StrokeCap.Round)
+                }
+                StatusKind.Alarm -> {
+                    drawCircle(w, radius = 7.5f, center = Offset(12f, 13f), style = st)
+                    drawLine(w, Offset(12f, 13f), Offset(12f, 9.2f), strokeWidth = 2f, cap = StrokeCap.Round)
+                    drawLine(w, Offset(12f, 13f), Offset(14.6f, 14.6f), strokeWidth = 2f, cap = StrokeCap.Round)
+                    drawCircle(w, radius = 2.4f, center = Offset(4.6f, 4.8f))
+                    drawCircle(w, radius = 2.4f, center = Offset(19.4f, 4.8f))
+                }
+                StatusKind.Camera -> {
+                    drawRoundRect(w, Offset(2.5f, 6f), Size(13f, 12f), CornerRadius(3f, 3f))
+                    val lens = Path().apply { moveTo(16.5f, 10.5f); lineTo(21.5f, 7.5f); lineTo(21.5f, 16.5f); lineTo(16.5f, 13.5f); close() }
+                    drawPath(lens, w)
+                }
+                StatusKind.Mic -> {
+                    drawRoundRect(w, Offset(9f, 2.5f), Size(6f, 11f), CornerRadius(3f, 3f))
+                    drawArc(w, 0f, 180f, false, Offset(5.5f, 6f), Size(13f, 12f), style = st)
+                    drawLine(w, Offset(12f, 18f), Offset(12f, 21.5f), strokeWidth = 2f, cap = StrokeCap.Round)
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun ChargeContent(c: IslandContent.Status, rb: RainbowStyle?) {
+    val green = Color(0xFF34C759)
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.5.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+        Spacer(Modifier.weight(1f))      // ortada kamera deliği için boşluk kalır
+        Text(c.value, color = green, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, maxLines = 1)
+        Spacer(Modifier.width(6.dp))
+        Canvas(Modifier.size(width = 26.dp, height = 12.dp)) {
+            val tipW = 1.8.dp.toPx()
+            val bodyW = size.width - tipW - 1.dp.toPx()
+            val r = CornerRadius(4.dp.toPx())
+            drawRoundRect(Color.White.copy(alpha = 0.28f), size = Size(bodyW, size.height), cornerRadius = r)
+            val fillW = (bodyW * c.progress.coerceIn(0f, 1f)).coerceAtLeast(size.height * 0.5f)
+            drawRoundRect(green, size = Size(fillW, size.height), cornerRadius = r)
+            drawRoundRect(
+                Color.White.copy(alpha = 0.40f),
+                topLeft = Offset(bodyW + 1.dp.toPx(), size.height * 0.3f),
+                size = Size(tipW, size.height * 0.4f),
+                cornerRadius = CornerRadius(1.dp.toPx()),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun StatusContent(c: IslandContent.Status, rb: RainbowStyle?) {
+    val color = statusColor(c)
+    val timer = c.kind == StatusKind.Timer && c.endsAt > 0L
+    var now by remember(c.endsAt) { mutableLongStateOf(System.currentTimeMillis()) }
+    if (timer) LaunchedEffect(c.endsAt) {
+        while (true) { now = System.currentTimeMillis(); delay(200) }
+    }
+    val remaining = if (timer) (c.endsAt - now).coerceAtLeast(0L) else 0L
+    val value = if (timer) formatRemaining(remaining) else c.value
+    val frac = when {
+        timer && c.totalMs > 0L -> remaining.toFloat() / c.totalMs
+        c.kind == StatusKind.Charging -> c.progress
+        else -> -1f
+    }.let { if (it >= 0f) it.coerceIn(0f, 1f) else it }
+
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(46.dp).background(color, RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
+            StatusIcon(c, Modifier.size(26.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+            if (c.subtitle.isNotBlank()) {
+                Text(c.subtitle, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+            }
+            if (frac >= 0f) {
+                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.16f))) {
+                    Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(color, RoundedCornerShape(2.dp)))
+                }
+            }
+        }
+        if (value.isNotBlank()) {
+            Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp,
+                maxLines = 1, modifier = Modifier.rainbowFill(rb))
+        }
+    }
+}
