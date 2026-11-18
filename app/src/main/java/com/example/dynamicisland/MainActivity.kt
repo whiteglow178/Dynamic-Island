@@ -67,7 +67,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             IslandTheme {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { AppRoot() }
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    // İlk açılışta açılış (onboarding) ekranı; bittikten sonra normal uygulama (Kurulum sayfası dahil) açılır
+                    val prefs = remember { getSharedPreferences("omni_onboarding", Context.MODE_PRIVATE) }
+                    var onboarded by remember { mutableStateOf(prefs.getBoolean("onboarding_done", false)) }
+                    if (onboarded) {
+                        AppRoot()
+                    } else {
+                        OnboardingScreen(onFinished = {
+                            prefs.edit().putBoolean("onboarding_done", true).apply()
+                            onboarded = true
+                        })
+                    }
+                }
             }
         }
     }
@@ -83,6 +95,10 @@ private fun bringAppToFront(ctx: Context) {
         )
     }
 }
+
+/** OnboardingScreen.kt için: private yardımcılara köprü. */
+internal fun onboardingBringToFront(ctx: Context) = bringAppToFront(ctx)
+internal fun onboardingOpenAutostart(ctx: Context) = openAutostartSettings(ctx)
 
 private fun Context.hasOverlay() = Settings.canDrawOverlays(this)
 private fun Context.hasListener() =
