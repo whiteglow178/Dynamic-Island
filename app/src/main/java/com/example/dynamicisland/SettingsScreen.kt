@@ -247,6 +247,9 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         }
 
         sec("Yan baloncuklar", "Adanın yanında ayrılan baloncuklar (müzik, ekran kaydı, arama)") {
+            SwitchRow("Olayları alt alta aç", "Birden fazla olay varken adaya dokununca (ya da aşağı kaydırınca) hepsi genişleyip alt alta kartlar halinde sıralanır. Karta dokununca ya da yukarı kaydırınca kapanır",
+                draft.stackExpand) { draft = draft.copy(stackExpand = it) }
+            SectionDivider()
             SwitchRow("Dokununca olay ortaya geçsin", "Kapalıyken baloncuğa dokununca o uygulamanın paneli genişler ama olay ortaya geçmez; panel kapanınca eski düzen döner. Açıkken olay kalıcı olarak ortaya geçer",
                 draft.sideTapPromote) { draft = draft.copy(sideTapPromote = it) }
         }

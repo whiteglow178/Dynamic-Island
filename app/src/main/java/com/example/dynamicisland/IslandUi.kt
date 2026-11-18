@@ -242,7 +242,7 @@ private const val EXPAND_LEAD_MS = 24L          // pencere büyüdükten sonra e
 private const val EXPAND_WAIT_MAX_MS = 220L    // pencere büyümezse en fazla bu kadar beklenir (güvenlik)
 
 /** Servisteki syncWindow ile aynı hesap: açık haldeki ada yüksekliği (dp), pay hariç. */
-private fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float = when (c) {
+internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float = when (c) {
     IslandContent.Assistant -> cfg.assistantHeightDp
     is IslandContent.Favorites -> cfg.favoritesHeightDp(c.apps.size)
     is IslandContent.Call -> if (c.isIncoming) 74f else 88f
@@ -272,6 +272,7 @@ fun IslandRoot(
     onShazamStop: () -> Unit = {},       // genişlemiş Shazam "Listening..." panelindeki X düğmesi
     onNotifSwipeSide: () -> Unit = {},   // bildirim üstünde sağa / sola kaydırma
     onSideTap: (Int) -> Unit = {},       // yan baloncuğa dokunma: 0 = sağ, 1 = sol
+    onStackClose: () -> Unit = {},       // yığın görünümünde karta dokunma / yukarı kaydırma: yığın kapanır
     onSidePress: (Int) -> Unit = {},     // yan baloncuğa parmak değdi (henüz dokunma tamamlanmadı): pencere önceden büyütülür
 ) {
     val s by state.collectAsState()
@@ -366,6 +367,19 @@ fun IslandRoot(
         LaunchedEffect(s.expanded) { shown = s.expanded }
         val barAlpha by animateFloatAsState(if (shown) 1f else 0f, tween(if (shown) 350 else 250), label = "orbBar")
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = barAlpha }) { AssistantOrb(fullWidth = true) }
+        return
+    }
+
+    // Yığın görünümü: birden fazla olay alt alta kartlar halinde (servis s.stack'i doldurur)
+    if (s.stack.isNotEmpty()) {
+        Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
+            IslandStackPanel(
+                items = s.stack, closing = s.stackClosing, cfg = cfg, lyrics = lyrics,
+                onClose = onStackClose, onCommand = cmd, onOutput = onOutput, onOpenMusic = onOpenMusic,
+                onAnswer = onAnswer, onDecline = onDecline, onSpeaker = onSpeaker,
+                onRecStop = onRecStop, onShazamStop = onShazamStop,
+            )
+        }
         return
     }
 

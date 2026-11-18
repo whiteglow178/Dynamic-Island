@@ -98,7 +98,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var resizeListener: View.OnLayoutChangeListener? = null
     private var dotWin = false     // nokta modu açık mı (pencere küçülürken gizleme eşiği için)
 
-    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0)
+    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0, val stackW: Int = 0, val stackH: Int = 0)
 
     // ---- Çoklu olay: en yeni olay ortada, öncekiler sağ / sol baloncukta
     private enum class Bg { Media, Rec, Call, Shazam, Timer, Notif, Privacy }   // Notif: yalnızca nokta modunda; Shazam / Timer: 4 ya da 5 nokta modunda   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
@@ -153,7 +153,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
-            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow, sideKey(u)) }
+            combine(ui, settings) { u, s -> winKey(u, s) }
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
         }
@@ -244,7 +244,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val s = settings.value
         val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
             lastMedia?.playing == true && n.content is IslandContent.Media
-        ui.value = n.copy(compactLyrics = want && !n.swallow, side = sideFor(n))
+        // Yığın açıkken içerik canlı güncellenir; olay sayısı 2'nin altına inerse ya da başka bir panel açılırsa yığın kapanır
+        var st: List<IslandContent> = emptyList()
+        if (stackOpen) {
+            st = stackItems()
+            if (n.expanded || n.swallow || !s.stackExpand || st.size < STACK_MIN_ITEMS) {
+                stackOpen = false; stackClosing = false; stackJob?.cancel(); st = emptyList()
+            }
+        }
+        ui.value = n.copy(
+            compactLyrics = want && !n.swallow,
+            side = if (st.isEmpty()) sideFor(n) else emptyList(),
+            stack = st, stackClosing = stackClosing && st.isNotEmpty(),
+        )
         syncRevert(ui.value)
     }
 
@@ -252,6 +264,53 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun peeking(): Boolean {
         val cur = ui.value
         return peekBg != null && centerBg(cur.content) == peekBg      // küçülme animasyonu sürerken de (rest() çağrılana dek)
+    }
+
+    private fun winKey(u: IslandUiState, s: IslandSettings = settings.value): WinKey {
+        val stacked = u.stack.isNotEmpty()
+        val screenWDp = wm.currentWindowMetrics.bounds.width() / density
+        return WinKey(
+            kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow, sideKey(u),
+            stackW = if (stacked) kotlin.math.ceil(stackWidthDp(u.stack, s, screenWDp)).toInt() else 0,
+            stackH = if (stacked) kotlin.math.ceil(stackHeightDp(u.stack, s)).toInt() else 0,
+        )
+    }
+
+    // ---------------------------------------------------------------- Yığın görünümü (birden fazla olay alt alta)
+    private var stackOpen = false
+    private var stackClosing = false
+    private var stackJob: Job? = null
+
+    /** Şu an etkin tüm arka plan olayları (en yeni başta). */
+    private fun stackItems(): List<IslandContent> {
+        syncBgOrder()
+        return bgOrder.asReversed().mapNotNull { bgContent(it) }.take(maxSides() + 1)
+    }
+
+    /** Ayar açık, ada kapalı ve en az 2 olay varsa yığını açar; açtıysa true döner. */
+    private fun openStack(): Boolean {
+        val cur = ui.value
+        if (!settings.value.stackExpand || stackOpen || cur.expanded || cur.swallow || cur.fromSide != 0) return false
+        if (centerBg(cur.content) == null || stackItems().size < STACK_MIN_ITEMS) return false
+        collapseJob?.cancel()
+        stackOpen = true; stackClosing = false
+        update { it.copy(expanded = false) }
+        if (!stackOpen) return false
+        stackJob?.cancel()
+        stackJob = scope.launch { delay(STACK_HOLD_MS); closeStack() }
+        return true
+    }
+
+    private fun closeStack() {
+        if (!stackOpen || stackClosing) return
+        stackJob?.cancel()
+        stackClosing = true
+        update { it }
+        stackJob = scope.launch {
+            delay(STACK_CLOSE_MS)
+            stackOpen = false; stackClosing = false
+            update { it }
+        }
     }
 
     // Genişlemişken yalnızca gerçekten çizilecek baloncuklar pay ayırır; kapalıyken baloncuğa geri küçülme için fromSide de sayılır
@@ -497,6 +556,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun onPillTap() {
+        if (openStack()) return          // birden fazla olay varsa hepsi alt alta açılır
         val cur = ui.value
         when (cur.content) {
             is IslandContent.Media -> {
@@ -569,7 +629,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override fun setIslandHidden(hidden: Boolean) {
             composeView?.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
             if (hidden) setTouchable(false)
-            else this@IslandOverlayService.scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, this@IslandOverlayService.settings.value, ui.value.swallow, sideKey(ui.value))) }
+            else this@IslandOverlayService.scope.launch { syncWindow(this@IslandOverlayService.winKey(ui.value)) }
         }
         override fun update(f: (IslandUiState) -> IslandUiState) = this@IslandOverlayService.update(f)
         override fun cancelCollapse() { collapseJob?.cancel() }
@@ -753,7 +813,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             delay(1_500)
             if (!ui.value.expanded) {
                 val u = ui.value
-                syncWindow(WinKey(kindOf(u.content), u.expanded, u.compactLyrics, settings.value, u.swallow, sideKey(u)))
+                syncWindow(winKey(u))
             }
         }
     }
@@ -786,6 +846,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val cur = ui.value
         val s = settings.value
         if (cur.swallow) return
+        if (dir > 0 && openStack()) return
         when (val c = cur.content) {
             is IslandContent.Media -> {
                 if (dir > 0 && !cur.expanded && s.swipeDownExpand) {
@@ -1084,7 +1145,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
         composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, sideKey(ui.value))) }
+        scope.launch { syncWindow(winKey(ui.value)) }
     }
 
     // ---------------------------------------------------------------- Durum çubuğu örtüsü
@@ -1132,6 +1193,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onAnswer = call::onAnswer, onDecline = call::onDecline, onSpeaker = call::onSpeaker,
                     onRecStop = rec::onStop, onShazamStop = shazam::onStop,
                     onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap, onSidePress = ::onSidePress,
+                    onStackClose = ::closeStack,
                 )
             }
         }
@@ -1340,6 +1402,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
         setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && s.favoritesReady())) && !appHide.hidden)
         when {
+            k.stackH > 0 -> {
+                // Yığın görünümü: pencere kartların toplam boyutunda
+                setBlur(false, s)
+                val sw = dp(k.stackW.toFloat()) + 2 * pad
+                val sh = dp(k.stackH.toFloat()) + 2 * pad
+                val maxSh = ((screenW - sw) / 2).coerceAtLeast(0)
+                setGeometry(sw, sh, baseX.coerceIn(-maxSh, maxSh), y)
+                winSide = 0
+            }
             k.kind == 0 && s.showIdle -> {
                 // Boşta da görünür: küçük ada boyutunda, dokunuşsuz
                 setBlur(false, s)
@@ -1500,7 +1571,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { detachOverlay() }
         safeAttachOverlay()
         composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow, sideKey(ui.value))) }
+        scope.launch { syncWindow(winKey(ui.value)) }
     }
 
     /** Sistem pencereyi istediğimizden farklı bir yere koyduysa (durum çubuğu payı vb.) farkı kadar geri çeker. */

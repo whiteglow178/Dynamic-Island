@@ -111,6 +111,10 @@ data class IslandUiState(
     val side: List<IslandContent> = emptyList(),
     /** Yan baloncuğa dokunulunca ada o baloncuktan büyüyerek açılır: +1 = sağdaki, -1 = soldaki, 0 = normal. Kapanınca sıfırlanır. */
     val fromSide: Int = 0,
+    /** Yığın görünümü: birden fazla olay alt alta kartlar halinde açık. Boşsa kapalı. Servis hesaplar. */
+    val stack: List<IslandContent> = emptyList(),
+    /** Yığın kapanış animasyonu oynuyor. */
+    val stackClosing: Boolean = false,
 )
 
 // ---------------------------------------------------------------- Şarkı sözü modeli

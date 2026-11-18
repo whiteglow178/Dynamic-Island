@@ -194,6 +194,7 @@ data class IslandSettings(
     val uiHaptics: Boolean = true,           // ayar ekranında anahtar / kaydırıcı titreşimi
     val dotMergeKeep: Boolean = false,       // birleşik modda olaylar adadan ayrılmaz, hapın içinde kalır
     val dotMerge: Boolean = false,           // boştaki noktalar birleşip tek bir ada gibi görünür; olay görünümü değişmez
+    val stackExpand: Boolean = true,         // birden fazla olay varken adaya basınca hepsi alt alta kartlar halinde açılsın
 ) {
     /**
      * Servisin / arayüzün kullandığı etkin ayarlar. Üç nokta modunda kapalı ada, ortadaki noktanın çapında bir daire olur;
@@ -305,6 +306,7 @@ class SettingsRepository(context: Context) {
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
         val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
         val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
+        val STACK_EXP = booleanPreferencesKey("stack_exp")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -440,6 +442,7 @@ class SettingsRepository(context: Context) {
             hideInApps = p[K.HIDE_APPS] ?: d.hideInApps,
             hiddenAppPkgs = p[K.HIDE_PKGS] ?: d.hiddenAppPkgs,
             uiHaptics = p[K.UI_HAPTIC] ?: d.uiHaptics,
+            stackExpand = p[K.STACK_EXP] ?: d.stackExpand,
         )
     }.distinctUntilChanged()
 
@@ -498,6 +501,7 @@ class SettingsRepository(context: Context) {
             it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
             it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
+            it[K.STACK_EXP] = s.stackExpand
         }
     }
 
