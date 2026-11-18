@@ -182,7 +182,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         when (e) {
             is IslandEvent.AssistantChanged -> onAssistant(e.active)
             is IslandEvent.AppSwitched -> {
-                if ((swallowView != null || stretchView != null) && isPlayingMediaApp(e.to)) abortExit()   // müzik uygulamasına geri dönüldü
+                if ((swallowSlot.shown || stretchSlot.shown) && isPlayingMediaApp(e.to)) abortExit()   // müzik uygulamasına geri dönüldü
                 val wasMusic = inMusicApp
                 appHide.update(e.to)           // seçili uygulamada ada gizlenir
                 updateInMusicApp(e.to)          // önce "müzik uygulamasında mıyım" güncellenir
@@ -869,9 +869,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Favori açılış animasyonu
     private val LAUNCH_LEAD_MS = 170L        // ada küçülmeye başladıktan kaç ms sonra siyah ekran çıksın
-    private var launchView: ComposeView? = null
-    private var launchWm: WindowManager? = null
     private var launching = false
+    private val overlays: TransitionOverlays by lazy { TransitionOverlays(this, { wm }, scope) }
+    private val launchSlot = OverlaySlot(5_000L) { launching = false }     // güvenlik: siyah katman en geç 5 sn sonra kalkar
 
     private fun launchApp(pkg: String) {
         val intent = packageManager.getLaunchIntentForPackage(pkg)
@@ -928,66 +928,28 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             speed = speed,
             color = islandPanelColor(s, (ui.value.content as? IslandContent.Media)?.artColor ?: 0, opaque = true),
         )
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        lateinit var view: ComposeView
-        view = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@IslandOverlayService)
-            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
-            setContent {
-                val onCov = { runCatching { open() }; Unit }                  // ekran tamamen siyah: uygulamayı aç
-                val onFin = { handler.post { if (launchView === view) removeLaunchView() }; Unit }
-                if (atomic) AtomicLaunch(spec, onCovered = onCov, onFinished = onFin)
-                else LaunchTransition(spec, onCovered = onCov, onFinished = onFin)
-            }
+        val added = overlays.show(launchSlot) { onFin ->
+            val onCov = { runCatching { open() }; Unit }                  // ekran tamamen siyah: uygulamayı aç
+            if (atomic) AtomicLaunch(spec, onCovered = onCov, onFinished = onFin)
+            else LaunchTransition(spec, onCovered = onCov, onFinished = onFin)
         }
-        fun params(type: Int) = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            fitInsetsTypes = 0
-            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        }
-
-        // Ada penceresiyle aynı katman: erişilebilirlik overlay'i durum çubuğunun da üstünde çizilir
-        var host: WindowManager = wm
-        var added = false
-        IslandAccessibilityService.instance?.let { a11y ->
-            runCatching {
-                val h2 = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
-                h2.addView(view, params(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY))
-                host = h2; added = true
-            }
-        }
-        if (!added) added = runCatching { wm.addView(view, params(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)) }.isSuccess
-
         if (!added) {                        // pencere eklenemedi: animasyonsuz aç
-            view.disposeComposition()
             launching = false
             runCatching { open() }
-            return
         }
-        launchView = view; launchWm = host
-        // Güvenlik: ne olursa olsun siyah katman ekranda kalmasın
-        scope.launch { delay(5_000); if (launchView === view) removeLaunchView() }
     }
 
     // ---------------------------------------------------------------- Müzikten çıkış animasyonu
     private val SWALLOW_SAFE_MS = 1_500L      // güvenlik: panel bitmese de ada bu sürede küçülür
     private val SWALLOW_HOLD_MS = 140L       // ada büyük kaldıktan sonra eski haline dönme süresi
-    private var swallowView: ComposeView? = null
-    private var swallowWm: WindowManager? = null
+    private val swallowSlot = OverlaySlot(4_000L) {
+        if (exitHold) { exitHold = false; refreshMediaVisibility() }   // panel bitti: müzik artık gösterilebilir
+    }
 
     /** Çalan şarkının uygulamasından çıkılınca: siyah panel adaya küçülür, ada şarkıyı gösterir. */
     private fun onAppSwitched(from: String): Boolean {
         val s = settings.value
-        if (!s.musicExitAnim || launching || swallowView != null || stretchView != null) return false
+        if (!s.musicExitAnim || launching || swallowSlot.shown || stretchSlot.shown) return false
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastExitAt < EXIT_MIN_GAP_MS) return false      // hızlı arka arkaya geçişte animasyon atlanır (ana iş parçacığı yorulmasın)
         val m = lastMedia ?: return false
@@ -997,7 +959,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (!isPlayingMediaApp(from)) return false
         lastExitAt = now
         startSwallowTransition()        // panel penceresi önce eklenir: ilk kare gecikmeden çizilsin
-        if (swallowView == null) return false
+        if (!swallowSlot.shown) return false
         if (s.musicExitStretch) startStretchOverlay() else swallowIsland()   // uzayan ada ekran katmanında çizilir, ada penceresi büyümez
         exitWatchdog?.cancel()
         exitWatchdog = scope.launch { delay(EXIT_WATCHDOG_MS); endExit() }   // ne olursa olsun animasyon durumu takılı kalmasın
@@ -1053,88 +1015,23 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             speed = s.musicExitSpeed,
             color = islandPanelColor(s, lastMedia?.artColor ?: 0, opaque = fullStart),   // tam ekranda panel opak (ekranı örtmeli)
         )
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        lateinit var view: ComposeView
-        view = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@IslandOverlayService)
-            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
-            setContent {
-                val onDone = {
-                    handler.post {
-                        if (swallowView === view) removeSwallowView()
-                        // Panel tamamen silindi: ada bir an daha büyük kalıp küçülür (arkası görünmesin)
-                        if (ui.value.swallow && ui.value.expanded) scheduleCollapse(SWALLOW_HOLD_MS)
-                    }
-                    Unit
-                }
-                if (useAtomic) AtomicToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone, fullStart = fullStart)
-                else ShrinkToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone)
-            }
+        overlays.show(
+            swallowSlot,
+            // Panel tamamen silindi: ada bir an daha büyük kalıp küçülür (arkası görünmesin)
+            afterFinished = { if (ui.value.swallow && ui.value.expanded) scheduleCollapse(SWALLOW_HOLD_MS) },
+        ) { onDone ->
+            if (useAtomic) AtomicToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone, fullStart = fullStart)
+            else ShrinkToIsland(spec, onSwallow = { runCatching { swallowIsland() } }, onFinished = onDone)
         }
-        fun params(type: Int) = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            fitInsetsTypes = 0
-            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        }
-
-        var host: WindowManager = wm
-        var added = false
-        IslandAccessibilityService.instance?.let { a11y ->
-            runCatching {
-                val h2 = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
-                h2.addView(view, params(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY))
-                host = h2; added = true
-            }
-        }
-        if (!added) added = runCatching { wm.addView(view, params(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)) }.isSuccess
-        if (!added) { view.disposeComposition(); return }
-        swallowView = view; swallowWm = host
-        // Güvenlik: ne olursa olsun siyah katman ekranda kalmasın
-        scope.launch { delay(4_000); if (swallowView === view) removeSwallowView() }
     }
 
-    private fun removeSwallowView() {
-        val v = swallowView
-        if (v != null) {
-            runCatching { (swallowWm ?: wm).removeView(v) }
-            v.disposeComposition()
-            v.setViewTreeLifecycleOwner(null)
-            v.setViewTreeSavedStateRegistryOwner(null)
-        }
-        swallowView = null; swallowWm = null
-        if (exitHold) { exitHold = false; refreshMediaVisibility() }   // panel bitti: müzik artık gösterilebilir
-    }
+    private fun removeSwallowView() = overlays.remove(swallowSlot)
 
     // ---------------------------------------------------------------- Uzayan ada katmanı (yeni yutma animasyonu)
-    private var stretchView: ComposeView? = null
-    private var stretchWm: WindowManager? = null
-
-    private fun overlayParams(type: Int) = WindowManager.LayoutParams(
-        WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
-        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-        PixelFormat.TRANSLUCENT,
-    ).apply {
-        gravity = Gravity.TOP or Gravity.START
-        fitInsetsTypes = 0
-        layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-    }
+    private val stretchSlot = OverlaySlot(3_000L)
 
     private fun startStretchOverlay() {
-        if (stretchView != null) return
+        if (stretchSlot.shown) return
         val s = settings.value
         val sw = wm.currentWindowMetrics.bounds.width()
         val chPx = dp(s.compactHeightDp)
@@ -1146,41 +1043,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             speed = s.musicExitSpeed,
             color = islandPanelColor(s, lastMedia?.artColor ?: 0),
         )
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        lateinit var view: ComposeView
-        view = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@IslandOverlayService)
-            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
-            setContent {
-                val onDone = { handler.post { if (stretchView === view) removeStretchView() }; Unit }
-                IslandStretch(spec, onFinished = onDone)
-            }
-        }
-        var host: WindowManager = wm
-        var added = false
-        IslandAccessibilityService.instance?.let { a11y ->
-            runCatching {
-                val h2 = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
-                h2.addView(view, overlayParams(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY))
-                host = h2; added = true
-            }
-        }
-        if (!added) added = runCatching { wm.addView(view, overlayParams(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)) }.isSuccess
-        if (!added) { view.disposeComposition(); return }
-        stretchView = view; stretchWm = host
-        scope.launch { delay(3_000); if (stretchView === view) removeStretchView() }
+        overlays.show(stretchSlot) { onDone -> IslandStretch(spec, onFinished = onDone) }
     }
 
-    private fun removeStretchView() {
-        val v = stretchView
-        if (v != null) {
-            runCatching { (stretchWm ?: wm).removeView(v) }
-            v.disposeComposition()
-            v.setViewTreeLifecycleOwner(null)
-            v.setViewTreeSavedStateRegistryOwner(null)
-        }
-        stretchView = null; stretchWm = null
-    }
+    private fun removeStretchView() = overlays.remove(stretchSlot)
 
     /** Çıkış animasyonunu tamamen bitirir: katmanlar kalkar, yutma durumu ve gizleme bayrağı sıfırlanır, müzik yeniden gösterilir. */
     private fun endExit() {
@@ -1192,16 +1058,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun abortExit() { exitWatchdog?.cancel(); endExit() }
 
-    private fun removeLaunchView() {
-        val v = launchView
-        if (v != null) {
-            runCatching { (launchWm ?: wm).removeView(v) }
-            v.disposeComposition()
-            v.setViewTreeLifecycleOwner(null)
-            v.setViewTreeSavedStateRegistryOwner(null)
-        }
-        launchView = null; launchWm = null; launching = false
-    }
+    private fun removeLaunchView() = overlays.remove(launchSlot)
 
     private fun onCommand(c: MediaCommand) {
         IslandBus.send(c)
