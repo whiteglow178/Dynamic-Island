@@ -53,7 +53,7 @@ object CustomImages {
     /** Fotoğraf kaldırılınca/değişince, başka yerde kullanılmıyorsa verilen izni geri bırakır. */
     fun releaseUnused(ctx: Context, old: String, now: IslandSettings) {
         if (old.isEmpty()) return
-        val used = Slot.values().any { now.imageUri(it) == old }
+        val used = Slot.values().any { now.imageUri(it) == old } || now.customBgVideoUri == old
         if (used) return
         try {
             ctx.applicationContext.contentResolver.releasePersistableUriPermission(Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -62,7 +62,7 @@ object CustomImages {
     }
 
     fun releaseAll(ctx: Context, s: IslandSettings) {
-        Slot.values().map { s.imageUri(it) }.filter { it.isNotEmpty() }.distinct().forEach { u ->
+        (Slot.values().map { s.imageUri(it) } + s.customBgVideoUri).filter { it.isNotEmpty() }.distinct().forEach { u ->
             try {
                 ctx.applicationContext.contentResolver.releasePersistableUriPermission(Uri.parse(u), Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Throwable) { }

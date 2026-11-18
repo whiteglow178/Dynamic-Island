@@ -735,6 +735,7 @@ fun IslandPill(
     val bgBoth = rememberCustomImage(CustomImages.Slot.BG_BOTH, if (bgOn && !cfg.customBgSeparate) cfg.customBgBothUri else "")
     val bgCompact = rememberCustomImage(CustomImages.Slot.BG_COMPACT, if (bgOn && cfg.customBgSeparate) cfg.customBgCompactUri else "")
     val bgExpanded = rememberCustomImage(CustomImages.Slot.BG_EXPANDED, if (bgOn && cfg.customBgSeparate) cfg.customBgExpandedUri else "")
+    val bgVideo = if (bgOn) cfg.customBgVideoUri else ""
     val customArt = rememberCustomImage(CustomImages.Slot.ART, if (cfg.customArtEnabled) cfg.customArtUri else "")
 
     // Asistanda cam gövde en az %60 koyu kalır: renk bantları koyu zeminde okunur
@@ -834,12 +835,19 @@ fun IslandPill(
     ) {
         // Albüm kapağı arka planı: ada içini kaplar, yazıların okunması için hafif karartılır
         val backdropArt = media?.art
-        if (cfg.artBgEnabled && backdropArt != null && bgBoth == null && !swallow) {
+        if (cfg.artBgEnabled && backdropArt != null && bgBoth == null && bgVideo.isEmpty() && !swallow) {
             ArtBackdrop(backdropArt, cfg.artBgCompact, progress)
         }
         // Galeriden seçilen arka plan: albüm arka planının üstünde, içeriğin altında
-        if (bgBoth != null || bgCompact != null || bgExpanded != null) {
+        if (bgVideo.isNotEmpty()) {
+            VideoBackdrop(bgVideo, cfg.customBgDim)
+        } else if (bgBoth != null || bgCompact != null || bgExpanded != null) {
             CustomBackdrop(bgBoth, bgCompact, bgExpanded, cfg.customBgDim, geo, progress)
+        }
+
+        // Müzik çalarken alt kenarda albüm renginde hareketli ışık (içeriğin altında)
+        if (media != null && cfg.musicBottomFx && !swallow && !cfg.dotMode) {
+            MusicBottomFx(artColor ?: accent, media.playing)
         }
 
         val musicBlur = cfg.animEnabled && ((cfg.musicBlurAnim && content is IslandContent.Media) || content is IslandContent.Shazam)

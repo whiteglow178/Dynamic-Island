@@ -117,6 +117,22 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         }
     }
     val pick: (CustomImages.Slot) -> Unit = { slot -> pendingSlot = slot.ordinal; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+    // Video da kopyalanmaz: sistemin seçicisi kullanılır, yalnızca adres ve kalıcı okuma izni alınır (depolama izni gerekmez)
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            CustomVideo.grant(ctx, uri)
+            val u = uri.toString()
+            val old = draft.customBgVideoUri
+            draft = draft.copy(customBgVideoUri = u)
+            if (old != u) CustomVideo.releaseUnused(ctx, old, draft)
+        }
+    }
+    val pickVideo: () -> Unit = { videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) }
+    val removeVideo: () -> Unit = {
+        val old = draft.customBgVideoUri
+        draft = draft.copy(customBgVideoUri = "")
+        CustomVideo.releaseUnused(ctx, old, draft)
+    }
     val remove: (CustomImages.Slot) -> Unit = { slot ->
         val old = draft.imageUri(slot)
         draft = draft.withImageUri(slot, "")
@@ -322,7 +338,12 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
 
-        sec("Özel arka plan", "Adanın içini galeriden seçtiğin fotoğrafla doldur") {
+        sec("Müzik efekti", "Müzik çalarken adanın alt kısmında hareketli renk") {
+            SwitchRow("Alt kenarda renkli ışık", "Albüm kapağının rengine göre adanın altında yavaşça akan ışık; duraklatınca söner",
+                draft.musicBottomFx) { draft = draft.copy(musicBottomFx = it) }
+        }
+
+        sec("Özel arka plan", "Adanın içini galeriden seçtiğin fotoğraf veya videoyla doldur") {
             SwitchRow("Galeriden arka plan", "Fotoğraf adanın içini kaplar; yazıların okunması için hafif karartılır",
                 draft.customBgEnabled) { draft = draft.copy(customBgEnabled = it) }
             if (draft.customBgEnabled) {
@@ -341,6 +362,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     ImagePickRow("Açık ada", "Seçmezsen açık adada özel arka plan olmaz",
                         CustomImages.Slot.BG_EXPANDED, draft.customBgExpandedUri, pick, remove)
                 }
+                SectionDivider()
+                VideoPickRow(draft.customBgVideoUri, pickVideo, removeVideo)
                 SectionDivider()
                 SliderRow("Karartma", draft.customBgDim, 0f..0.8f, "%${(draft.customBgDim * 100).toInt()}") { draft = draft.copy(customBgDim = it) }
                 Text("Özel arka plan, albüm kapağı arka planının üstünde görünür.",
@@ -695,6 +718,27 @@ private fun ImagePickRow(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(onClick = { onPick(slot) }, modifier = Modifier.weight(1f)) { Text(if (has) "Değiştir" else "Galeriden seç") }
             if (has) OutlinedButton(onClick = { onRemove(slot) }, modifier = Modifier.weight(1f)) { Text("Kaldır") }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Video seçme satırı
+@Composable
+private fun VideoPickRow(uri: String, onPick: () -> Unit, onRemove: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val has = uri.isNotEmpty()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("Video arka plan", color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(
+                if (has) "Video seçildi; fotoğrafların yerine çalar (sessiz, döngülü). Silinir veya taşınırsa arka plan kaybolur."
+                else "Seçersen fotoğraf yerine video çalar. Pil tüketimini artırabilir.",
+                color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = onPick, modifier = Modifier.weight(1f)) { Text(if (has) "Videoyu değiştir" else "Video seç") }
+            if (has) OutlinedButton(onClick = onRemove, modifier = Modifier.weight(1f)) { Text("Kaldır") }
         }
     }
 }

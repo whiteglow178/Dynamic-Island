@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -351,6 +352,50 @@ private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, glow: 
         drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size(fillW, th), CornerRadius(th / 2))
         if (glowOn && glow!!.contained) drawInnerGlow(glow, fillW, cy, th)
     }
+}
+
+
+// ---------------------------------------------------------------- Alt kenar: albüm renginde hareketli ışık
+/** Adanın alt kısmında, kapak renginden türeyen 3 yumuşak ışık lekesi yavaşça yana akar. Duraklayınca solar. */
+@Composable
+fun MusicBottomFx(color: Color, playing: Boolean, modifier: Modifier = Modifier) {
+    val tone by animateColorAsState(glowTone(color), tween(450), label = "fxTone")
+    val a by animateFloatAsState(if (playing) 1f else 0f, tween(600), label = "fxAlpha")
+    if (a < 0.01f) return
+    val t = rememberInfiniteTransition(label = "fx")
+    val phase = t.animateFloat(0f, 1f, infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "fxPhase")
+    val c1 = tone
+    val c2 = remember(tone) { hueShift(tone, 40f) }
+    val c3 = remember(tone) { hueShift(tone, -40f) }
+    Canvas(modifier.fillMaxSize()) {
+        val w = size.width; val h = size.height
+        val p = phase.value
+        val tau = (2 * Math.PI).toFloat()
+        val cols = arrayOf(c1, c2, c3)
+        val speed = intArrayOf(1, 2, 1)
+        for (i in 0..2) {
+            val cx = w * (0.5f + 0.42f * kotlin.math.sin(tau * (p * speed[i] + i / 3f)))
+            val r = h * (0.95f + 0.25f * kotlin.math.sin(tau * (p * 2 + i / 3f)))
+            val center = Offset(cx, h)
+            withTransform({ scale(scaleX = 2.6f, scaleY = 1f, pivot = center) }) {
+                drawCircle(
+                    Brush.radialGradient(
+                        0f to cols[i].copy(alpha = 0.60f * a),
+                        1f to cols[i].copy(alpha = 0f),
+                        center = center, radius = r,
+                    ),
+                    radius = r, center = center,
+                )
+            }
+        }
+    }
+}
+
+private fun hueShift(c: Color, deg: Float): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(c.toArgb(), hsv)
+    hsv[0] = (hsv[0] + deg + 360f) % 360f
+    return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
 // ---------------------------------------------------------------- Kontrol ikonları (Canvas; ek ikon kütüphanesi gerekmez)
