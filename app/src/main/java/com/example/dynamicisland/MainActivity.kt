@@ -93,6 +93,25 @@ class MainActivity : ComponentActivity() {
                     val ringMove = remember { Animatable(0f) }    // 0 -> 1: ada gerçek konumuna gider
                     val ringFade = remember { Animatable(0f) }    // 0 -> 1: çizgi ve ada söner
                     val appCtx = this@MainActivity
+                    // İlk girişte (açılış/onboarding sürerken) durum çubuğu ve alt çubuk gizlenir; ada yerleşim animasyonu bitince geri gelir
+                    val barsController = remember {
+                        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+                            systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        }
+                    }
+                    LaunchedEffect(Unit) {
+                        if (!onboarded) {
+                            if (Build.VERSION.SDK_INT >= 28) {
+                                window.attributes = window.attributes.apply {
+                                    layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                                }
+                            }
+                            barsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                        }
+                    }
+                    DisposableEffect(Unit) {
+                        onDispose { barsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars()) }
+                    }
                     LaunchedEffect(islandIntro) {
                         if (!islandIntro) return@LaunchedEffect
                         ringLine.snapTo(0f); ringMove.snapTo(0f); ringFade.snapTo(0f)
@@ -102,6 +121,7 @@ class MainActivity : ComponentActivity() {
                         delay(100)
                         ringFade.animateTo(1f, tween(500, easing = androidx.compose.animation.core.LinearEasing))
                         islandIntro = false
+                        barsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())   // ada yerine oturdu: çubuklar geri gelir
                     }
                     LaunchedEffect(flightGo, titlePos != null) {
                         if (flightGo && titlePos != null) {
@@ -330,7 +350,7 @@ private fun AppRoot(titleVisible: Boolean = true, onTitlePos: (Offset) -> Unit =
             shown = tab
         }
     }
-    Box(Modifier.fillMaxSize().systemBarsPadding()) {
+    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBarsIgnoringVisibility)) {
         Column(
             Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
