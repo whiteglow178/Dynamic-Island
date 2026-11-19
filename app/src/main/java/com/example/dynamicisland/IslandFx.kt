@@ -20,14 +20,20 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.*
@@ -50,6 +56,10 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.max
@@ -80,8 +90,28 @@ class FxTarget(val id: String) {
     var snow = 0f
     var blobs = 0
 
-    /** Erirken öğe alttan yukarı doğru küçülür; üst kenarı aşağı iner. */
-    val visualTop: Float get() = rect.bottom - rect.height * (1f - 0.85f * melt.coerceIn(0f, 1f))
+    var dens = 1f
+    var iceCrack: Crack? = null                     // donmuş öğede dokundukça açılan çatlaklar (öğe başına sabit)
+    var iceCrackW = 0f
+    private val seed = id.hashCode()
+
+    /** Asit öğeyi üstten aşağı doğru yer: erime cephesinin üst kenardan uzaklığı (öğe içi px), tırtıklı. */
+    fun frontLocal(xLocal: Float): Float {
+        val h = rect.height
+        val w = max(1f, rect.width)
+        val m = melt.coerceIn(0f, 1f)
+        val ramp = (m / 0.2f).coerceIn(0f, 1f)
+        val u = xLocal / w
+        val s1 = (seed and 255) / 40f
+        val s2 = ((seed shr 8) and 255) / 40f
+        val s3 = ((seed shr 16) and 255) / 40f
+        val n = 0.5f + 0.5f * (0.5f * sin(u * 23f + s1) + 0.3f * sin(u * 51f + s2) + 0.2f * sin(u * 97f + s3))
+        return (h * 0.85f * m + 7f * dens * ramp * n).coerceIn(0f, h)
+    }
+    fun frontY(xAbs: Float): Float = rect.top + frontLocal(xAbs - rect.left)
+
+    /** Cephenin (düz) ortalama üst kenarı: damlalar ve parçacıklar için. */
+    val visualTop: Float get() = rect.top + rect.height * 0.85f * melt.coerceIn(0f, 1f)
     val frozen: Boolean get() = freeze >= 1f
     val gone: Boolean get() = away || melt >= 1f
     val blocked: Boolean get() = gone || frozen || melt >= 0.6f
@@ -92,7 +122,107 @@ class FxTarget(val id: String) {
     }
 }
 
-class Crack(val lines: List<List<Offset>>, val bornMs: Long)
+class CrackSeg(val pts: List<Offset>, val w: Float, val delay: Float)
+class Crack(val segs: List<CrackSeg>, val bornMs: Long, val center: Offset, val R: Float)
+
+private fun crackPointAt(pts: List<Offset>, dist: Float): Offset? {
+    var acc = 0f
+    for (i in 1 until pts.size) {
+        val a = pts[i - 1]; val b = pts[i]
+        val dx = b.x - a.x; val dy = b.y - a.y
+        val len = sqrt(dx * dx + dy * dy)
+        if (acc + len >= dist) {
+            val f = if (len > 0f) (dist - acc) / len else 0f
+            return Offset(a.x + dx * f, a.y + dy * f)
+        }
+        acc += len
+    }
+    return null
+}
+
+/**
+ * Gerçekçi cam çatlağı: darbe noktasından düz giden, uca doğru incelen radyal çatlaklar, bunlardan dallanan ince çatlaklar
+ * ve radyalleri birbirine bağlayan eşmerkezli (örümcek ağı gibi) halka çatlaklar.
+ */
+fun buildCrack(rnd: java.util.Random, p: Offset, R: Float, d: Float, nowMs: Long): Crack {
+    fun f() = rnd.nextFloat()
+    val segs = ArrayList<CrackSeg>()
+    val n = 9 + rnd.nextInt(5)
+    val step = 6.2832f / n
+    val a0 = f() * 6.2832f
+    val radials = ArrayList<List<Offset>>()
+    for (i in 0 until n) {
+        var ang = a0 + step * i + (f() - 0.5f) * step * 0.7f
+        val L = R * (0.45f + 0.55f * f())
+        val pts = arrayListOf(p)
+        var cur = p
+        var walked = 0f
+        while (walked < L) {
+            ang += (f() - 0.5f) * 0.22f                          // neredeyse düz: cam çatlağı kıvrılmaz
+            val len = (4f + f() * 6f) * d
+            cur = Offset(cur.x + cos(ang) * len, cur.y + sin(ang) * len)
+            pts.add(cur); walked += len
+        }
+        radials.add(pts)
+        segs.add(CrackSeg(pts, (1.7f + f() * 0.7f) * d, 0f))
+        // dallar: ana çatlaktan dar açıyla ayrılır
+        val nb = 1 + rnd.nextInt(3)
+        for (b in 0 until nb) {
+            val idx = (pts.size * (0.25f + 0.55f * f())).toInt().coerceIn(1, pts.size - 1)
+            val st = pts[idx]
+            val prev = pts[idx - 1]
+            var ba = atan2(st.y - prev.y, st.x - prev.x) + (if (rnd.nextBoolean()) 1f else -1f) * (0.4f + f() * 0.5f)
+            val bl = L * (0.15f + 0.3f * f())
+            val bp = arrayListOf(st)
+            var bc = st
+            var bw = 0f
+            while (bw < bl) {
+                ba += (f() - 0.5f) * 0.25f
+                val len = (3f + f() * 5f) * d
+                bc = Offset(bc.x + cos(ba) * len, bc.y + sin(ba) * len)
+                bp.add(bc); bw += len
+            }
+            if (bp.size >= 2) segs.add(CrackSeg(bp, (0.9f + f() * 0.4f) * d, (idx.toFloat() / (pts.size - 1)) * 0.85f))
+        }
+    }
+    // halka çatlaklar
+    for (rf in floatArrayOf(0.16f, 0.34f, 0.55f)) {
+        val rr = R * rf
+        val ringPts = radials.map { crackPointAt(it, rr) }
+        for (i in 0 until n) {
+            val a = ringPts[i] ?: continue
+            val b = ringPts[(i + 1) % n] ?: continue
+            if (f() > 0.78f) continue
+            val mid = Offset((a.x + b.x) / 2f + (f() - 0.5f) * 5f * d, (a.y + b.y) / 2f + (f() - 0.5f) * 5f * d)
+            segs.add(CrackSeg(listOf(a, mid, b), (0.8f + f() * 0.4f) * d, (rf * 0.8f + 0.08f).coerceAtMost(0.9f)))
+        }
+    }
+    return Crack(segs, nowMs, p, R)
+}
+
+private fun DrawScope.drawCrack(cr: Crack, prog: Float, d: Float, dark: Color, light: Color) {
+    val kk = 1f - (1f - prog.coerceIn(0f, 1f)).pow(3f)            // hızlı yayılır, sona doğru yavaşlar
+    // darbe noktası: ezilmiş beyaz bölge
+    val ia = (kk * 5f).coerceIn(0f, 1f)
+    drawCircle(Color.White.copy(alpha = 0.10f * ia), 16f * d, cr.center)
+    drawCircle(Color.White.copy(alpha = 0.45f * ia), 3.2f * d, cr.center)
+    for (sg in cr.segs) {
+        val loc = ((kk - sg.delay) / (1f - sg.delay)).coerceIn(0f, 1f)
+        if (loc <= 0f) continue
+        val n = sg.pts.size - 1
+        val upto = loc * n
+        for (s in 0 until n) {
+            if (s >= upto) break
+            val frac = (upto - s).coerceAtMost(1f)
+            val a = sg.pts[s]; val b = sg.pts[s + 1]
+            val e = Offset(a.x + (b.x - a.x) * frac, a.y + (b.y - a.y) * frac)
+            val taper = 1f - 0.7f * (s.toFloat() / n)               // uca doğru incelir
+            drawLine(dark, a, e, sg.w * 1.8f * taper, StrokeCap.Round)
+            val o = Offset(0.6f * d, -0.6f * d)                      // cam kenarının ışık yansıması
+            drawLine(light, Offset(a.x + o.x, a.y + o.y), Offset(e.x + o.x, e.y + o.y), sg.w * 0.7f * taper, StrokeCap.Round)
+        }
+    }
+}
 
 @Stable
 class IslandFxState {
@@ -110,7 +240,8 @@ fun Modifier.fxTarget(id: String): Modifier {
     val fx = LocalIslandFx.current ?: return this
     val t = remember(fx, id) { FxTarget(id) }
     val layer = rememberGraphicsLayer()
-    SideEffect { t.layer = layer }
+    val dd = LocalDensity.current.density
+    SideEffect { t.layer = layer; t.dens = dd }
     DisposableEffect(fx, id) { onDispose { if (fx.targets[id] === t) fx.targets.remove(id) } }
     return this
         .onGloballyPositioned { c ->
@@ -122,13 +253,39 @@ fun Modifier.fxTarget(id: String): Modifier {
         }
         .graphicsLayer {
             val m = t.melt.coerceIn(0f, 1f)
-            alpha = if (t.away) 0f else (1f - 0.85f * m * m)
-            scaleY = 1f - 0.85f * m
-            transformOrigin = TransformOrigin(0.5f, 1f)
+            val fade = ((m - 0.9f) / 0.1f).coerceIn(0f, 1f)          // öğe ezilip küçülmez: asit yer, en sonda silinir
+            alpha = if (t.away) 0f else (1f - fade)
+            compositingStrategy = CompositingStrategy.Offscreen      // asidin yediği yerler gerçekten şeffaflaşsın
         }
         .drawWithContent {
             layer.record { this@drawWithContent.drawContent() }
             drawLayer(layer)
+            val m = t.melt.coerceIn(0f, 1f)
+            if (m > 0.001f && !t.away) {
+                val d = t.dens
+                val w = size.width
+                val front = Path()
+                val fill = Path()
+                front.moveTo(-2f * d, t.frontLocal(0f))
+                fill.moveTo(-2f * d, -2f * d)
+                fill.lineTo(-2f * d, t.frontLocal(0f))
+                var x = 0f
+                val stepX = 3f * d
+                while (x < w) {
+                    val y = t.frontLocal(x)
+                    front.lineTo(x, y); fill.lineTo(x, y)
+                    x += stepX
+                }
+                val yEnd = t.frontLocal(w)
+                front.lineTo(w + 2f * d, yEnd)
+                fill.lineTo(w + 2f * d, yEnd)
+                fill.lineTo(w + 2f * d, -2f * d)
+                fill.close()
+                // erime cephesi: kenar yeşilimsi parlar, sonra üstü silinir
+                drawPath(front, Color(0xFF8BE000).copy(alpha = 0.55f), style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.SrcAtop)
+                drawPath(front, Color(0xFFD7FF6A).copy(alpha = 0.9f), style = Stroke(2.4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.SrcAtop)
+                drawPath(fill, Color.Black, blendMode = BlendMode.Clear)
+            }
         }
 }
 
@@ -357,7 +514,7 @@ private class FxSim {
         for (t in targets) {
             if (t.gone) continue
             val r = t.rect
-            if (x >= r.left && x <= r.right && y >= t.visualTop && y <= r.bottom) {
+            if (x >= r.left && x <= r.right && y >= t.frontY(x) && y <= r.bottom) {
                 if (best == null || t.visualTop < best.visualTop) best = t
             }
         }
@@ -390,24 +547,7 @@ private class FxSim {
         return Bolt(pts, 1f)
     }
 
-    fun makeCrack(p: Offset, d: Float, nowMs: Long): Crack {
-        val lines = ArrayList<List<Offset>>()
-        val arms = 3 + rnd.nextInt(3)
-        for (a in 0 until arms) {
-            var ang = f() * 6.2832f
-            var cur = p
-            val pts = arrayListOf(cur)
-            val segs = 4 + rnd.nextInt(4)
-            for (s in 0 until segs) {
-                ang += (f() - 0.5f) * 0.9f
-                val len = (8f + f() * 16f) * d
-                cur = Offset(cur.x + cos(ang) * len, cur.y + sin(ang) * len)
-                pts.add(cur)
-            }
-            lines.add(pts)
-        }
-        return Crack(lines, nowMs)
-    }
+    fun makeCrack(p: Offset, d: Float, nowMs: Long): Crack = buildCrack(rnd, p, (80f + f() * 90f) * d, d, nowMs)
 
     fun step(
         dt: Float, now: Long, W: Float, H: Float, d: Float,
@@ -446,10 +586,10 @@ private class FxSim {
                         val t = hit(targets, p.x, p.y)
                         if (t != null) {
                             dead = true
-                            splash(p.x, t.visualTop, d, if (p.kind == K_RAIN) 3 else 2)
+                            splash(p.x, t.frontY(p.x), d, if (p.kind == K_RAIN) 3 else 2)
                             if (p.kind == K_ACID) {
                                 if (t.blobs < 14) {
-                                    val b = P(K_BLOB, p.x, t.visualTop, 0f, 0f, 0f, (2.5f + f() * 3f) * d)
+                                    val b = P(K_BLOB, p.x, t.frontY(p.x), 0f, 0f, 0f, (2.2f + f() * 2.6f) * d)
                                     b.tid = t.id
                                     b.ox = ((p.x - t.rect.left) / max(1f, t.rect.width)).coerceIn(0.03f, 0.97f)
                                     ps.add(b); t.blobs++
@@ -484,7 +624,7 @@ private class FxSim {
                     } else {
                         t.blobs++
                         p.x = t.rect.left + p.ox * t.rect.width
-                        p.y = t.visualTop + 1f * d
+                        p.y = t.frontY(p.x) + 1f * d
                         if (t.melt < 1f) {
                             t.melt = (t.melt + dt * 0.045f * cfg.fxMeltSpeed).coerceAtMost(1f)
                             if (t.melt >= 1f) t.meltRestoreAt = now + restoreMs
@@ -516,7 +656,8 @@ private class FxSim {
                     t.melt = (t.melt - 0.05f * dt).coerceAtLeast(0f)
                 }
                 if (t.melt in 0.08f..0.99f && f() < 6f * dt * t.melt) {
-                    val dp = P(K_DRIP, t.rect.left + f() * t.rect.width, t.rect.bottom, 0f, 20f * d, 0.9f, 2f * d)
+                    val dx = t.rect.left + f() * t.rect.width
+                    val dp = P(K_DRIP, dx, t.frontY(dx) + 2f * d, 0f, 20f * d, 0.9f, 1.8f * d)
                     ps.add(dp)
                 }
             }
@@ -540,6 +681,115 @@ private class FxSim {
         }
         if (flash > 0f) flash = (flash - dt * 3.2f).coerceAtLeast(0f)
         bolt?.let { it.t -= dt * 3.5f; if (it.t <= 0f) bolt = null }
+    }
+}
+
+// ---------------------------------------------------------------- Kar yığını ve buz çizimi
+/** Öğenin üstünde biriken yumuşak, tümsek şeklinde kar. */
+private fun DrawScope.drawSnowMound(t: FxTarget, d: Float) {
+    val r = t.rect
+    val s = t.snow.coerceIn(0f, 1f)
+    val l = r.left + 2f * d
+    val rt = r.right - 2f * d
+    val w = rt - l
+    if (w <= 0f) return
+    val h = s * 8f * d
+    val y0 = t.visualTop + 1f * d
+    val sd = t.id.hashCode()
+    val a1 = (sd and 7).toFloat(); val a2 = ((sd shr 4) and 7).toFloat()
+    val path = Path()
+    path.moveTo(l, y0)
+    val n = 28
+    for (i in 0..n) {
+        val u = i.toFloat() / n
+        val dome = sin(PI.toFloat() * u).pow(0.55f)
+        val bump = 1f + 0.18f * sin(u * 17f + a1) + 0.10f * sin(u * 41f + a2)
+        path.lineTo(l + w * u, y0 - h * dome * bump)
+    }
+    path.lineTo(rt, y0 + 2f * d)
+    path.lineTo(l, y0 + 2f * d)
+    path.close()
+    drawPath(path, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.97f), Color(0xFFD3E3F3).copy(alpha = 0.95f)), startY = y0 - h, endY = y0 + 2f * d))
+}
+
+/** Don: kenarlardan içeri doğru büyüyen kırağı kristalleri, tamamen donunca parlak buz tabakası, sarkıtlar ve çatlaklar. */
+private fun DrawScope.drawFrost(t: FxTarget, d: Float, thawTaps: Int) {
+    val r = t.rect
+    val a = t.freeze.coerceIn(0f, 1f)
+    val corner = 10f * d
+    val clip = Path().apply { addRoundRect(RoundRect(r, CornerRadius(corner))) }
+    val ref = min(r.width, r.height).coerceAtLeast(14f * d)
+    clipPath(clip) {
+        // buzlu cam gibi hafif mavi tonlama
+        drawRect(Color(0xFFCFEFFF).copy(alpha = 0.03f + 0.30f * a * a), r.topLeft, r.size)
+        // kenarlarda yoğun kırağı bandı (içe doğru yumuşak)
+        drawRoundRect(Color.White.copy(alpha = 0.10f + 0.12f * a), r.topLeft, r.size, CornerRadius(corner), style = Stroke((10f + 44f * a) * d))
+        drawRoundRect(Color.White.copy(alpha = 0.18f + 0.30f * a), r.topLeft, r.size, CornerRadius(corner), style = Stroke((3f + 16f * a) * d))
+        // dallı kırağı kristalleri (kenardan içeri büyür)
+        val rr = java.util.Random(t.id.hashCode().toLong())
+        for (k in 0 until 34) {
+            val edge = rr.nextInt(4)
+            val u = rr.nextFloat()
+            val thresh = rr.nextFloat() * 0.75f
+            val jit = (rr.nextFloat() - 0.5f) * 0.7f
+            val lenF = 0.15f + 0.40f * rr.nextFloat()
+            val grow = ((a - thresh) / 0.35f).coerceIn(0f, 1f)
+            if (grow <= 0f) continue
+            val base: Offset
+            val ang: Float
+            when (edge) {
+                0 -> { base = Offset(r.left + r.width * u, r.top); ang = PI.toFloat() / 2f + jit }
+                1 -> { base = Offset(r.left + r.width * u, r.bottom); ang = -PI.toFloat() / 2f + jit }
+                2 -> { base = Offset(r.left, r.top + r.height * u); ang = jit }
+                else -> { base = Offset(r.right, r.top + r.height * u); ang = PI.toFloat() + jit }
+            }
+            val len = lenF * ref * 1.6f * grow
+            val end = Offset(base.x + cos(ang) * len, base.y + sin(ang) * len)
+            val col = Color.White.copy(alpha = 0.45f + 0.4f * grow)
+            drawLine(col, base, end, 1.1f * d, StrokeCap.Round)
+            for (bf in floatArrayOf(0.4f, 0.7f)) {
+                val bp = Offset(base.x + (end.x - base.x) * bf, base.y + (end.y - base.y) * bf)
+                val bl = len * 0.35f * (1.1f - bf)
+                for (sg in intArrayOf(-1, 1)) {
+                    val ba = ang + sg * 0.95f
+                    drawLine(col, bp, Offset(bp.x + cos(ba) * bl, bp.y + sin(ba) * bl), 0.8f * d, StrokeCap.Round)
+                }
+            }
+        }
+        if (t.frozen) {
+            // parlak buz yüzeyi: çapraz yansıma
+            drawRect(
+                Brush.linearGradient(
+                    listOf(Color.Transparent, Color.White.copy(alpha = 0.30f), Color.Transparent),
+                    start = Offset(r.left, r.top), end = Offset(r.left + r.width * 0.6f, r.top + r.height * 1.3f),
+                ),
+                r.topLeft, r.size,
+            )
+            // dokundukça yayılan çatlaklar
+            if (t.taps > 0) {
+                val need = thawTaps.coerceAtLeast(1)
+                val cr = t.iceCrack?.takeIf { t.iceCrackW == r.width }
+                    ?: buildCrack(java.util.Random(t.id.hashCode().toLong()), r.center, max(r.width, r.height) * 0.7f, d, 0L)
+                        .also { t.iceCrack = it; t.iceCrackW = r.width }
+                drawCrack(cr, (t.taps.toFloat() / need).coerceIn(0f, 1f), d, Color(0xFF5F97B8).copy(alpha = 0.65f), Color.White.copy(alpha = 0.95f))
+            }
+        }
+        drawRoundRect(Color.White.copy(alpha = a * 0.85f), r.topLeft, r.size, CornerRadius(corner), style = Stroke(1.6f * d))
+    }
+    if (a > 0.55f) {
+        // alt kenardan sarkan buz sarkıtları
+        val rr = java.util.Random(t.id.hashCode().toLong() + 7L)
+        val grow = ((a - 0.55f) / 0.45f).coerceIn(0f, 1f)
+        val n = (3 + (r.width / (28f * d)).toInt()).coerceAtMost(8)
+        for (i in 0 until n) {
+            val x = r.left + r.width * ((i + 0.5f + (rr.nextFloat() - 0.5f) * 0.6f) / n)
+            val len = (3f + rr.nextFloat() * 9f) * d * grow
+            val tri = Path().apply {
+                moveTo(x - 1.9f * d, r.bottom - 1f * d); lineTo(x + 1.9f * d, r.bottom - 1f * d); lineTo(x, r.bottom + len); close()
+            }
+            drawPath(tri, Color(0xFFD6F1FF).copy(alpha = 0.88f))
+            drawLine(Color.White.copy(alpha = 0.8f), Offset(x - 0.5f * d, r.bottom), Offset(x - 0.2f * d, r.bottom + len * 0.7f), 0.7f * d, StrokeCap.Round)
+        }
     }
 }
 
@@ -705,44 +955,12 @@ fun FxLayer(
             @Suppress("UNUSED_VARIABLE") val tk = tick
             val now = System.currentTimeMillis()
 
-            // ---- öğe üstü görünümler: kar yığını, buz, asit
+            // ---- öğe üstü görünümler: kar yığını, buz
             for (t in fx.targets.values) {
                 val r = t.rect
                 if (r.width <= 0f) continue
-                if (t.snow > 0.02f && !t.away) {
-                    val ph = (t.snow * 7f * d)
-                    drawRoundRect(Color.White.copy(alpha = 0.92f), Offset(r.left + 2f * d, t.visualTop - ph * 0.6f), Size(r.width - 4f * d, ph), CornerRadius(4f * d))
-                }
-                if (t.freeze > 0.02f && !t.away) {
-                    val a = t.freeze.coerceIn(0f, 1f)
-                    drawRoundRect(Color(0xFFBFE9FF).copy(alpha = 0.10f + 0.42f * a), r.topLeft, r.size, CornerRadius(10f * d))
-                    drawRoundRect(Color.White.copy(alpha = a * 0.85f), r.topLeft, r.size, CornerRadius(10f * d), style = Stroke(1.6f * d))
-                    if (t.frozen) {
-                        // parlama
-                        drawLine(Color.White.copy(alpha = 0.35f), Offset(r.left + r.width * 0.15f, r.bottom - 3f * d), Offset(r.left + r.width * 0.45f, r.top + 3f * d), 2f * d)
-                        // dokundukça çatlaklar
-                        val rr = java.util.Random(t.id.hashCode().toLong())
-                        val need = cfg.fxThawTaps.coerceAtLeast(1)
-                        val show = ceil(10f * t.taps / need).toInt()
-                        val c0 = r.center
-                        for (k in 0 until 10) {
-                            var ang = rr.nextFloat() * 6.2832f
-                            val len = (0.35f + rr.nextFloat() * 0.5f) * max(r.width, r.height) / 2f
-                            var cur = c0
-                            val path = Path().apply { moveTo(cur.x, cur.y) }
-                            for (s in 0 until 3) {
-                                ang += (rr.nextFloat() - 0.5f) * 0.8f
-                                cur = Offset(cur.x + cos(ang) * len / 3f, cur.y + sin(ang) * len / 3f)
-                                path.lineTo(cur.x, cur.y)
-                            }
-                            if (k < show) drawPath(path, Color.White.copy(alpha = 0.9f), style = Stroke(1.4f * d, cap = StrokeCap.Round))
-                        }
-                    }
-                }
-                if (t.melt > 0.02f && t.melt < 1f) {
-                    val top = t.visualTop
-                    drawRoundRect(Color(0xFF8BE000).copy(alpha = 0.30f * t.melt), Offset(r.left, top), Size(r.width, r.bottom - top), CornerRadius(8f * d))
-                }
+                if (t.snow > 0.02f && !t.away) drawSnowMound(t, d)
+                if (t.freeze > 0.02f && !t.away) drawFrost(t, d, cfg.fxThawTaps)
             }
 
             // ---- parçacıklar
@@ -753,31 +971,20 @@ fun FxLayer(
                     K_FLAKE -> drawCircle(Color.White.copy(alpha = 0.9f), p.size, Offset(p.x, p.y))
                     K_SPLASH -> drawCircle(Color.White.copy(alpha = (p.life / 0.28f).coerceIn(0f, 1f) * 0.7f), p.size, Offset(p.x, p.y))
                     K_BLOB -> {
-                        drawCircle(Color(0xFF9BE81B).copy(alpha = 0.95f), p.size, Offset(p.x, p.y))
-                        drawCircle(Color.White.copy(alpha = 0.35f), p.size * 0.35f, Offset(p.x - p.size * 0.25f, p.y - p.size * 0.25f))
+                        drawOval(Color(0xFF9BE81B).copy(alpha = 0.95f), Offset(p.x - p.size * 0.85f, p.y - p.size * 0.2f), Size(p.size * 1.7f, p.size * 2.3f))
+                        drawCircle(Color.White.copy(alpha = 0.4f), p.size * 0.3f, Offset(p.x - p.size * 0.3f, p.y + p.size * 0.35f))
                     }
                     K_ICE -> rotate(p.rot, Offset(p.x, p.y)) {
                         drawRect(Color(0xFFCDEEFF).copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f) * 0.9f), Offset(p.x - p.size / 2f, p.y - p.size * 0.3f), Size(p.size, p.size * 0.6f))
                     }
-                    K_DRIP -> drawCircle(Color(0xFFB5F23D).copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f)), p.size, Offset(p.x, p.y))
+                    K_DRIP -> drawLine(Color(0xFFB5F23D).copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f)), Offset(p.x, p.y - p.vy * 0.03f), Offset(p.x, p.y), p.size * 1.3f, StrokeCap.Round)
                 }
             }
 
-            // ---- çatlaklar
+            // ---- çatlaklar (cam kırığı)
             for (cr in fx.cracks) {
-                val k = ((now - cr.bornMs) / 1400f).coerceIn(0f, 1f)
-                for (pts in cr.lines) {
-                    val n = pts.size - 1
-                    val upto = k * n
-                    for (s in 0 until n) {
-                        if (s >= upto) break
-                        val frac = (upto - s).coerceAtMost(1f)
-                        val a = pts[s]; val b = pts[s + 1]
-                        val e = Offset(a.x + (b.x - a.x) * frac, a.y + (b.y - a.y) * frac)
-                        drawLine(Color.Black.copy(alpha = 0.55f), a, e, 2.6f * d)
-                        drawLine(Color.White.copy(alpha = 0.75f), a, e, 1.1f * d)
-                    }
-                }
+                val k = ((now - cr.bornMs) / 900f).coerceIn(0f, 1f)
+                drawCrack(cr, k, d, Color.Black.copy(alpha = 0.6f), Color.White.copy(alpha = 0.8f))
             }
 
             // ---- şimşek
