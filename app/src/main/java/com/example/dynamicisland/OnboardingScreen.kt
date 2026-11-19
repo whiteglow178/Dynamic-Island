@@ -16,7 +16,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -240,7 +239,7 @@ private data class OnbInfo(val title: String, val desc: String, val warn: String
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-internal fun OnboardingScreen(onFinished: () -> Unit) {
+internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: () -> Unit = {}) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -257,7 +256,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
     val introLine = remember { Animatable(0f) }      // 0 -> 1: çizgi çizilir, ada çevresinde birleşir
     val introReveal = remember { Animatable(0f) }    // 0 -> 1: siyah ekran kalkar, telefon görünür
     val introRecede = remember { Animatable(0f) }    // 0 -> 1: telefon yakından uzaklaşıp yerine oturur
-    val textZ = remember { Animatable(0f) }          // 0 -> 1: "Kontrol Sende" yazısı uzaktan bize doğru gelir ve geçer
+    val iconOut = remember { Animatable(0f) }        // 0 -> 1: uygulama simgesi (telefon ekranı) solar, yerine "Omni Island" yazısı gelir
     var tick by remember { mutableIntStateOf(0) }
     val skipped = remember { mutableStateListOf<OnbPerm>() }
     var typed by remember { mutableStateOf("") }
@@ -336,10 +335,11 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
 
     LaunchedEffect(phase) {
         if (phase == OnbPhase.Finish) {
-            delay(1100 + 500)                // telefon ekranı kaplar + uygulamanın resmi kısa süre görünür
-            textZ.animateTo(1f, tween(1900, easing = FastOutLinearInEasing))     // yazı hızlanarak yaklaşır
-            delay(120)
-            onFinished()
+            delay(1100 + 200)                // telefon ekranı kaplar + uygulamanın simgesi çok kısa süre görünür
+            onTitleShow()                    // "Omni Island" yazısı ortada belirir (MainActivity çizer)
+            iconOut.animateTo(1f, tween(320, easing = LinearEasing))      // simge solar
+            delay(150)
+            onFinished()                     // uygulama açılır, yazı sol üstteki başlığın yerine uçar
         }
     }
 
@@ -566,7 +566,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                         scaleX = s; scaleY = s
                         transformOrigin = TransformOrigin(0.5f, 0f)
                         translationY = ((if (introActive) 0f else -90f * (1f - enter)) + launchTy * launch + introTyNow()) * density
-                        alpha = if (introActive) introReveal.value else enter
+                        alpha = (if (introActive) introReveal.value else enter) * (1f - iconOut.value)
                     },
                 ) {
                     Phone3DPreview(phoneWDp = phoneW) {
@@ -678,23 +678,6 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                     val core = 2.6.dp.toPx() * (0.6f + 0.4f * (sc / introS0).coerceIn(0f, 1f))
                     drawIntroRing(size.width / 2f, cy, pw, ph, introLine.value, fade, core, 26.dp.toPx())
                 }
-            }
-        }
-
-        // ---- uygulamaya giriş: "Kontrol Sende" yazısı telefon ekranından bize doğru gelir, çok yaklaşıp içimizden geçer
-        if (phase == OnbPhase.Finish) {
-            Box(Modifier.fillMaxSize().zIndex(20f), contentAlignment = Alignment.Center) {
-                Text(
-                    "Kontrol Sende", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.6).sp, maxLines = 1, softWrap = false,
-                    modifier = Modifier.graphicsLayer {
-                        val p = textZ.value
-                        // Uzaktan (0,3x) çok yakına (36x): üstel ölçek, perspektifle yaklaşma hissi verir
-                        val sc = kotlin.math.exp(kotlin.math.ln(0.3f) + (kotlin.math.ln(36f) - kotlin.math.ln(0.3f)) * p)
-                        scaleX = sc; scaleY = sc
-                        alpha = (p / 0.1f).coerceIn(0f, 1f) * (1f - ((p - 0.78f) / 0.22f).coerceIn(0f, 1f))
-                    },
-                )
             }
         }
 

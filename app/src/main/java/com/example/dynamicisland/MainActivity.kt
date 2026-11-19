@@ -19,6 +19,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -48,6 +50,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -71,16 +80,72 @@ class MainActivity : ComponentActivity() {
                     // İlk açılışta açılış (onboarding) ekranı; bittikten sonra normal uygulama (Kurulum sayfası dahil) açılır
                     val prefs = remember { getSharedPreferences("omni_onboarding", Context.MODE_PRIVATE) }
                     var onboarded by remember { mutableStateOf(prefs.getBoolean("onboarding_done", false)) }
-                    androidx.compose.animation.Crossfade(
-                        targetState = onboarded, animationSpec = tween(450), label = "onbFade",
-                    ) { done ->
-                        if (done) {
-                            AppRoot()
-                        } else {
-                            OnboardingScreen(onFinished = {
-                                prefs.edit().putBoolean("onboarding_done", true).apply()
-                                onboarded = true
-                            })
+                    // Açılış animasyonu sonrası: "Omni Island" yazısı ekranın ortasında belirir, sonra uygulamanın sol üstündeki başlığın yerine uçar
+                    var introFlight by remember { mutableStateOf(false) }      // yazı ekranın üstünde uçuyor (gerçek başlık gizli)
+                    var flightGo by remember { mutableStateOf(false) }         // uygulama açıldı, uçuş başlayabilir
+                    var titlePos by remember { mutableStateOf<Offset?>(null) } // gerçek başlığın ekrandaki sol üst köşesi (px)
+                    val titleIn = remember { Animatable(0f) }                  // 0 -> 1: yazı ortada belirir
+                    val flight = remember { Animatable(0f) }                   // 0: ortada büyük, 1: başlığın yerinde
+                    val flightScope = rememberCoroutineScope()
+                    LaunchedEffect(flightGo, titlePos != null) {
+                        if (flightGo && titlePos != null) {
+                            flight.animateTo(1f, tween(850, easing = FastOutSlowInEasing))
+                            introFlight = false
+                        }
+                    }
+                    Box(Modifier.fillMaxSize()) {
+                        androidx.compose.animation.Crossfade(
+                            targetState = onboarded, animationSpec = tween(450), label = "onbFade",
+                        ) { done ->
+                            if (done) {
+                                AppRoot(titleVisible = !introFlight, onTitlePos = { titlePos = it })
+                            } else {
+                                OnboardingScreen(
+                                    onTitleShow = {
+                                        introFlight = true
+                                        flightScope.launch { titleIn.animateTo(1f, tween(380, easing = FastOutSlowInEasing)) }
+                                    },
+                                    onFinished = {
+                                        prefs.edit().putBoolean("onboarding_done", true).apply()
+                                        onboarded = true
+                                        flightGo = true
+                                    },
+                                )
+                            }
+                        }
+                        if (introFlight) {
+                            val cs = MaterialTheme.colorScheme
+                            var rootSize by remember { mutableStateOf(IntSize.Zero) }
+                            var textSize by remember { mutableStateOf(IntSize.Zero) }
+                            Box(Modifier.fillMaxSize().onSizeChanged { rootSize = it }) {
+                                Text(
+                                    "Omni Island", color = cs.onBackground, fontSize = 26.sp, fontWeight = FontWeight.Bold,
+                                    letterSpacing = (-0.5).sp, maxLines = 1, softWrap = false,
+                                    modifier = Modifier
+                                        .offset {
+                                            // Yazı hep son konumunda (başlığın yerinde) yerleşir; başlangıç konumu graphicsLayer kaydırmasıyla verilir
+                                            val s0 = 1.9f
+                                            val x0 = rootSize.width / 2f - textSize.width * s0 / 2f
+                                            val y0 = rootSize.height / 2f - textSize.height * s0 / 2f
+                                            IntOffset((titlePos?.x ?: x0).roundToInt(), (titlePos?.y ?: y0).roundToInt())
+                                        }
+                                        .onSizeChanged { textSize = it }
+                                        .graphicsLayer {
+                                            transformOrigin = TransformOrigin(0f, 0f)
+                                            val p = flight.value
+                                            val s0 = 1.9f
+                                            val s = s0 + (1f - s0) * p
+                                            val x0 = rootSize.width / 2f - textSize.width * s0 / 2f
+                                            val y0 = rootSize.height / 2f - textSize.height * s0 / 2f
+                                            val x1 = titlePos?.x ?: x0
+                                            val y1 = titlePos?.y ?: y0
+                                            scaleX = s; scaleY = s
+                                            translationX = (x0 - x1) * (1f - p)
+                                            translationY = (y0 - y1) * (1f - p)
+                                            alpha = titleIn.value
+                                        },
+                                )
+                            }
                         }
                     }
                 }
@@ -198,7 +263,7 @@ private fun Context.hasPostNotif() =
         ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == 0
 
 @Composable
-private fun AppRoot() {
+private fun AppRoot(titleVisible: Boolean = true, onTitlePos: (Offset) -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     // Dört izin de verilmişse Ana Sayfa (0), eksik varsa Kurulum (1) sekmesinde açılır
@@ -221,7 +286,12 @@ private fun AppRoot() {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Dynamic Island", color = cs.onBackground, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
+                Text(
+                    "Omni Island", color = cs.onBackground, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp,
+                    modifier = Modifier
+                        .onGloballyPositioned { onTitlePos(it.positionInRoot()) }
+                        .graphicsLayer { alpha = if (titleVisible) 1f else 0f },
+                )
                 Text("Kamera çevresinde canlı ada", color = cs.onSurfaceVariant, fontSize = 13.sp)
             }
             // Alttaki yüzen çubuğun altında kalmasın diye içeriğe alttan boşluk bırakılır
