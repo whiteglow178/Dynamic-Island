@@ -16,6 +16,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -79,6 +80,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
@@ -94,6 +96,7 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -254,6 +257,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
     val introLine = remember { Animatable(0f) }      // 0 -> 1: çizgi çizilir, ada çevresinde birleşir
     val introReveal = remember { Animatable(0f) }    // 0 -> 1: siyah ekran kalkar, telefon görünür
     val introRecede = remember { Animatable(0f) }    // 0 -> 1: telefon yakından uzaklaşıp yerine oturur
+    val textZ = remember { Animatable(0f) }          // 0 -> 1: "Kontrol Sende" yazısı uzaktan bize doğru gelir ve geçer
     var tick by remember { mutableIntStateOf(0) }
     val skipped = remember { mutableStateListOf<OnbPerm>() }
     var typed by remember { mutableStateOf("") }
@@ -331,7 +335,12 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
     }
 
     LaunchedEffect(phase) {
-        if (phase == OnbPhase.Finish) { delay(1400); onFinished() }
+        if (phase == OnbPhase.Finish) {
+            delay(1100 + 500)                // telefon ekranı kaplar + uygulamanın resmi kısa süre görünür
+            textZ.animateTo(1f, tween(1900, easing = FastOutLinearInEasing))     // yazı hızlanarak yaklaşır
+            delay(120)
+            onFinished()
+        }
     }
 
     // Cevapla -> klavye
@@ -531,7 +540,23 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
             // ---- 3 boyutlu telefon: yalnızca üst kısım (ada bölgesi) görünür
             Box(
                 Modifier.fillMaxWidth().height(cropH).zIndex(1f)
-                    .then(if (phase == OnbPhase.Finish || introActive) Modifier else Modifier.clipToBounds()),
+                    .then(
+                        if (phase == OnbPhase.Finish) Modifier
+                        else if (introActive) Modifier.drawWithContent {
+                            // İlk açılışta telefon büyükken alt kenar kırpması yavaşça yerine gelir (ortada sert siyah şerit kalmasın)
+                            val d = density
+                            val sm = ((introRecede.value - 0.15f) / 0.70f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
+                            val extra = ((rootHdp - sbTop) * d - size.height).coerceAtLeast(0f)
+                            val edge = size.height + extra * (1f - sm)
+                            clipRect(left = 0f, top = -100000f, right = size.width, bottom = edge) { this@drawWithContent.drawContent() }
+                            val fl = 80.dp.toPx()
+                            drawRect(
+                                Brush.verticalGradient(listOf(Color.Transparent, cs.background), startY = edge - fl, endY = edge),
+                                topLeft = Offset(0f, edge - fl), size = Size(size.width, fl),
+                            )
+                        }
+                        else Modifier.clipToBounds(),
+                    ),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 Box(
@@ -566,7 +591,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                 }
                 Box(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(80.dp)
-                        .graphicsLayer { alpha = 1f - full }
+                        .graphicsLayer { alpha = (1f - full) * (if (introActive) 0f else 1f) }
                         .background(Brush.verticalGradient(listOf(Color.Transparent, cs.background))),
                 )
             }
@@ -653,6 +678,23 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                     val core = 2.6.dp.toPx() * (0.6f + 0.4f * (sc / introS0).coerceIn(0f, 1f))
                     drawIntroRing(size.width / 2f, cy, pw, ph, introLine.value, fade, core, 26.dp.toPx())
                 }
+            }
+        }
+
+        // ---- uygulamaya giriş: "Kontrol Sende" yazısı telefon ekranından bize doğru gelir, çok yaklaşıp içimizden geçer
+        if (phase == OnbPhase.Finish) {
+            Box(Modifier.fillMaxSize().zIndex(20f), contentAlignment = Alignment.Center) {
+                Text(
+                    "Kontrol Sende", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.6).sp, maxLines = 1, softWrap = false,
+                    modifier = Modifier.graphicsLayer {
+                        val p = textZ.value
+                        // Uzaktan (0,3x) çok yakına (36x): üstel ölçek, perspektifle yaklaşma hissi verir
+                        val sc = kotlin.math.exp(kotlin.math.ln(0.3f) + (kotlin.math.ln(36f) - kotlin.math.ln(0.3f)) * p)
+                        scaleX = sc; scaleY = sc
+                        alpha = (p / 0.1f).coerceIn(0f, 1f) * (1f - ((p - 0.78f) / 0.22f).coerceIn(0f, 1f))
+                    },
+                )
             }
         }
 
