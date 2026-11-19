@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -99,8 +100,11 @@ class MainActivity : ComponentActivity() {
                             systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                         }
                     }
+                    val themeBg = MaterialTheme.colorScheme.background.toArgb()
                     LaunchedEffect(Unit) {
                         if (!onboarded) {
+                            // Çubuklar gizlenince uygulamanın çizmediği üst şerit pencere arka planını (gri) gösteriyordu: siyaha boya
+                            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
                             if (Build.VERSION.SDK_INT >= 28) {
                                 window.attributes = window.attributes.apply {
                                     layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -121,6 +125,7 @@ class MainActivity : ComponentActivity() {
                         delay(100)
                         ringFade.animateTo(1f, tween(500, easing = androidx.compose.animation.core.LinearEasing))
                         islandIntro = false
+                        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(themeBg))
                         barsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())   // ada yerine oturdu: çubuklar geri gelir
                     }
                     LaunchedEffect(flightGo, titlePos != null) {
