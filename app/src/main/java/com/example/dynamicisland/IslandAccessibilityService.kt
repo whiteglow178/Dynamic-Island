@@ -93,11 +93,13 @@ class IslandAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         stopAssistantWatch()
         instance = null
+        runCatching { recHandler.removeCallbacksAndMessages(null); recThread.quitSafely() }
         super.onDestroy()
     }
 
     private fun stopAssistantWatch() {
         handler.removeCallbacks(check)
+        recHandler.removeCallbacks(recCheck); recCheckPending = false
         winPkgCache.clear()
         eventSaysOn = false
         runCatching { setAssistant(false) }
@@ -220,10 +222,15 @@ class IslandAccessibilityService : AccessibilityService() {
 
     // ---- Sistem ekran kaydedicisinin yüzen çubuğu (ör. MIUI/Redmi): bildirimde süre olmadığı için çubuktaki
     // süre yazısı (00:05) okunur. Süre görünüyorsa kayıt var; kaybolunca bitti. Tek rakam = geri sayım.
-    private var recA11yOn = false
-    private var recA11yDigit = 0
+    // Tarama ANA thread'de DEĞİL arka plan thread'inde yapılır: uygulamanın kendi penceresi de pencere listesinde
+    // olduğundan, ana thread'den w.root istemek sistem <-> uygulama arasında kilitlenip 5 sn ANR'ye yol açıyordu.
+    private val recThread = android.os.HandlerThread("rec-scan").apply { start() }
+    private val recHandler = Handler(recThread.looper)
+    private val recPkgCache = java.util.concurrent.ConcurrentHashMap<Int, String>()
+    @Volatile private var recA11yOn = false
+    @Volatile private var recA11yDigit = 0
     private var recMiss = 0
-    private var recCheckPending = false
+    @Volatile private var recCheckPending = false
     private val recCheck = object : Runnable {
         override fun run() {
             recCheckPending = false
@@ -235,7 +242,7 @@ class IslandAccessibilityService : AccessibilityService() {
     private fun scheduleRecCheck(delayMs: Long = 60) {
         if (recCheckPending) return
         recCheckPending = true
-        handler.postDelayed(recCheck, delayMs)
+        recHandler.postDelayed(recCheck, delayMs)
     }
 
     private fun collectTexts(n: AccessibilityNodeInfo, out: MutableList<String>, depth: Int = 0) {
@@ -251,10 +258,15 @@ class IslandAccessibilityService : AccessibilityService() {
     private fun checkRecorder() {
         val texts = mutableListOf<String>()
         val ws = runCatching { windows }.getOrNull().orEmpty()
+        recPkgCache.keys.retainAll(ws.map { it.id }.toSet())      // kapanan pencereleri bellekten at
         for (w in ws) {
+            val cached = recPkgCache[w.id]
+            if (cached != null && !isRecPkg(cached)) continue      // paketi bilinen, kaydedici olmayan pencereye sorma
             val root = runCatching { w.root }.getOrNull() ?: continue
             try {
-                if (isRecPkg(root.packageName?.toString())) collectTexts(root, texts)
+                val pkg = root.packageName?.toString()
+                if (pkg != null) recPkgCache[w.id] = pkg
+                if (isRecPkg(pkg)) collectTexts(root, texts)
             } finally { @Suppress("DEPRECATION") runCatching { root.recycle() } }
         }
         val timer = texts.firstOrNull { REC_TIME.matches(it) }
@@ -304,6 +316,11 @@ class IslandAccessibilityService : AccessibilityService() {
     }
 
     private fun doStopScreenRec(): Boolean {
+        recHandler.post { runCatching { stopScreenRecNow() } }
+        return true
+    }
+
+    private fun stopScreenRecNow(): Boolean {
         val ws = runCatching { windows }.getOrNull().orEmpty()
         for (w in ws) {
             val root = runCatching { w.root }.getOrNull() ?: continue
