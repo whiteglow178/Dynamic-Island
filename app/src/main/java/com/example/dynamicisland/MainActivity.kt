@@ -332,6 +332,7 @@ private fun Context.hasPostNotif() =
     Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == 0
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun AppRoot(titleVisible: Boolean = true, onTitlePos: (Offset) -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
