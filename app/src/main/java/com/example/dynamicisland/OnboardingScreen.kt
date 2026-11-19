@@ -85,6 +85,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
@@ -242,7 +245,14 @@ internal data class IntroIsland(val cx: Float, val cy: Float, val w: Float, val 
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: (IntroIsland) -> Unit = {}) {
+internal fun OnboardingScreen(
+    onFinished: () -> Unit,
+    onTitleShow: (IntroIsland) -> Unit = {},
+    /** Uygulama simgesine dokunuldu: simgenin altındaki "Omni Island" yazısının ekrandaki yeri (px). */
+    onLabelTap: (Rect) -> Unit = {},
+    /** Telefon ekranı kaplamaya başladı. */
+    onOpenStart: () -> Unit = {},
+) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -531,6 +541,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: (IntroIsland)
     // Bitiş: telefon ekranı kaplar -> telefonun adası ve "Omni Island" yazısı belirir (ada çevresinde çizgi MainActivity'de çizilir)
     LaunchedEffect(phase) {
         if (phase == OnbPhase.Finish) {
+            onOpenStart()                    // yazı etiketten çıkıp ekrana doğru yaklaşmaya başlar (MainActivity)
             delay(1100 + 200)                // telefon ekranı kaplar + uygulamanın simgesi çok kısa süre görünür
             val d = dens.density
             val pad = 6f * kV * launchScale
@@ -597,6 +608,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: (IntroIsland)
                         } else {
                             PhoneLockContent(
                                 pin, pinWrong, unlocked, shake.value, onDigit, onDelete, appIcon,
+                                onLabelTap = onLabelTap,
                                 onOpened = { if (phase == OnbPhase.Unlock) phase = OnbPhase.Finish },
                             )
                         }
@@ -991,6 +1003,7 @@ private fun OnbChecklist(items: List<Pair<OnbPerm, Int>>, modifier: Modifier = M
 private fun PhoneLockContent(
     pin: String, wrong: Boolean, unlocked: Boolean, shakeX: Float,
     onDigit: (String) -> Unit, onDelete: () -> Unit, appIcon: OnbAppIcon?, onOpened: () -> Unit,
+    onLabelTap: (Rect) -> Unit = {},
 ) {
     val ua by animateFloatAsState(if (unlocked) 1f else 0f, tween(650, easing = FastOutSlowInEasing), label = "unlockA")
     val red = Color(0xFFFF6B5E)
@@ -1001,7 +1014,7 @@ private fun PhoneLockContent(
                 Modifier.fillMaxSize()
                     .graphicsLayer { alpha = ua; val sc = 1.12f - 0.12f * ua; scaleX = sc; scaleY = sc }
                     .background(Brush.verticalGradient(listOf(Color(0xFF2E6A93), Color(0xFF5B4496), Color(0xFFB2557F)))),
-            ) { OnbHomeGrid(appIcon, ua > 0.9f, onOpened) }
+            ) { OnbHomeGrid(appIcon, ua > 0.9f, onOpened, onLabelTap) }
         }
         // Şifre ekranı: kilit açılınca yaklaşıp solar
         if (ua < 0.99f) {
@@ -1071,8 +1084,9 @@ private fun OnbAppIconView(icon: OnbAppIcon?, modifier: Modifier, corner: Dp = 1
 
 /** Telefonun ana ekranı: isimsiz / resimsiz birkaç uygulama + Omni Island. Simgeye dokununca uygulama açılma animasyonu. */
 @Composable
-private fun OnbHomeGrid(appIcon: OnbAppIcon?, enabled: Boolean, onOpened: () -> Unit) {
+private fun OnbHomeGrid(appIcon: OnbAppIcon?, enabled: Boolean, onOpened: () -> Unit, onLabelTap: (Rect) -> Unit = {}) {
     val scope = rememberCoroutineScope()
+    var labelCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val open = remember { Animatable(0f) }
     var tapped by remember { mutableStateOf(false) }
     val pulse by rememberInfiniteTransition(label = "hint").animateFloat(
@@ -1118,6 +1132,8 @@ private fun OnbHomeGrid(appIcon: OnbAppIcon?, enabled: Boolean, onOpened: () -> 
             OnbAppIconView(
                 appIcon,
                 Modifier.offset(cx(omniC).dp, ry(omniR).dp).size(size.dp).clickable(enabled = enabled && !tapped) {
+                    // Simgenin altındaki yazının ekrandaki yerini bildir: yazı ekranın üstünde bu noktadan devralınır
+                    labelCoords?.takeIf { it.isAttached }?.let { onLabelTap(it.boundsInRoot()) }
                     tapped = true
                     scope.launch {
                         open.animateTo(1f, tween(480, easing = FastOutSlowInEasing))
@@ -1129,7 +1145,13 @@ private fun OnbHomeGrid(appIcon: OnbAppIcon?, enabled: Boolean, onOpened: () -> 
             Box(
                 Modifier.offset((cx(omniC) - 14f).dp, (ry(omniR) + 82f).dp).width((size + 28f).dp),
                 contentAlignment = Alignment.Center,
-            ) { Text("Omni Island", color = Color.White, fontSize = 14.sp, maxLines = 1, softWrap = false) }
+            ) {
+                    val labelA by animateFloatAsState(if (tapped) 0f else 1f, tween(150), label = "omniLabelA")
+                    Text(
+                        "Omni Island", color = Color.White, fontSize = 14.sp, maxLines = 1, softWrap = false,
+                        modifier = Modifier.onGloballyPositioned { labelCoords = it }.graphicsLayer { alpha = labelA },
+                    )
+                }
         }
 
         // Uygulama açılma animasyonu: simge büyüyerek ekranı kaplar

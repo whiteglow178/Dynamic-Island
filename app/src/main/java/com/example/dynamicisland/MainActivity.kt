@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.roundToInt
@@ -76,6 +77,16 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Tam ekran çizim: içerik durum çubuğu / kamera deliği bölgesine de çizilir (ada çizgisi oraya kadar çıkabilsin).
+        // Android 15+ zaten böyle; eski sürümlerde de aynı davranış için açıkça isteriz (AppRoot / Onboarding boşlukları kendisi ayarlar).
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        @Suppress("DEPRECATION") run {
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        }
         setContent {
             IslandTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -91,6 +102,8 @@ class MainActivity : ComponentActivity() {
                     val flightScope = rememberCoroutineScope()
                     // "Omni Island" yazısının üstünde: ada belirir, beyaz çizgi etrafını sarar, kamera çentiğinin yerine kayar, çizgi söner
                     var islandIntro by remember { mutableStateOf(false) }
+                    var labelRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }  // telefondaki simgenin altındaki yazının yeri (px)
+                    val approach = remember { Animatable(0f) }    // 0 -> 1: yazı etiketten çıkıp büyüyerek ekranın ortasına yaklaşır
                     val ringLine = remember { Animatable(0f) }    // 0 -> 1: beyaz çizgi adanın etrafını sarar
                     val ringFade = remember { Animatable(0f) }    // 0 -> 1: çizgi ve ada söner
                     var islandStart by remember { mutableStateOf<IntroIsland?>(null) }       // telefonun adasının konumu (px)
@@ -108,11 +121,6 @@ class MainActivity : ComponentActivity() {
                         if (!onboarded) {
                             // Çubuklar gizlenince uygulamanın çizmediği üst şerit pencere arka planını (gri) gösteriyordu: siyaha boya
                             window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
-                            if (Build.VERSION.SDK_INT >= 28) {
-                                window.attributes = window.attributes.apply {
-                                    layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                                }
-                            }
                             barsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
                         }
                     }
@@ -131,18 +139,18 @@ class MainActivity : ComponentActivity() {
                         ringLine.animateTo(1f, tween(1500, easing = androidx.compose.animation.core.LinearEasing))
                         snapshotFlow { finishRequested }.first { it }
                         delay(350)
-                        // Uygulama açılır; adayı da şimdi başlat (gerçek ada, çizgili ada yerine oturunca belirsin)
+                        prefs.edit().putBoolean("onboarding_done", true).apply()
+                        onboarded = true
+                        flightGo = true
+                        // Uçuşun bitmesini bekle (en fazla 5 sn)
+                        kotlinx.coroutines.withTimeoutOrNull(5000) { snapshotFlow { flight.value }.first { it >= 1f } }
+                        // Ada yerine oturdu: gerçek adayı şimdi başlat (çizgili ada sönerken yerini devralır)
                         if (appCtx.hasOverlay() && appCtx.hasListener() && appCtx.hasPostNotif() && appCtx.hasAccessibility()) {
                             runCatching {
                                 ContextCompat.startForegroundService(appCtx, Intent(appCtx, IslandOverlayService::class.java))
                                 IslandNotificationListener.republish(appCtx, force = true)
                             }
                         }
-                        prefs.edit().putBoolean("onboarding_done", true).apply()
-                        onboarded = true
-                        flightGo = true
-                        // Uçuşun bitmesini bekle (en fazla 5 sn)
-                        kotlinx.coroutines.withTimeoutOrNull(5000) { snapshotFlow { flight.value }.first { it >= 1f } }
                         delay(100)
                         ringFade.animateTo(1f, tween(450, easing = androidx.compose.animation.core.LinearEasing))
                         islandIntro = false
@@ -163,11 +171,19 @@ class MainActivity : ComponentActivity() {
                                 AppRoot(titleVisible = !introFlight, onTitlePos = { titlePos = it })
                             } else {
                                 OnboardingScreen(
+                                    onLabelTap = { r ->
+                                        // Simgeye basıldı: telefondaki "Omni Island" yazısı ekranın üstünde devralınır
+                                        labelRect = r
+                                        introFlight = true
+                                        flightScope.launch { titleIn.animateTo(1f, tween(150)) }
+                                    },
+                                    onOpenStart = {
+                                        flightScope.launch { approach.animateTo(1f, tween(1100, easing = FastOutSlowInEasing)) }
+                                    },
                                     onTitleShow = { start ->
                                         islandStart = start
                                         introFlight = true
                                         islandIntro = true
-                                        flightScope.launch { titleIn.animateTo(1f, tween(380, easing = FastOutSlowInEasing)) }
                                     },
                                     onFinished = {
                                         finishRequested = true     // asıl açılış, çizgi animasyonu bitince yukarıdaki efektte yapılır
@@ -194,17 +210,26 @@ class MainActivity : ComponentActivity() {
                                         .onSizeChanged { textSize = it }
                                         .graphicsLayer {
                                             transformOrigin = TransformOrigin(0f, 0f)
-                                            val p = flight.value
+                                            val a = approach.value          // etiketten ekranın ortasına (büyüyerek yaklaşma)
+                                            val p = flight.value            // ortadan uygulamanın sol üstündeki başlığa
                                             val s0 = 1.9f
-                                            val s = s0 + (1f - s0) * p
-                                            val x0 = rootSize.width / 2f - textSize.width * s0 / 2f
-                                            val y0 = rootSize.height / 2f - textSize.height * s0 / 2f
-                                            val x1 = titlePos?.x ?: x0
-                                            val y1 = titlePos?.y ?: y0
+                                            val tw = textSize.width.coerceAtLeast(1)
+                                            val cX = rootSize.width / 2f - textSize.width * s0 / 2f
+                                            val cY = rootSize.height / 2f - textSize.height * s0 / 2f
+                                            val lr = labelRect
+                                            val sl = if (lr != null) lr.width / tw else s0
+                                            val lX = lr?.left ?: cX
+                                            val lY = lr?.top ?: cY
+                                            val xa = lX + (cX - lX) * a
+                                            val ya = lY + (cY - lY) * a
+                                            val sa = sl + (s0 - sl) * a
+                                            val x1 = titlePos?.x ?: cX
+                                            val y1 = titlePos?.y ?: cY
+                                            val s = sa + (1f - sa) * p
                                             scaleX = s; scaleY = s
-                                            translationX = (x0 - x1) * (1f - p)
-                                            translationY = (y0 - y1) * (1f - p)
-                                            alpha = titleIn.value
+                                            translationX = (xa + (x1 - xa) * p) - x1
+                                            translationY = (ya + (y1 - ya) * p) - y1
+                                            alpha = if (textSize.width == 0) 0f else titleIn.value
                                         },
                                 )
                             }
@@ -212,7 +237,8 @@ class MainActivity : ComponentActivity() {
                         val st0 = islandStart
                         if (islandIntro && st0 != null) {
                             val view = androidx.compose.ui.platform.LocalView.current
-                            Canvas(Modifier.fillMaxSize()) {
+                            var canvasOrigin by remember { mutableStateOf(Offset.Zero) }   // tuvalin pencere içindeki yeri (çentik koordinatları pencereye göredir)
+                            Canvas(Modifier.fillMaxSize().onGloballyPositioned { canvasOrigin = it.positionInWindow() }) {
                                 // Hedef: GERÇEK adanın kapalı hali (hap şekli korunur, daireye dönmez): ayarlardaki boyut + konum
                                 val tgt = islandTarget
                                 val cw = (tgt?.get(0) ?: 120f).dp.toPx(); val ch = (tgt?.get(1) ?: 32f).dp.toPx()
@@ -221,8 +247,8 @@ class MainActivity : ComponentActivity() {
                                     if (Build.VERSION.SDK_INT >= 28) view.rootWindowInsets?.displayCutout?.boundingRectTop else null
                                 }.getOrNull()
                                 val hasCut = cut != null && !cut.isEmpty
-                                val tcx = (if (hasCut) cut!!.exactCenterX() else size.width / 2f) + offX
-                                val tcy = (if (hasCut) cut!!.exactCenterY() else 22.dp.toPx()) + offY
+                                val tcx = (if (hasCut) cut!!.exactCenterX() - canvasOrigin.x else size.width / 2f) + offX
+                                val tcy = (if (hasCut) cut!!.exactCenterY() - canvasOrigin.y else 22.dp.toPx()) + offY
                                 val pad = 4.dp.toPx()
                                 val tw = cw + 2f * pad; val th = ch + 2f * pad
                                 val m = flight.value            // yazıyla aynı değer: ikisi birlikte yukarı gider
