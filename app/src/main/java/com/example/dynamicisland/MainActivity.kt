@@ -103,7 +103,10 @@ class MainActivity : ComponentActivity() {
                     // "Omni Island" yazısının üstünde: ada belirir, beyaz çizgi etrafını sarar, kamera çentiğinin yerine kayar, çizgi söner
                     var islandIntro by remember { mutableStateOf(false) }
                     var labelRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }  // telefondaki simgenin altındaki yazının yeri (px)
-                    val approach = remember { Animatable(0f) }    // 0 -> 1: yazı etiketten çıkıp büyüyerek ekranın ortasına yaklaşır
+                    var labelMid by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }   // uygulama açılınca yazının yeri (simgenin altı)
+                    var labelEnd by remember { mutableStateOf<FloatArray?>(null) }                          // [yatay orta px, üst px, büyüme oranı]: telefon ekranı kaplayınca yazının yeri
+                    val openA = remember { Animatable(0f) }       // 0 -> 1: simge büyürken yazı simgenin altında onunla birlikte iner
+                    val approach = remember { Animatable(0f) }    // 0 -> 1: yazı telefonla birlikte ekranı kaplayana kadar yaklaşır
                     val ringLine = remember { Animatable(0f) }    // 0 -> 1: beyaz çizgi adanın etrafını sarar
                     val ringFade = remember { Animatable(0f) }    // 0 -> 1: çizgi ve ada söner
                     var islandStart by remember { mutableStateOf<IntroIsland?>(null) }       // telefonun adasının konumu (px)
@@ -136,9 +139,9 @@ class MainActivity : ComponentActivity() {
                             val st = SettingsRepository(appCtx).flow.first().effective()
                             islandTarget = floatArrayOf(st.compactWidthDp, st.compactHeightDp, st.offsetXDp, st.offsetYDp)
                         }
-                        ringLine.animateTo(1f, tween(1500, easing = androidx.compose.animation.core.LinearEasing))
+                        ringLine.animateTo(1f, tween(1000, easing = androidx.compose.animation.core.LinearEasing))
                         snapshotFlow { finishRequested }.first { it }
-                        delay(350)
+                        delay(150)
                         prefs.edit().putBoolean("onboarding_done", true).apply()
                         onboarded = true
                         flightGo = true
@@ -171,14 +174,17 @@ class MainActivity : ComponentActivity() {
                                 AppRoot(titleVisible = !introFlight, onTitlePos = { titlePos = it })
                             } else {
                                 OnboardingScreen(
-                                    onLabelTap = { r ->
+                                    onLabelTap = { r, mid ->
                                         // Simgeye basıldı: telefondaki "Omni Island" yazısı ekranın üstünde devralınır
                                         labelRect = r
+                                        labelMid = mid
                                         introFlight = true
-                                        flightScope.launch { titleIn.animateTo(1f, tween(150)) }
+                                        flightScope.launch { titleIn.animateTo(1f, tween(60)) }
+                                        flightScope.launch { openA.animateTo(1f, tween(480, easing = FastOutSlowInEasing)) }   // telefondaki açılma animasyonuyla aynı
                                     },
-                                    onOpenStart = {
-                                        flightScope.launch { approach.animateTo(1f, tween(1100, easing = FastOutSlowInEasing)) }
+                                    onOpenStart = { ex, ey, er ->
+                                        labelEnd = floatArrayOf(ex, ey, er)
+                                        flightScope.launch { approach.animateTo(1f, tween(1100, easing = FastOutSlowInEasing)) }   // telefonun yaklaşmasıyla aynı
                                     },
                                     onTitleShow = { start ->
                                         islandStart = start
@@ -210,19 +216,30 @@ class MainActivity : ComponentActivity() {
                                         .onSizeChanged { textSize = it }
                                         .graphicsLayer {
                                             transformOrigin = TransformOrigin(0f, 0f)
-                                            val a = approach.value          // etiketten ekranın ortasına (büyüyerek yaklaşma)
-                                            val p = flight.value            // ortadan uygulamanın sol üstündeki başlığa
+                                            val o = openA.value             // simge büyürken: yazı simgenin altında onunla iner
+                                            val a = approach.value          // telefon ekranı kaplarken: yazı simgenin altında telefonla yaklaşır
+                                            val p = flight.value            // sonra uygulamanın sol üstündeki başlığa
                                             val s0 = 1.9f
                                             val tw = textSize.width.coerceAtLeast(1)
                                             val cX = rootSize.width / 2f - textSize.width * s0 / 2f
                                             val cY = rootSize.height / 2f - textSize.height * s0 / 2f
                                             val lr = labelRect
+                                            val md = labelMid ?: lr
+                                            val en = labelEnd
                                             val sl = if (lr != null) lr.width / tw else s0
                                             val lX = lr?.left ?: cX
                                             val lY = lr?.top ?: cY
-                                            val xa = lX + (cX - lX) * a
-                                            val ya = lY + (cY - lY) * a
-                                            val sa = sl + (s0 - sl) * a
+                                            val mX = md?.left ?: cX
+                                            val mY = md?.top ?: cY
+                                            val x0 = lX + (mX - lX) * o
+                                            val y0 = lY + (mY - lY) * o
+                                            val er = en?.get(2) ?: (s0 / sl)
+                                            val eS = sl * er
+                                            val eX = if (en != null) en[0] - tw * eS / 2f else cX
+                                            val eY = en?.get(1) ?: cY
+                                            val xa = x0 + (eX - x0) * a
+                                            val ya = y0 + (eY - y0) * a
+                                            val sa = sl + (eS - sl) * a
                                             val x1 = titlePos?.x ?: cX
                                             val y1 = titlePos?.y ?: cY
                                             val s = sa + (1f - sa) * p
@@ -253,7 +270,7 @@ class MainActivity : ComponentActivity() {
                                 val tw = cw + 2f * pad; val th = ch + 2f * pad
                                 val m = flight.value            // yazıyla aynı değer: ikisi birlikte yukarı gider
                                 val cx = st0.cx + (tcx - st0.cx) * m; val cy = st0.cy + (tcy - st0.cy) * m
-                                val w = st0.w + (tw - st0.w) * m; val h = st0.h + (th - st0.h) * m
+                                val w = tw; val h = th                  // halka baştan sona telefonun GERÇEK adası kadar (büyütülmez)
                                 drawIntroRing(cx, cy, w, h, ringLine.value, 1f - ringFade.value, 2.4.dp.toPx(), 26.dp.toPx())
                             }
                         }
