@@ -16,6 +16,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -82,13 +83,20 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -111,6 +119,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -128,6 +137,7 @@ private const val ONB_PREFS = "omni_onboarding"
 private const val K_WELCOME = "welcome_done"
 private const val K_AUTO_OPENED = "autostart_opened"
 private const val K_AUTO_DONE = "autostart_done"
+private const val K_INTRO = "intro_seen"
 
 private enum class OnbPhase { Welcome, Reply, Perms, Unlock, Finish }
 
@@ -239,6 +249,11 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
     var phase by rememberSaveable {
         mutableStateOf(if (prefs.getBoolean(K_WELCOME, false)) OnbPhase.Perms else OnbPhase.Welcome)
     }
+    // İlk açılış animasyonu: siyah ekran, adanın etrafında beyaz çizgi birleşir, sonra telefon belirip yerine uzaklaşır
+    var introActive by rememberSaveable { mutableStateOf(phase == OnbPhase.Welcome && !prefs.getBoolean(K_INTRO, false)) }
+    val introLine = remember { Animatable(0f) }      // 0 -> 1: çizgi çizilir, ada çevresinde birleşir
+    val introReveal = remember { Animatable(0f) }    // 0 -> 1: siyah ekran kalkar, telefon görünür
+    val introRecede = remember { Animatable(0f) }    // 0 -> 1: telefon yakından uzaklaşıp yerine oturur
     var tick by remember { mutableIntStateOf(0) }
     val skipped = remember { mutableStateListOf<OnbPerm>() }
     var typed by remember { mutableStateOf("") }
@@ -289,7 +304,20 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
     LaunchedEffect(phase) { while (phase == OnbPhase.Perms) { delay(700); tick++ } }
 
     // Giriş: telefon iner, kısa süre sonra ada bildirimle genişler
-    LaunchedEffect(Unit) { started = true; delay(1300); introShown = true }
+    LaunchedEffect(Unit) {
+        started = true
+        if (introActive) {
+            introLine.animateTo(1f, tween(2000, easing = LinearEasing))
+            delay(220)
+            coroutineScope {
+                launch { introReveal.animateTo(1f, tween(520, easing = LinearEasing)) }
+                launch { delay(260); introRecede.animateTo(1f, tween(1500, easing = FastOutSlowInEasing)) }
+            }
+            introActive = false
+            prefs.edit().putBoolean(K_INTRO, true).apply()
+        }
+        delay(1300); introShown = true
+    }
 
     // İzin adımları arası geçiş: "hazır ✓" göster, sonra sıradaki arama; hepsi bitince bitiş
     LaunchedEffect(current, phase) {
@@ -485,22 +513,35 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
         if (phase == OnbPhase.Finish) 1f else 0f, tween(1100, easing = FastOutSlowInEasing), label = "onbLaunch",
     )
 
+    // ---- ilk açılış animasyonu geometrisi: telefon başta büyük (ada ekranın ortasında), sonra yerine uzaklaşır
+    val kV = p3dScale(phoneW)                                        // sanal ekran (412 dp) -> gerçek dp
+    val islandWV = 126f; val islandHV = 37f; val islandTopV = 14f     // OnbIsland.Idle ölçüleri ve üst boşluğu (sanal dp)
+    val insetD = p3dScreenInsetDp(phoneW)
+    val layerTop = sbTop + 44f                                       // telefon katmanının üstü (kök koordinatı, dp)
+    val islandCy = insetD + (islandTopV + islandHV / 2f) * kV        // ada merkezinin telefon katmanındaki dikey konumu (dp)
+    val introS0 = if (rootWdp > 0f) (0.62f * rootWdp / (islandWV * kV)).coerceIn(1.4f, 4f) else 1f
+    val introT0 = rootHdp * 0.42f - layerTop - islandCy * introS0     // başlangıç kayması (dp): ada ekranın %42 yüksekliğinde
+    fun introScaleNow(): Float = if (introActive) kotlin.math.exp(kotlin.math.ln(introS0) * (1f - introRecede.value)) else 1f
+    fun introTyNow(): Float = if (introActive) introT0 * (1f - introRecede.value) else 0f
+    // Animasyonun sonlarında yazılar / noktalar / liste yavaşça görünür
+    val uiIntro: () -> Float = { if (introActive) ((introRecede.value - 0.5f) / 0.5f).coerceIn(0f, 1f) else 1f }
+
     Box(Modifier.fillMaxSize().background(cs.background).onSizeChanged { rootPx = it }) {
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
             // ---- 3 boyutlu telefon: yalnızca üst kısım (ada bölgesi) görünür
             Box(
                 Modifier.fillMaxWidth().height(cropH).zIndex(1f)
-                    .then(if (phase == OnbPhase.Finish) Modifier else Modifier.clipToBounds()),
+                    .then(if (phase == OnbPhase.Finish || introActive) Modifier else Modifier.clipToBounds()),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 Box(
                     Modifier.padding(top = 44.dp).graphicsLayer {
                         val s0 = zoom * (1f + (fitScale - 1f) * full)
-                        val s = s0 + (launchScale - s0) * launch
+                        val s = (s0 + (launchScale - s0) * launch) * introScaleNow()
                         scaleX = s; scaleY = s
                         transformOrigin = TransformOrigin(0.5f, 0f)
-                        translationY = (-90f * (1f - enter) + launchTy * launch) * density
-                        alpha = enter
+                        translationY = ((if (introActive) 0f else -90f * (1f - enter)) + launchTy * launch + introTyNow()) * density
+                        alpha = if (introActive) introReveal.value else enter
                     },
                 ) {
                     Phone3DPreview(phoneWDp = phoneW) {
@@ -532,7 +573,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
 
             // ---- adım noktaları
             Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 14.dp).graphicsLayer { alpha = 1f - exit },
+                Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 14.dp).graphicsLayer { alpha = (1f - exit) * uiIntro() },
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
             ) {
                 val total = ONB_ORDER.size + 1
@@ -546,7 +587,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
             }
 
             // ---- telefonun dışındaki bilgilendirme
-            Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp).graphicsLayer { alpha = 1f - exit }) {
+            Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp).graphicsLayer { alpha = (1f - exit) * uiIntro() }) {
                 AnimatedContent(
                     targetState = info,
                     transitionSpec = { fadeIn(tween(260, 120)) togetherWith fadeOut(tween(120)) },
@@ -587,8 +628,31 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                             else -> 0
                         }
                     },
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp).graphicsLayer { alpha = 1f - exit },
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp).graphicsLayer { alpha = (1f - exit) * uiIntro() },
                 )
+            }
+        }
+
+        // ---- ilk açılış: siyah ekran + adanın etrafında birleşen beyaz çizgi (telefon arkada belirir, çizgi telefonla birlikte uzaklaşıp söner)
+        if (introActive) {
+            Box(
+                Modifier.fillMaxSize().zIndex(10f).pointerInput(Unit) {
+                    awaitPointerEventScope { while (true) { awaitPointerEvent().changes.forEach { c -> c.consume() } } }
+                },
+            ) {
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - introReveal.value }.background(Color.Black))
+                Canvas(Modifier.fillMaxSize()) {
+                    if (rootWdp <= 0f) return@Canvas
+                    val sc = introScaleNow()
+                    val d = density
+                    val pad = 6f * kV * sc * d
+                    val pw = islandWV * kV * sc * d + 2f * pad
+                    val ph = islandHV * kV * sc * d + 2f * pad
+                    val cy = (layerTop + islandCy * sc + introTyNow()) * d
+                    val fade = 1f - ((introRecede.value - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                    val core = 2.6.dp.toPx() * (0.6f + 0.4f * (sc / introS0).coerceIn(0f, 1f))
+                    drawIntroRing(size.width / 2f, cy, pw, ph, introLine.value, fade, core, 26.dp.toPx())
+                }
             }
         }
 
@@ -603,6 +667,82 @@ internal fun OnboardingScreen(onFinished: () -> Unit) {
                 modifier = Modifier.size(1.dp).graphicsLayer { alpha = 0f }.focusRequester(focus),
             )
         }
+    }
+}
+
+// ------------------------------------------------------------------ ilk açılış çizgisi
+/**
+ * Adanın etrafındaki hap şeklinde ışıklı çizgi. [line] 0 -> 1:
+ * parlak bir nokta adanın üstüne düşer, çizgiye dönüşüp ikiye ayrılır, iki ucu adanın etrafını sarıp altta birleşir.
+ * [alpha] genel görünürlük, [core] çizginin kalınlığı (px), [lift] noktanın düşmeye başladığı yükseklik (px).
+ */
+private fun DrawScope.drawIntroRing(cx: Float, cy: Float, pillW: Float, pillH: Float, line: Float, alpha: Float, core: Float, lift: Float) {
+    if (alpha <= 0.002f) return
+    val l = cx - pillW / 2f; val r = cx + pillW / 2f
+    val t = cy - pillH / 2f; val b = cy + pillH / 2f
+    val rad = pillH / 2f
+    val glow = Color(0xFFCFC8FF)
+    val a1 = 0.12f; val a2 = 0.86f
+    val dropT = (line / a1).coerceIn(0f, 1f)
+    val g = FastOutSlowInEasing.transform(((line - a1) / (a2 - a1)).coerceIn(0f, 1f))
+    val closeT = ((line - a2) / (1f - a2)).coerceIn(0f, 1f)
+
+    // Üstteki ortadan başlayıp saat yönünde dönen hap yolu: ilk yarısı sağ, ikinci yarısı sol taraf
+    val path = Path().apply {
+        moveTo(cx, t)
+        lineTo(r - rad, t)
+        arcTo(Rect(r - 2f * rad, t, r, b), -90f, 180f, false)
+        lineTo(cx, b)
+        lineTo(l + rad, b)
+        arcTo(Rect(l, t, l + 2f * rad, b), 90f, 180f, false)
+        lineTo(cx, t)
+        close()
+    }
+    val pm = PathMeasure().apply { setPath(path, false) }
+    val len = pm.length
+    val seg = Path()
+
+    // Halka kapanınca adanın iç dolgusu belirir
+    if (closeT > 0f) {
+        drawRoundRect(Color(0xFF0B0B10).copy(alpha = closeT * alpha), Offset(l, t), Size(pillW, pillH), CornerRadius(rad, rad))
+    }
+
+    // 1) Nokta üstten düşer
+    if (g <= 0f) {
+        val y = t - lift * (1f - FastOutSlowInEasing.transform(dropT))
+        val c = Offset(cx, y)
+        val a = (dropT * 3f).coerceIn(0f, 1f) * alpha
+        drawCircle(glow.copy(alpha = 0.16f * a), core * 5f, c)
+        drawCircle(glow.copy(alpha = 0.30f * a), core * 2.6f, c)
+        drawCircle(Color.White.copy(alpha = a), core * 1.1f, c)
+    }
+
+    // 2) İki parlak uç ince bir iz bırakarak ayrılır ve adanın etrafını sarar
+    if (g > 0f) {
+        val d = g * len / 2f
+        val headLen = minOf(d, maxOf(pillW * 0.14f, core * 7f))
+        val thinW = core * (0.5f + 0.4f * closeT)
+        val thinA = (0.5f + 0.5f * closeT) * alpha
+        val headA = (1f - 0.9f * closeT) * alpha
+        for (side in 0..1) {
+            seg.reset()
+            if (side == 0) pm.getSegment(0f, d, seg, true) else pm.getSegment(len - d, len, seg, true)
+            drawPath(seg, Color(0xFFDDD8FF).copy(alpha = thinA), style = Stroke(thinW, cap = StrokeCap.Round))
+            seg.reset()
+            if (side == 0) pm.getSegment(d - headLen, d, seg, true) else pm.getSegment(len - d, len - d + headLen, seg, true)
+            drawPath(seg, glow.copy(alpha = 0.10f * headA), style = Stroke(core * 6f, cap = StrokeCap.Round))
+            drawPath(seg, glow.copy(alpha = 0.24f * headA), style = Stroke(core * 3.2f, cap = StrokeCap.Round))
+            drawPath(seg, Color.White.copy(alpha = headA), style = Stroke(core * 1.5f, cap = StrokeCap.Round))
+        }
+    }
+
+    // 3) Uçlar altta birleşince tam halka kısa bir parlama yapar
+    if (closeT > 0f) {
+        val pulse = 1f + 0.7f * kotlin.math.sin(kotlin.math.PI.toFloat() * closeT)
+        val a = closeT * alpha
+        drawPath(path, glow.copy(alpha = 0.12f * a), style = Stroke(core * 6f * pulse))
+        drawPath(path, glow.copy(alpha = 0.26f * a), style = Stroke(core * 3f * pulse))
+        drawPath(path, Color.White.copy(alpha = a), style = Stroke(core * 0.9f))
     }
 }
 
