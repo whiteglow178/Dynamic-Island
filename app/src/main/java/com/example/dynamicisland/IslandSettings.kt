@@ -31,7 +31,7 @@ data class IslandSettings(
     val expandedHeightDp: Float = 84f,
     // Konum ince ayarı
     val offsetXDp: Float = 0f,
-    val offsetYDp: Float = 0f,
+    val offsetYDp: Float = 5f,
     // Renk
     val accentArgb: Int = 0xFF0A84FF.toInt(),
     val islandColorArgb: Int = 0xFF000000.toInt(),   // ada gövde rengi (albüm kapağı rengi kapalıyken); varsayılan siyah

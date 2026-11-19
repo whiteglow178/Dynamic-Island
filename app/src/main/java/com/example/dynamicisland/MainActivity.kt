@@ -87,6 +87,22 @@ class MainActivity : ComponentActivity() {
                     val titleIn = remember { Animatable(0f) }                  // 0 -> 1: yazı ortada belirir
                     val flight = remember { Animatable(0f) }                   // 0: ortada büyük, 1: başlığın yerinde
                     val flightScope = rememberCoroutineScope()
+                    // "Omni Island" yazısının üstünde: ada belirir, beyaz çizgi etrafını sarar, kamera çentiğinin yerine kayar, çizgi söner
+                    var islandIntro by remember { mutableStateOf(false) }
+                    val ringLine = remember { Animatable(0f) }    // 0 -> 1: beyaz çizgi adanın etrafını sarar
+                    val ringMove = remember { Animatable(0f) }    // 0 -> 1: ada gerçek konumuna gider
+                    val ringFade = remember { Animatable(0f) }    // 0 -> 1: çizgi ve ada söner
+                    val appCtx = this@MainActivity
+                    LaunchedEffect(islandIntro) {
+                        if (!islandIntro) return@LaunchedEffect
+                        ringLine.snapTo(0f); ringMove.snapTo(0f); ringFade.snapTo(0f)
+                        ringLine.animateTo(1f, tween(1500, easing = androidx.compose.animation.core.LinearEasing))
+                        delay(150)
+                        ringMove.animateTo(1f, tween(850, easing = FastOutSlowInEasing))
+                        delay(100)
+                        ringFade.animateTo(1f, tween(500, easing = androidx.compose.animation.core.LinearEasing))
+                        islandIntro = false
+                    }
                     LaunchedEffect(flightGo, titlePos != null) {
                         if (flightGo && titlePos != null) {
                             flight.animateTo(1f, tween(850, easing = FastOutSlowInEasing))
@@ -103,6 +119,14 @@ class MainActivity : ComponentActivity() {
                                 OnboardingScreen(
                                     onTitleShow = {
                                         introFlight = true
+                                        islandIntro = true
+                                        // Yazı gelince adayı otomatik başlat (Kurulum'daki Başlat'a basmaya gerek yok)
+                                        if (appCtx.hasOverlay() && appCtx.hasListener() && appCtx.hasPostNotif() && appCtx.hasAccessibility()) {
+                                            runCatching {
+                                                ContextCompat.startForegroundService(appCtx, Intent(appCtx, IslandOverlayService::class.java))
+                                                IslandNotificationListener.republish(appCtx, force = true)
+                                            }
+                                        }
                                         flightScope.launch { titleIn.animateTo(1f, tween(380, easing = FastOutSlowInEasing)) }
                                     },
                                     onFinished = {
@@ -145,6 +169,32 @@ class MainActivity : ComponentActivity() {
                                             alpha = titleIn.value
                                         },
                                 )
+                            }
+                        }
+                        if (islandIntro) {
+                            val view = androidx.compose.ui.platform.LocalView.current
+                            Canvas(Modifier.fillMaxSize()) {
+                                val d = density
+                                // Gerçek kamera çentiği (yoksa tipik bir ada konumu)
+                                val cut = runCatching {
+                                    if (Build.VERSION.SDK_INT >= 28) view.rootWindowInsets?.displayCutout?.boundingRectTop else null
+                                }.getOrNull()
+                                val pad = 5.dp.toPx()
+                                val tw: Float; val th: Float; val tcx: Float; val tcy: Float
+                                if (cut != null && !cut.isEmpty) {
+                                    tw = cut.width() + 2f * pad; th = cut.height() + 2f * pad
+                                    tcx = cut.exactCenterX(); tcy = cut.exactCenterY()
+                                } else {
+                                    tw = 96.dp.toPx(); th = 32.dp.toPx(); tcx = size.width / 2f; tcy = 22.dp.toPx()
+                                }
+                                // Başlangıç: "Omni Island" yazısının üstü
+                                val sw = 150.dp.toPx(); val sh = 46.dp.toPx()
+                                val scx = size.width / 2f; val scy = size.height / 2f - 105.dp.toPx()
+                                val m = FastOutSlowInEasing.transform(ringMove.value)
+                                val cx = scx + (tcx - scx) * m; val cy = scy + (tcy - scy) * m
+                                val w = sw + (tw - sw) * m; val h = sh + (th - sh) * m
+                                val a = 1f - ringFade.value
+                                drawIntroRing(cx, cy, w, h, ringLine.value, a, 2.4.dp.toPx(), 26.dp.toPx())
                             }
                         }
                     }

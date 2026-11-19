@@ -701,7 +701,7 @@ internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: () -> Unit = 
  * parlak bir nokta adanın üstüne düşer, çizgiye dönüşüp ikiye ayrılır, iki ucu adanın etrafını sarıp altta birleşir.
  * [alpha] genel görünürlük, [core] çizginin kalınlığı (px), [lift] noktanın düşmeye başladığı yükseklik (px).
  */
-private fun DrawScope.drawIntroRing(cx: Float, cy: Float, pillW: Float, pillH: Float, line: Float, alpha: Float, core: Float, lift: Float) {
+internal fun DrawScope.drawIntroRing(cx: Float, cy: Float, pillW: Float, pillH: Float, line: Float, alpha: Float, core: Float, lift: Float) {
     if (alpha <= 0.002f) return
     val l = cx - pillW / 2f; val r = cx + pillW / 2f
     val t = cy - pillH / 2f; val b = cy + pillH / 2f
