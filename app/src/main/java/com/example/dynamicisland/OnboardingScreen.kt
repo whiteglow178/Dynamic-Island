@@ -249,7 +249,7 @@ internal fun OnboardingScreen(
     onFinished: () -> Unit,
     onTitleShow: (IntroIsland) -> Unit = {},
     /** Uygulama simgesine dokunuldu: simgenin altındaki "Omni Island" yazısının ekrandaki yeri (px). */
-    onLabelTap: (Rect, Rect) -> Unit = {},
+    onLabelTap: (Rect, Rect) -> Unit = { _, _ -> },
     /** Telefon ekranı kaplamaya başladı. */
     /** (yazının son yatay ortası px, son üst kenarı px, yazının başlangıca göre büyüme oranı): yazı simgenin ALTINDA kalır. */
     onOpenStart: (Float, Float, Float) -> Unit = { _, _, _ -> },
@@ -1012,7 +1012,7 @@ private fun OnbChecklist(items: List<Pair<OnbPerm, Int>>, modifier: Modifier = M
 private fun PhoneLockContent(
     pin: String, wrong: Boolean, unlocked: Boolean, shakeX: Float,
     onDigit: (String) -> Unit, onDelete: () -> Unit, appIcon: OnbAppIcon?, onOpened: () -> Unit,
-    onLabelTap: (Rect, Rect) -> Unit = {},
+    onLabelTap: (Rect, Rect) -> Unit = { _, _ -> },
 ) {
     val ua by animateFloatAsState(if (unlocked) 1f else 0f, tween(650, easing = FastOutSlowInEasing), label = "unlockA")
     val red = Color(0xFFFF6B5E)
@@ -1093,7 +1093,7 @@ private fun OnbAppIconView(icon: OnbAppIcon?, modifier: Modifier, corner: Dp = 1
 
 /** Telefonun ana ekranı: isimsiz / resimsiz birkaç uygulama + Omni Island. Simgeye dokununca uygulama açılma animasyonu. */
 @Composable
-private fun OnbHomeGrid(appIcon: OnbAppIcon?, enabled: Boolean, onOpened: () -> Unit, onLabelTap: (Rect, Rect) -> Unit = {}) {
+private fun OnbHomeGrid(appIcon: OnbAppIcon?, enabled: Boolean, onOpened: () -> Unit, onLabelTap: (Rect, Rect) -> Unit = { _, _ -> }) {
     val scope = rememberCoroutineScope()
     var labelCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var gridCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
