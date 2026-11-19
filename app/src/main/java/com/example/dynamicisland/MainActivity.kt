@@ -69,6 +69,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -91,8 +92,10 @@ class MainActivity : ComponentActivity() {
                     // "Omni Island" yazısının üstünde: ada belirir, beyaz çizgi etrafını sarar, kamera çentiğinin yerine kayar, çizgi söner
                     var islandIntro by remember { mutableStateOf(false) }
                     val ringLine = remember { Animatable(0f) }    // 0 -> 1: beyaz çizgi adanın etrafını sarar
-                    val ringMove = remember { Animatable(0f) }    // 0 -> 1: ada gerçek konumuna gider
                     val ringFade = remember { Animatable(0f) }    // 0 -> 1: çizgi ve ada söner
+                    var islandStart by remember { mutableStateOf<IntroIsland?>(null) }       // telefonun adasının konumu (px)
+                    var islandTarget by remember { mutableStateOf<FloatArray?>(null) }       // gerçek ada: [genişlik dp, yükseklik dp, yatay ofset dp, dikey ofset dp]
+                    var finishRequested by remember { mutableStateOf(false) }                // onboarding "bitti" dedi; çizgi bitince uygulama açılır
                     val appCtx = this@MainActivity
                     // İlk girişte (açılış/onboarding sürerken) durum çubuğu ve alt çubuk gizlenir; ada yerleşim animasyonu bitince geri gelir
                     val barsController = remember {
@@ -116,21 +119,39 @@ class MainActivity : ComponentActivity() {
                     DisposableEffect(Unit) {
                         onDispose { barsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars()) }
                     }
+                    // Sıra: 1) telefonun adasının çevresinde çizgi döner  2) uygulama açılır, ada + yazı BİRLİKTE yukarı gider  3) çizgi söner
                     LaunchedEffect(islandIntro) {
                         if (!islandIntro) return@LaunchedEffect
-                        ringLine.snapTo(0f); ringMove.snapTo(0f); ringFade.snapTo(0f)
+                        ringLine.snapTo(0f); ringFade.snapTo(0f)
+                        // Gerçek adanın (kapalı hal) boyutu ve konumu ayarlardan okunur
+                        runCatching {
+                            val st = SettingsRepository(appCtx).flow.first().effective()
+                            islandTarget = floatArrayOf(st.compactWidthDp, st.compactHeightDp, st.offsetXDp, st.offsetYDp)
+                        }
                         ringLine.animateTo(1f, tween(1500, easing = androidx.compose.animation.core.LinearEasing))
-                        delay(150)
-                        ringMove.animateTo(1f, tween(850, easing = FastOutSlowInEasing))
+                        snapshotFlow { finishRequested }.first { it }
+                        delay(350)
+                        // Uygulama açılır; adayı da şimdi başlat (gerçek ada, çizgili ada yerine oturunca belirsin)
+                        if (appCtx.hasOverlay() && appCtx.hasListener() && appCtx.hasPostNotif() && appCtx.hasAccessibility()) {
+                            runCatching {
+                                ContextCompat.startForegroundService(appCtx, Intent(appCtx, IslandOverlayService::class.java))
+                                IslandNotificationListener.republish(appCtx, force = true)
+                            }
+                        }
+                        prefs.edit().putBoolean("onboarding_done", true).apply()
+                        onboarded = true
+                        flightGo = true
+                        // Uçuşun bitmesini bekle (en fazla 5 sn)
+                        kotlinx.coroutines.withTimeoutOrNull(5000) { snapshotFlow { flight.value }.first { it >= 1f } }
                         delay(100)
-                        ringFade.animateTo(1f, tween(500, easing = androidx.compose.animation.core.LinearEasing))
+                        ringFade.animateTo(1f, tween(450, easing = androidx.compose.animation.core.LinearEasing))
                         islandIntro = false
                         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(themeBg))
                         barsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())   // ada yerine oturdu: çubuklar geri gelir
                     }
                     LaunchedEffect(flightGo, titlePos != null) {
                         if (flightGo && titlePos != null) {
-                            flight.animateTo(1f, tween(850, easing = FastOutSlowInEasing))
+                            flight.animateTo(1f, tween(1500, easing = FastOutSlowInEasing))   // ada ve yazı aynı değerle, birlikte uçar
                             introFlight = false
                         }
                     }
@@ -142,22 +163,14 @@ class MainActivity : ComponentActivity() {
                                 AppRoot(titleVisible = !introFlight, onTitlePos = { titlePos = it })
                             } else {
                                 OnboardingScreen(
-                                    onTitleShow = {
+                                    onTitleShow = { start ->
+                                        islandStart = start
                                         introFlight = true
                                         islandIntro = true
-                                        // Yazı gelince adayı otomatik başlat (Kurulum'daki Başlat'a basmaya gerek yok)
-                                        if (appCtx.hasOverlay() && appCtx.hasListener() && appCtx.hasPostNotif() && appCtx.hasAccessibility()) {
-                                            runCatching {
-                                                ContextCompat.startForegroundService(appCtx, Intent(appCtx, IslandOverlayService::class.java))
-                                                IslandNotificationListener.republish(appCtx, force = true)
-                                            }
-                                        }
                                         flightScope.launch { titleIn.animateTo(1f, tween(380, easing = FastOutSlowInEasing)) }
                                     },
                                     onFinished = {
-                                        prefs.edit().putBoolean("onboarding_done", true).apply()
-                                        onboarded = true
-                                        flightGo = true
+                                        finishRequested = true     // asıl açılış, çizgi animasyonu bitince yukarıdaki efektte yapılır
                                     },
                                 )
                             }
@@ -196,30 +209,26 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-                        if (islandIntro) {
+                        val st0 = islandStart
+                        if (islandIntro && st0 != null) {
                             val view = androidx.compose.ui.platform.LocalView.current
                             Canvas(Modifier.fillMaxSize()) {
-                                val d = density
-                                // Gerçek kamera çentiği (yoksa tipik bir ada konumu)
+                                // Hedef: GERÇEK adanın kapalı hali (hap şekli korunur, daireye dönmez): ayarlardaki boyut + konum
+                                val tgt = islandTarget
+                                val cw = (tgt?.get(0) ?: 120f).dp.toPx(); val ch = (tgt?.get(1) ?: 32f).dp.toPx()
+                                val offX = (tgt?.get(2) ?: 0f).dp.toPx(); val offY = (tgt?.get(3) ?: 5f).dp.toPx()
                                 val cut = runCatching {
                                     if (Build.VERSION.SDK_INT >= 28) view.rootWindowInsets?.displayCutout?.boundingRectTop else null
                                 }.getOrNull()
-                                val pad = 5.dp.toPx()
-                                val tw: Float; val th: Float; val tcx: Float; val tcy: Float
-                                if (cut != null && !cut.isEmpty) {
-                                    tw = cut.width() + 2f * pad; th = cut.height() + 2f * pad
-                                    tcx = cut.exactCenterX(); tcy = cut.exactCenterY()
-                                } else {
-                                    tw = 96.dp.toPx(); th = 32.dp.toPx(); tcx = size.width / 2f; tcy = 22.dp.toPx()
-                                }
-                                // Başlangıç: "Omni Island" yazısının üstü
-                                val sw = 150.dp.toPx(); val sh = 46.dp.toPx()
-                                val scx = size.width / 2f; val scy = size.height / 2f - 105.dp.toPx()
-                                val m = FastOutSlowInEasing.transform(ringMove.value)
-                                val cx = scx + (tcx - scx) * m; val cy = scy + (tcy - scy) * m
-                                val w = sw + (tw - sw) * m; val h = sh + (th - sh) * m
-                                val a = 1f - ringFade.value
-                                drawIntroRing(cx, cy, w, h, ringLine.value, a, 2.4.dp.toPx(), 26.dp.toPx())
+                                val hasCut = cut != null && !cut.isEmpty
+                                val tcx = (if (hasCut) cut!!.exactCenterX() else size.width / 2f) + offX
+                                val tcy = (if (hasCut) cut!!.exactCenterY() else 22.dp.toPx()) + offY
+                                val pad = 4.dp.toPx()
+                                val tw = cw + 2f * pad; val th = ch + 2f * pad
+                                val m = flight.value            // yazıyla aynı değer: ikisi birlikte yukarı gider
+                                val cx = st0.cx + (tcx - st0.cx) * m; val cy = st0.cy + (tcy - st0.cy) * m
+                                val w = st0.w + (tw - st0.w) * m; val h = st0.h + (th - st0.h) * m
+                                drawIntroRing(cx, cy, w, h, ringLine.value, 1f - ringFade.value, 2.4.dp.toPx(), 26.dp.toPx())
                             }
                         }
                     }

@@ -237,9 +237,12 @@ private fun OnbIsland.dims(): Pair<Dp, Dp> = when (this) {
 
 private data class OnbInfo(val title: String, val desc: String, val warn: String?, val skip: Boolean, val grayHelp: Boolean)
 
+/** Telefonun (ekranı kaplamış) adasının ekrandaki konumu ve boyu (px) – ring dahil. */
+internal data class IntroIsland(val cx: Float, val cy: Float, val w: Float, val h: Float)
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: () -> Unit = {}) {
+internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: (IntroIsland) -> Unit = {}) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -331,16 +334,6 @@ internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: () -> Unit = 
         } finally { flash = null }
         shownPerm = current
         if (current == null) { delay(400); phase = OnbPhase.Unlock }
-    }
-
-    LaunchedEffect(phase) {
-        if (phase == OnbPhase.Finish) {
-            delay(1100 + 200)                // telefon ekranı kaplar + uygulamanın simgesi çok kısa süre görünür
-            onTitleShow()                    // "Omni Island" yazısı ortada belirir (MainActivity çizer)
-            iconOut.animateTo(1f, tween(320, easing = LinearEasing))      // simge solar
-            delay(150)
-            onFinished()                     // uygulama açılır, yazı sol üstteki başlığın yerine uçar
-        }
     }
 
     // Cevapla -> klavye
@@ -534,6 +527,26 @@ internal fun OnboardingScreen(onFinished: () -> Unit, onTitleShow: () -> Unit = 
     fun introTyNow(): Float = if (introActive) introT0 * (1f - introRecede.value) else 0f
     // Animasyonun sonlarında yazılar / noktalar / liste yavaşça görünür
     val uiIntro: () -> Float = { if (introActive) ((introRecede.value - 0.5f) / 0.5f).coerceIn(0f, 1f) else 1f }
+
+    // Bitiş: telefon ekranı kaplar -> telefonun adası ve "Omni Island" yazısı belirir (ada çevresinde çizgi MainActivity'de çizilir)
+    LaunchedEffect(phase) {
+        if (phase == OnbPhase.Finish) {
+            delay(1100 + 200)                // telefon ekranı kaplar + uygulamanın simgesi çok kısa süre görünür
+            val d = dens.density
+            val pad = 6f * kV * launchScale
+            onTitleShow(
+                IntroIsland(
+                    cx = rootPx.width / 2f,
+                    cy = (layerTop + islandCy * launchScale + launchTy) * d,      // telefonun adası, ekranı kaplamış haliyle
+                    w = (islandWV * kV * launchScale + 2f * pad) * d,
+                    h = (islandHV * kV * launchScale + 2f * pad) * d,
+                )
+            )
+            iconOut.animateTo(1f, tween(320, easing = LinearEasing))      // simge solar
+            delay(150)
+            onFinished()                     // MainActivity: çizgi animasyonu bitince uygulamayı açar, ada + yazı birlikte yukarı gider
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(cs.background).onSizeChanged { rootPx = it }) {
         Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
