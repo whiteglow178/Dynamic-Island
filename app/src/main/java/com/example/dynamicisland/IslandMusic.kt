@@ -175,10 +175,10 @@ fun MusicPanel(
                 MarqueeText(
                     m.title.ifBlank { "Bilinmeyen parça" },
                     Modifier.align(Alignment.CenterStart).fillMaxWidth().rainbowFill(rb),
-                    color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                    color = Pal.c("music_title"), fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    m.artist, color = Color.White.copy(alpha = 0.62f), fontSize = 14.sp,
+                    m.artist, color = Pal.c("music_artist"), fontSize = 14.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().offset(y = 3.dp).rainbowFill(rb),
                 )
@@ -215,10 +215,10 @@ fun AlbumArt(art: ImageBitmap?, size: Dp) {
     val shape = RoundedCornerShape(12.dp)
     if (art != null) {
         Image(bitmap = art, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium,
-            modifier = Modifier.size(size).clip(shape).border(1.dp, Color.White.copy(alpha = 0.10f), shape))
+            modifier = Modifier.size(size).clip(shape).border(1.dp, Pal.c("art_border"), shape))
     } else {
-        Box(Modifier.size(size).clip(shape).background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-            Text("♪", color = Color.White.copy(alpha = 0.7f), fontSize = 22.sp)
+        Box(Modifier.size(size).clip(shape).background(Pal.c("art_placeholder_bg")), contentAlignment = Alignment.Center) {
+            Text("♪", color = Pal.c("art_placeholder_note"), fontSize = 22.sp)
         }
     }
 }
@@ -248,7 +248,7 @@ private fun MusicProgress(m: IslandContent.Media, cfg: IslandSettings, rb: Rainb
     val d = drag
     val frac = d ?: if (dur > 0) m.positionAt(now).toFloat() / dur else 0f
     val shownMs = if (d != null) (d * dur).toLong() else m.positionAt(now)
-    val gray = Color.White.copy(alpha = 0.55f)
+    val gray = Pal.c("music_time")
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(fmt(shownMs), color = gray, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.widthIn(min = 32.dp).rainbowFill(rb))
@@ -313,7 +313,7 @@ private fun DrawScope.drawInnerGlow(g: ProgressGlow, fillW: Float, cy: Float, th
             // Neon tüp: kenarlar parıltı rengi, ortada parlak beyaz çekirdek
             drawRect(g.color.copy(alpha = k), Offset(0f, top), Size(fillW, th))
             drawRoundRect(
-                Color.White.copy(alpha = 0.88f),
+                Pal.c("music_neon_core"),
                 Offset(0f, cy - th * 0.2f), Size(fillW, th * 0.4f), CornerRadius(th * 0.2f),
             )
         }
@@ -347,11 +347,11 @@ private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, glow: 
     ) {
         val cy = size.height / 2
         val th = thick.dp.toPx()
-        drawRoundRect(Color.White.copy(0.22f), Offset(0f, cy - th / 2), Size(size.width, th), CornerRadius(th / 2))
+        drawRoundRect(Pal.c("music_prog_track"), Offset(0f, cy - th / 2), Size(size.width, th), CornerRadius(th / 2))
         val fillW = (size.width * fraction).coerceAtLeast(0f)
         val glowOn = glow != null && fillW > 0f
         if (glowOn && !glow!!.contained) drawOuterGlow(glow, fillW, cy, th)
-        drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size(fillW, th), CornerRadius(th / 2))
+        drawRoundRect(Pal.c("music_prog_fill"), Offset(0f, cy - th / 2), Size(fillW, th), CornerRadius(th / 2))
         if (glowOn && glow!!.contained) drawInnerGlow(glow, fillW, cy, th)
     }
 }
@@ -442,9 +442,9 @@ private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartC
             val s = this.size.width
             fun tri(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
                 val p = Path().apply { moveTo(x1 * s, y1 * s); lineTo(x2 * s, y2 * s); lineTo(x3 * s, y3 * s); close() }
-                drawPath(p, Color.White)
+                drawPath(p, Pal.c("music_ctl"))
             }
-            fun bar(x: Float, w: Float) = drawRoundRect(Color.White, Offset(x * s, 0.12f * s), Size(w * s, 0.76f * s), CornerRadius(0.04f * s))
+            fun bar(x: Float, w: Float) = drawRoundRect(Pal.c("music_ctl"), Offset(x * s, 0.12f * s), Size(w * s, 0.76f * s), CornerRadius(0.04f * s))
             when (kind) {
                 Ctl.Play -> tri(0.22f, 0.10f, 0.22f, 0.90f, 0.90f, 0.50f)
                 Ctl.Pause -> { bar(0.20f, 0.22f); bar(0.58f, 0.22f) }
@@ -452,9 +452,9 @@ private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartC
                 Ctl.Prev -> { tri(0.92f, 0.15f, 0.92f, 0.85f, 0.32f, 0.50f); bar(0.10f, 0.14f) }
                 Ctl.Rew -> { tri(0.50f, 0.20f, 0.50f, 0.80f, 0.04f, 0.50f); tri(0.96f, 0.20f, 0.96f, 0.80f, 0.50f, 0.50f) }
                 Ctl.Fwd -> { tri(0.04f, 0.20f, 0.04f, 0.80f, 0.50f, 0.50f); tri(0.50f, 0.20f, 0.50f, 0.80f, 0.96f, 0.50f) }
-                Ctl.Heart -> heart(s, false, Color.White.copy(alpha = 0.75f))
+                Ctl.Heart -> heart(s, false, Pal.c("music_ctl_dim"))
                 Ctl.HeartOn -> heart(s, true, heartColor)
-                Ctl.Cast -> cast(s, Color.White.copy(alpha = 0.75f))
+                Ctl.Cast -> cast(s, Pal.c("music_ctl_dim"))
             }
         }
     }
@@ -471,10 +471,10 @@ private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
             .clickable(interactionSource = src, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(44.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(44.dp).background(Pal.c("music_play_bg"), CircleShape), contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(18.dp)) {
                 val w = size.width
-                val ink = Color(0xFF0B0B0F)
+                val ink = Pal.c("music_play_ink")
                 if (playing) {
                     drawRoundRect(ink, Offset(0.14f * w, 0.08f * w), Size(0.24f * w, 0.84f * w), CornerRadius(0.05f * w))
                     drawRoundRect(ink, Offset(0.62f * w, 0.08f * w), Size(0.24f * w, 0.84f * w), CornerRadius(0.05f * w))

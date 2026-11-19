@@ -60,7 +60,7 @@ fun VideoBackdrop(uri: String, dim: Float, modifier: Modifier = Modifier) {
             },
             onRelease = { it.shutdown() },
         )
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim.coerceIn(0f, 0.9f))))
+        Box(Modifier.fillMaxSize().background(Pal.c("island_scrim").copy(alpha = dim.coerceIn(0f, 0.9f))))
     }
 }
 

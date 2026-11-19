@@ -22,10 +22,20 @@ import androidx.compose.ui.unit.dp
 // ---------------------------------------------------------------- Gökkuşağı modu
 // Tüm ada parçaları aynı saatten beslenir; bu yüzden renkler birbiriyle senkron akar.
 
-private val RAINBOW_STOPS = listOf(
-    Color(0xFFFF3B30), Color(0xFFFF9500), Color(0xFFFFCC00), Color(0xFF34C759),
-    Color(0xFF00C7BE), Color(0xFF0A84FF), Color(0xFFBF5AF2), Color(0xFFFF3B30),   // başa dönüşte kesik olmasın
-)
+private var rainbowCache: List<Color>? = null
+private var rainbowVer = -1
+private val RAINBOW_STOPS: List<Color>
+    get() {
+        val v = Pal.version                       // palet değişince önbellek yenilenir (Renk düzenleyici)
+        val c = rainbowCache
+        if (c != null && rainbowVer == v) return c
+        val n = listOf(
+            Pal.c("rb_1"), Pal.c("rb_2"), Pal.c("rb_3"), Pal.c("rb_4"),
+            Pal.c("rb_5"), Pal.c("rb_6"), Pal.c("rb_7"), Pal.c("rb_1"),   // başa dönüşte kesik olmasın
+        )
+        rainbowCache = n; rainbowVer = v
+        return n
+    }
 
 /** Bir gökkuşağı görünümü: akış fazı (0..1, yalnızca çizim fazında okunur) + saydamlık. */
 @Stable

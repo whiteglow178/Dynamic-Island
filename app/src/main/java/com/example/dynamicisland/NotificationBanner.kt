@@ -286,12 +286,12 @@ private fun BannerContent(n: IslandContent.Notif) {
                 )
             } else {
                 Box(
-                    Modifier.size(48.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.85f)),
+                    Modifier.size(48.dp).clip(CircleShape).background(Pal.c("banner_icon_bg")),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         titleText.trim().take(1).uppercase().ifEmpty { "•" },
-                        color = Color(0xFF8E8E93), fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+                        color = Pal.c("banner_icon_letter"), fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
                     )
                 }
             }
@@ -299,7 +299,7 @@ private fun BannerContent(n: IslandContent.Notif) {
                 val s = RoundedCornerShape(7.dp)
                 Image(
                     bitmap = icon, contentDescription = null,
-                    modifier = Modifier.align(Alignment.BottomEnd).size(22.dp).clip(s).border(1.5.dp, Color.White, s),
+                    modifier = Modifier.align(Alignment.BottomEnd).size(22.dp).clip(s).border(1.5.dp, Pal.c("banner_icon_border"), s),
                 )
             }
         }
@@ -309,15 +309,15 @@ private fun BannerContent(n: IslandContent.Notif) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    titleText, color = Color(0xFF111114), fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                    titleText, color = Pal.c("banner_title"), fontWeight = FontWeight.Bold, fontSize = 16.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(nowLabel, color = Color(0xFF6B6B70), fontSize = 13.sp, maxLines = 1)
+                Text(nowLabel, color = Pal.c("banner_time"), fontSize = 13.sp, maxLines = 1)
             }
             if (bodyText.isNotBlank()) {
                 Text(
-                    bodyText, color = Color(0xFF1C1C1E).copy(alpha = 0.85f), fontSize = 15.sp, lineHeight = 19.sp,
+                    bodyText, color = Pal.c("banner_body").copy(alpha = 0.85f), fontSize = 15.sp, lineHeight = 19.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -330,17 +330,17 @@ private fun DrawScope.drawBannerGlass(r: Float) {
     val w = size.width
     val h = size.height
     if (w <= 1f || h <= 1f) return
-    drawRect(Color(0xFFF2F2F7).copy(alpha = 0.66f))
+    drawRect(Pal.c("banner_bg"))
     drawRect(
         Brush.verticalGradient(
-            0f to Color.White.copy(0.34f),
-            0.5f to Color.White.copy(0.06f),
-            1f to Color.White.copy(0.20f),
+            0f to Pal.c("banner_sheen").copy(0.34f),
+            0.5f to Pal.c("banner_sheen").copy(0.06f),
+            1f to Pal.c("banner_sheen").copy(0.20f),
         )
     )
     drawRect(
         Brush.radialGradient(
-            0f to Color.White.copy(0.30f),
+            0f to Pal.c("banner_sheen").copy(0.30f),
             1f to Color.Transparent,
             center = Offset(w * 0.20f, 0f),
             radius = max(w * 0.60f, h),
@@ -349,10 +349,10 @@ private fun DrawScope.drawBannerGlass(r: Float) {
     val sw = 1.2.dp.toPx()
     drawRoundRect(
         brush = Brush.linearGradient(
-            0f to Color.White.copy(0.95f),
-            0.30f to Color.White.copy(0.25f),
-            0.65f to Color.White.copy(0.15f),
-            1f to Color.White.copy(0.75f),
+            0f to Pal.c("banner_sheen").copy(0.95f),
+            0.30f to Pal.c("banner_sheen").copy(0.25f),
+            0.65f to Pal.c("banner_sheen").copy(0.15f),
+            1f to Pal.c("banner_sheen").copy(0.75f),
             start = Offset.Zero, end = Offset(w, h),
         ),
         topLeft = Offset(sw / 2f, sw / 2f),

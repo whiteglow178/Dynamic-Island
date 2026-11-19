@@ -98,12 +98,12 @@ private const val BELL_PATH =
 private val BellPath: Path by lazy { PathParser().parsePathString(BELL_PATH).toPath() }
 
 internal fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
-    StatusKind.Ringer -> if (c.silent) Color(0xFFFF3B30) else Color(0xFFFF9500)
-    StatusKind.Charging -> Color(0xFF34C759)
-    StatusKind.Timer -> Color(0xFF0A84FF)
-    StatusKind.Alarm -> Color(0xFFFF9500)
-    StatusKind.Camera -> Color(0xFF34C759)
-    StatusKind.Mic -> Color(0xFFFF9F0A)
+    StatusKind.Ringer -> if (c.silent) Pal.c("status_ringer_silent") else Pal.c("status_ringer_vibrate")
+    StatusKind.Charging -> Pal.c("status_charging")
+    StatusKind.Timer -> Pal.c("status_timer")
+    StatusKind.Alarm -> Pal.c("status_alarm")
+    StatusKind.Camera -> Pal.c("status_camera")
+    StatusKind.Mic -> Pal.c("status_mic")
 }
 
 @Composable
@@ -111,7 +111,7 @@ private fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val sc = size.width / 24f
         withTransform({ scale(sc, sc, Offset.Zero) }) {
-            val w = Color.White
+            val w = Pal.c("status_icon")
             val st = Stroke(width = 2f, cap = StrokeCap.Round)
             when (c.kind) {
                 StatusKind.Ringer -> {
@@ -155,12 +155,12 @@ private fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
 
 @Composable
 internal fun ChargeContent(c: IslandContent.Status, rb: RainbowStyle?) {
-    val green = Color(0xFF34C759)
+    val green = Pal.c("status_charging")
     Row(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.5.sp,
+        Text(c.title, color = Pal.c("status_text"), fontWeight = FontWeight.Bold, fontSize = 13.5.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
         Spacer(Modifier.weight(1f))      // ortada kamera deliği için boşluk kalır
         Text(c.value, color = green, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, maxLines = 1)
@@ -169,11 +169,11 @@ internal fun ChargeContent(c: IslandContent.Status, rb: RainbowStyle?) {
             val tipW = 1.8.dp.toPx()
             val bodyW = size.width - tipW - 1.dp.toPx()
             val r = CornerRadius(4.dp.toPx())
-            drawRoundRect(Color.White.copy(alpha = 0.28f), size = Size(bodyW, size.height), cornerRadius = r)
+            drawRoundRect(Pal.c("status_batt_body"), size = Size(bodyW, size.height), cornerRadius = r)
             val fillW = (bodyW * c.progress.coerceIn(0f, 1f)).coerceAtLeast(size.height * 0.5f)
             drawRoundRect(green, size = Size(fillW, size.height), cornerRadius = r)
             drawRoundRect(
-                Color.White.copy(alpha = 0.40f),
+                Pal.c("status_batt_tip"),
                 topLeft = Offset(bodyW + 1.dp.toPx(), size.height * 0.3f),
                 size = Size(tipW, size.height * 0.4f),
                 cornerRadius = CornerRadius(1.dp.toPx()),
@@ -207,20 +207,20 @@ internal fun StatusContent(c: IslandContent.Status, rb: RainbowStyle?) {
             StatusIcon(c, Modifier.size(26.dp))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
+            Text(c.title, color = Pal.c("status_text"), fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             if (c.subtitle.isNotBlank()) {
-                Text(c.subtitle, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp,
+                Text(c.subtitle, color = Pal.c("status_text_dim"), fontSize = 13.5.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             }
             if (frac >= 0f) {
-                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.16f))) {
+                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Pal.c("status_track"))) {
                     Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(color, RoundedCornerShape(2.dp)))
                 }
             }
         }
         if (value.isNotBlank()) {
-            Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp,
+            Text(value, color = Pal.c("status_text"), fontWeight = FontWeight.Bold, fontSize = 22.sp,
                 maxLines = 1, modifier = Modifier.rainbowFill(rb))
         }
     }
@@ -232,9 +232,9 @@ internal fun StatusContent(c: IslandContent.Status, rb: RainbowStyle?) {
 @Composable
 internal fun RingerContent(c: IslandContent.Status, rb: RainbowStyle?) {
     val color = when {
-        c.silent -> Color(0xFFFF3B30)      // sessiz: kırmızı
-        c.vibrate -> Color(0xFFFF9500)     // titreşim: turuncu
-        else -> Color.White                // zil: beyaz
+        c.silent -> Pal.c("status_ringer_silent")      // sessiz: kırmızı
+        c.vibrate -> Pal.c("status_ringer_vibrate")     // titreşim: turuncu
+        else -> Pal.c("status_ringer_normal")                // zil: beyaz
     }
     Row(
         Modifier.fillMaxSize().padding(horizontal = 18.dp),

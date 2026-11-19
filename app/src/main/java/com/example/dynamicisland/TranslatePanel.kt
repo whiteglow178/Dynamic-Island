@@ -64,9 +64,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
-private val PanelText = Color.White
-private val PanelDim = Color.White.copy(alpha = 0.55f)
-private val PanelField = Color.White.copy(alpha = 0.10f)
+private val PanelText: Color get() = Pal.c("tr_text")
+private val PanelDim: Color get() = Pal.c("tr_dim")
+private val PanelField: Color get() = Pal.c("tr_field")
 
 // ---------------------------------------------------------------- Adanın içindeki çeviri paneli
 /**
@@ -132,7 +132,7 @@ fun TranslatePanel(topInset: Dp) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                         if (text.text.isEmpty()) {
-                            Text("Çevirmek istediğin metni yaz", color = Color.White.copy(alpha = 0.4f), fontSize = 15.sp, maxLines = 1)
+                            Text("Çevirmek istediğin metni yaz", color = Pal.c("tr_hint"), fontSize = 15.sp, maxLines = 1)
                         }
                         BasicTextField(
                             value = text,
@@ -160,7 +160,7 @@ fun TranslatePanel(topInset: Dp) {
                 val shown = if (hasOut) ui.output else ui.message()
                 val h = (ui.resultLines() * TR_LINE_DP + 16).dp
                 Row(
-                    Modifier.fillMaxWidth().height(h).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.06f))
+                    Modifier.fillMaxWidth().height(h).clip(RoundedCornerShape(14.dp)).background(Pal.c("tr_box"))
                         .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
@@ -168,7 +168,7 @@ fun TranslatePanel(topInset: Dp) {
                         shown,
                         Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
                         color = when {
-                            ui.status == TranslateStatus.Error && !hasOut -> Color(0xFFFF8A80)
+                            ui.status == TranslateStatus.Error && !hasOut -> Pal.c("tr_error")
                             hasOut -> PanelText
                             else -> PanelDim
                         },
@@ -186,7 +186,7 @@ fun TranslatePanel(topInset: Dp) {
 private fun LangChip(name: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Row(
         modifier.height(36.dp).clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = if (active) 0.24f else 0.12f))
+            .background(Pal.c("tr_chip").copy(alpha = if (active) 0.24f else 0.12f))
             .clickable(onClick = onClick).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
@@ -205,7 +205,7 @@ private fun CopyChip(value: String) {
     val ctx = LocalContext.current
     var copied by remember(value) { mutableStateOf(false) }
     Box(
-        Modifier.padding(start = 6.dp).height(26.dp).clip(RoundedCornerShape(9.dp)).background(Color.White.copy(alpha = 0.14f))
+        Modifier.padding(start = 6.dp).height(26.dp).clip(RoundedCornerShape(9.dp)).background(Pal.c("tr_chip_soft"))
             .clickable {
                 runCatching {
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -223,7 +223,7 @@ private fun LangList(current: String, onPick: (String) -> Unit) {
     val langs = remember { TranslateSession.languages }
     val state = rememberLazyListState(initialFirstVisibleItemIndex = langs.indexOfFirst { it.code == current }.coerceAtLeast(0))
     LazyColumn(
-        Modifier.fillMaxWidth().height(TR_PICK_DP.dp).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.06f)),
+        Modifier.fillMaxWidth().height(TR_PICK_DP.dp).clip(RoundedCornerShape(14.dp)).background(Pal.c("tr_box")),
         state = state,
     ) {
         items(langs, key = { it.code }) { l ->
@@ -236,7 +236,7 @@ private fun LangList(current: String, onPick: (String) -> Unit) {
                     fontWeight = if (l.code == current) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                if (l.code == current) Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF0A84FF)))
+                if (l.code == current) Box(Modifier.size(8.dp).clip(CircleShape).background(Pal.c("tr_selected")))
             }
         }
     }

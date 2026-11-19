@@ -14,15 +14,16 @@ import androidx.compose.ui.unit.sp
 
 // iOS tarzı gruplanmış tasarım: saf siyah (OLED) zemin, bir kademe açık gri gruplar, ince ayırıcılar.
 // Vurgu rengi beyazdır; renk yalnızca durum bildirmek için kullanılır.
-private val Scheme = darkColorScheme(
-    primary = Color(0xFFFFFFFF), onPrimary = Color(0xFF000000),
-    primaryContainer = Color(0xFF3A3A3C), onPrimaryContainer = Color(0xFFFFFFFF),
-    secondary = Color(0xFFAEAEB2), onSecondary = Color(0xFF000000),
-    secondaryContainer = Color(0xFF2C2C2E), onSecondaryContainer = Color(0xFFFFFFFF),
-    background = Color(0xFF000000), onBackground = Color(0xFFFFFFFF),
-    surface = Color(0xFF1C1C1E), onSurface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFF2C2C2E), onSurfaceVariant = Color(0xFF8E8E93),
-    outline = Color(0xFF48484A), outlineVariant = Color(0xFF38383A),
+// Renkler Pal kaydından gelir (varsayılanlar ColorEditor.kt'de); Renk düzenleyici açıksa kullanıcının seçtikleri geçerli olur.
+private fun schemeFromPal() = darkColorScheme(
+    primary = Pal.c("ui_primary"), onPrimary = Pal.c("ui_on_primary"),
+    primaryContainer = Pal.c("ui_primary_container"), onPrimaryContainer = Pal.c("ui_on_primary_container"),
+    secondary = Pal.c("ui_secondary"), onSecondary = Pal.c("ui_on_secondary"),
+    secondaryContainer = Pal.c("ui_secondary_container"), onSecondaryContainer = Pal.c("ui_on_secondary_container"),
+    background = Pal.c("ui_background"), onBackground = Pal.c("ui_on_background"),
+    surface = Pal.c("ui_surface"), onSurface = Pal.c("ui_on_surface"),
+    surfaceVariant = Pal.c("ui_surface_variant"), onSurfaceVariant = Pal.c("ui_on_surface_variant"),
+    outline = Pal.c("ui_outline"), outlineVariant = Pal.c("ui_outline_variant"),
 )
 
 private val AppTypography = Typography(
@@ -43,5 +44,5 @@ private val AppShapes = Shapes(
 
 @Composable
 fun IslandTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Scheme, typography = AppTypography, shapes = AppShapes, content = content)
+    MaterialTheme(colorScheme = schemeFromPal(), typography = AppTypography, shapes = AppShapes, content = content)
 }

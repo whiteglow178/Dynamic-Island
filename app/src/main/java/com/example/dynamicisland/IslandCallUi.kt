@@ -99,12 +99,12 @@ private const val PHONE_PATH =
 
 private val PhonePath: Path by lazy { PathParser().parsePathString(PHONE_PATH).toPath() }
 
-internal val CallGreen = Color(0xFF34C759)
-private val CallRed = Color(0xFFFF3B30)
+internal val CallGreen: Color get() = Pal.c("call_answer")
+private val CallRed: Color get() = Pal.c("call_decline")
 
 /** Telefon ahizesi simgesi. [rotation] 135 verilirse "kapat" simgesi olur. */
 @Composable
-internal fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier, tint: Color = Color.White) {
+internal fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier, tint: Color = Pal.c("call_icon")) {
     Canvas(modifier) {
         val sc = size.width / 24f
         withTransform({
@@ -122,9 +122,9 @@ internal fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier, tint: Col
 private const val PHONE_THICKEN = 1.9f
 
 // Cevapla / Reddet düğmeleri: iOS tarzı düz (gradyansız) kırmızı ve yeşil daireler
-private val AnswerColor = Color(0xFF34C759)
-private val DeclineColor = Color(0xFFFF3B30)
-private val SpeakerOff = Color.White.copy(alpha = 0.16f)
+private val AnswerColor: Color get() = Pal.c("call_answer")
+private val DeclineColor: Color get() = Pal.c("call_decline")
+private val SpeakerOff: Color get() = Pal.c("call_speaker_off")
 
 @Composable
 private fun CallButton(color: Color, size: Dp, onClick: () -> Unit, content: @Composable (Dp) -> Unit) {
@@ -172,8 +172,8 @@ internal fun CallWave(modifier: Modifier = Modifier) {
         animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing)),
         label = "wavePhase",
     )
-    val green = Color(0xFF4CE06A)
-    val orange = Color(0xFFFF9248)
+    val green = Pal.c("call_wave_a")
+    val orange = Pal.c("call_wave_b")
     Canvas(modifier) {
         val n = 9
         val gap: Float = size.width / n
@@ -184,8 +184,8 @@ internal fun CallWave(modifier: Modifier = Modifier) {
             val v: Float = 0.30f + 0.70f * kotlin.math.abs(kotlin.math.sin(phase + i * 0.85f))
             val h: Float = (size.height * env * v).coerceAtLeast(bw)
             val color: Color =
-                if (t < 0.5f) androidx.compose.ui.graphics.lerp(green, Color.White, t * 2f)
-                else androidx.compose.ui.graphics.lerp(Color.White, orange, (t - 0.5f) * 2f)
+                if (t < 0.5f) androidx.compose.ui.graphics.lerp(green, Pal.c("call_wave_mid"), t * 2f)
+                else androidx.compose.ui.graphics.lerp(Pal.c("call_wave_mid"), orange, (t - 0.5f) * 2f)
             val x: Float = gap * i + gap / 2f
             val y1: Float = (size.height - h) / 2f
             val y2: Float = (size.height + h) / 2f
@@ -220,15 +220,15 @@ internal fun CallContent(
         } else {
             val bg = if (incoming) {
                 Modifier.background(
-                    Brush.linearGradient(listOf(Color(0xFFFF6B9D), Color(0xFFFF9A5A))), CircleShape,
+                    Brush.linearGradient(listOf(Pal.c("call_avatar_a"), Pal.c("call_avatar_b"))), CircleShape,
                 )
             } else {
-                Modifier.background(Color(0xFF3A3A3C), CircleShape)
+                Modifier.background(Pal.c("call_avatar_bg"), CircleShape)
             }
             Box(Modifier.size(avatarSize).then(bg), contentAlignment = Alignment.Center) {
                 Text(
                     text = c.name.trim().take(1).uppercase().ifEmpty { "?" },
-                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp,
+                    color = Pal.c("call_text"), fontWeight = FontWeight.Bold, fontSize = 22.sp,
                     modifier = Modifier.rainbowFill(rb, 0.dp),
                 )
             }
@@ -238,11 +238,11 @@ internal fun CallContent(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             if (incoming) {
                 Text(
-                    "Gelen arama", color = Color.White.copy(alpha = 0.60f), fontSize = 13.sp,
+                    "Gelen arama", color = Pal.c("call_text_dim"), fontSize = 13.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                    c.name, color = Pal.c("call_text"), fontWeight = FontWeight.Bold, fontSize = 20.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
                 )
             } else {
@@ -251,7 +251,7 @@ internal fun CallContent(
                     fontSize = 15.sp, maxLines = 1,
                 )
                 Text(
-                    c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 19.sp,
+                    c.name, color = Pal.c("call_text"), fontWeight = FontWeight.Bold, fontSize = 19.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
                 )
             }
@@ -260,8 +260,8 @@ internal fun CallContent(
         // Butonlar: gelen aramada kırmızı + yeşil; aktif aramada hoparlör + kırmızı
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!incoming) {
-                CallButton(if (c.speaker) Color.White else SpeakerOff, 50.dp, onSpeaker) { sz ->
-                    SpeakerIcon(c.speaker, if (c.speaker) Color.Black else Color.White, Modifier.size(sz + 4.dp))
+                CallButton(if (c.speaker) Pal.c("call_btn_active_bg") else SpeakerOff, 50.dp, onSpeaker) { sz ->
+                    SpeakerIcon(c.speaker, if (c.speaker) Pal.c("call_btn_active_icon") else Pal.c("call_icon"), Modifier.size(sz + 4.dp))
                 }
             }
             CallButton(DeclineColor, if (incoming) 52.dp else 50.dp, onDecline) { sz -> PhoneIcon(135f, Modifier.size(sz)) }

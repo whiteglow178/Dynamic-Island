@@ -76,7 +76,7 @@ fun LockDotView(s: IslandSettings, modifier: Modifier = Modifier.fillMaxSize()) 
             )
         }
         drawCircle(col.copy(alpha = a), r, c)
-        drawCircle(Color.White.copy(alpha = 0.28f * a), r * 0.38f, androidx.compose.ui.geometry.Offset(c.x - r * 0.28f, c.y - r * 0.28f))
+        drawCircle(Pal.c("lock_dot_shine").copy(alpha = 0.28f * a), r * 0.38f, androidx.compose.ui.geometry.Offset(c.x - r * 0.28f, c.y - r * 0.28f))
     }
 }
 

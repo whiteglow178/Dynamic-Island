@@ -80,7 +80,7 @@ fun ScreenEdgeGlow(active: StateFlow<Boolean>, cornerPx: Float) {
     val visible by remember { derivedStateOf { on || fade.value > 0.001f } }
 
     // Parlama resimleri asistan açılmadan ÖNCE (pencere eklenir eklenmez) arka planda hazırlanır
-    LaunchedEffect(size, cornerPx) {
+    LaunchedEffect(size, cornerPx, Pal.version) {
         if (size.width > 1 && size.height > 1) {
             glows = withContext(Dispatchers.Default) { buildGlowBitmaps(lw, lh, cornerPx * RENDER_SCALE, density * RENDER_SCALE) }
             warm = true; delay(350); warm = false     // görünmez ısınma çizimi (6 resim + shader + katman)
@@ -134,10 +134,20 @@ private const val GLOW_DEPTH_DP = 64f       // parlamanın ekran kenarından iç
 private const val PALETTE_SHIFTS = 6        // renk akışı için hazırlanan kaydırılmış palet sayısı
 
 /** Parlama paleti (çevre boyunca döngüsel). Saf beyaz yok: ekran kenarı beyaza yıkanmasın. */
-private val GLOW_PALETTE = listOf(
-    Color(0xFF0A84FF), Color(0xFF7B4DFF), Color(0xFFFF2D87), Color(0xFFFF3B30),
-    Color(0xFFFF9500), Color(0xFFFFD60A), Color(0xFF64D2FF), Color(0xFF0A84FF),
-)
+private var glowPaletteCache: List<Color>? = null
+private var glowPaletteVer = -1
+private val GLOW_PALETTE: List<Color>
+    get() {
+        val v = Pal.version                       // palet değişince önbellek yenilenir (Renk düzenleyici)
+        val c = glowPaletteCache
+        if (c != null && glowPaletteVer == v) return c
+        val n = listOf(
+            Pal.c("asst_1"), Pal.c("asst_2"), Pal.c("asst_3"), Pal.c("asst_4"),
+            Pal.c("asst_5"), Pal.c("asst_6"), Pal.c("asst_8"), Pal.c("asst_1"),
+        )
+        glowPaletteCache = n; glowPaletteVer = v
+        return n
+    }
 
 private fun glowPaletteColor(u: Float): Color {
     val n = GLOW_PALETTE.size - 1

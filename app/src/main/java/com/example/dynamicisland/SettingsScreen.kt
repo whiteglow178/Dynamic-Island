@@ -180,6 +180,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
     }
 
     SideEffect { UiHaptics.enabled = draft.uiHaptics }
+    // Renk düzenleyici: taslaktaki renkler anında uygulanır (kayıt 250 ms sonra; ada da kayıttan aynı renkleri alır)
+    SideEffect { Pal.sync(draft.colorEditorEnabled, draft.colorOverrides) }
 
     // Yedekleme: JSON dosyasına aktar / dosyadan geri yükle
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -634,6 +636,20 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
 
+        // ---- Renk düzenleyici: uygulamadaki her rengi tek tek ayarlama
+        pendingGroup = "Renk düzenleyici"
+        sec("Renk düzenleyici", "Uygulamadaki her şeyin rengini tek tek ayarla") {
+            ColorEditorMain(draft) { draft = it }
+        }
+        if (draft.colorEditorEnabled) {
+            sec("Renk: Ada ve vurgu renkleri", "Ayarlarda zaten bulunan renkler: ada gövdesi, vurgu, ekolayzır, kalp, çerçeve, kilit noktası, sözler") {
+                ColorFieldEditor(draft) { draft = it }
+            }
+            ColorGroups.all.forEach { g ->
+                sec("Renk: " + g.title, g.subtitle) { ColorGroupEditor(g, draft) { draft = it } }
+            }
+        }
+
         // ---- Ses
         pendingGroup = "Ses"
         sec("Ses efektleri", "Adada olaylara göre kendi seçtiğin sesler çalsın") {
@@ -730,7 +746,7 @@ private fun previewFocusFor(title: String?): PreviewFocus? = when (title) {
     "Gökkuşağı modu", "Albüm arka planı", "Özel arka plan", "Özel albüm kapağı", "Liquid Glass",
     "İlerleme çubuğu parıltısı", "Beğeni düğmesi", "Çerçeve" -> PreviewFocus(mode = 1, expanded = true)
     "Renk", "Ekolayzır rengi", "Parıltı (Glow)" -> PreviewFocus(mode = 1, expanded = false)
-    else -> null
+    else -> if (title != null && title.startsWith("Renk: ")) PreviewFocus(mode = if (title.contains("banner")) 0 else 1, expanded = true) else null
 }
 
 // ---------------------------------------------------------------- Yapışan (snap) ayar sayfaları
@@ -972,8 +988,8 @@ private fun PreviewCard(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
             Modifier.fillMaxWidth().height(boxH).clip(cardShape)
-                .background(Brush.linearGradient(listOf(Color(0xFF1F4E6B), Color(0xFF3A3A78), Color(0xFF5A3470))))
-                .border(1.dp, Color.White.copy(alpha = 0.10f), cardShape)
+                .background(Brush.linearGradient(listOf(Pal.c("preview_card_a"), Pal.c("preview_card_b"), Pal.c("preview_card_c"))))
+                .border(1.dp, Pal.c("art_border"), cardShape)
                 .then(
                     // Asistan / Favoriler / Kenar tuşları: telefona dokununca tam <-> üst kısım geçişi
                     if (kind != PreviewKind.Island) {
@@ -1319,16 +1335,16 @@ private fun RecPreviewPermissionRow() {
     Text(
         "Bazı telefonlar ekran kaydı bitince bildirime önizleme resmi koymaz. Bu izin verilirse önizleme, kaydedilen videonun ilk karesinden alınır. " +
             "İzin vermezsen her şey çalışır, sadece önizleme yerine gri kutu görünür. Yalnızca en son ekran kaydına bakılır, hiçbir şey saklanmaz veya paylaşılmaz.",
-        color = Color(0xFFFFC107), fontSize = 12.sp, lineHeight = 17.sp,
+        color = Pal.c("ui_warn_text"), fontSize = 12.sp, lineHeight = 17.sp,
     )
     if (granted) {
-        Text("İzin verildi", color = Color(0xFF34C759), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text("İzin verildi", color = Pal.c("ui_success_text"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
     } else {
         Button(onClick = { launcher.launch(perm) }, modifier = Modifier.fillMaxWidth()) { Text("Galeri iznini ver") }
         if (denied) {
             // Android aynı izni birkaç reddedişten sonra tekrar sormaz: izin uygulama ayarlarından verilmeli
             Text("İzin verilmedi. Pencere çıkmıyorsa uygulama ayarlarından Fotoğraflar ve videolar iznini aç.",
-                color = Color(0xFFFFC107), fontSize = 12.sp, lineHeight = 17.sp)
+                color = Pal.c("ui_warn_text"), fontSize = 12.sp, lineHeight = 17.sp)
             OutlinedButton(
                 onClick = {
                     ctx.startActivity(
@@ -1400,7 +1416,7 @@ private fun LockDotPreview(s: IslandSettings) {
     val total = s.lockDotSizeDp + 2f * glow
     val cw = 120f
     Box(
-        Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF15151A)),
+        Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(14.dp)).background(Pal.c("preview_lockbg")),
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.width(cw.dp).height(32.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black))

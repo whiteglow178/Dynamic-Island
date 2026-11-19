@@ -77,11 +77,11 @@ private fun FavCell(app: FavApp, modifier: Modifier, onLaunch: (String) -> Unit)
         if (icon != null) {
             Image(icon, null, Modifier.size(48.dp).clip(shape), contentScale = ContentScale.Fit)
         } else {
-            Box(Modifier.size(48.dp).clip(shape).background(Color.White.copy(alpha = 0.18f)))
+            Box(Modifier.size(48.dp).clip(shape).background(Pal.c("fav_icon_bg")))
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            app.label, color = Color.White.copy(alpha = 0.85f), fontSize = 10.5.sp, maxLines = 1,
+            app.label, color = Pal.c("fav_label"), fontSize = 10.5.sp, maxLines = 1,
             overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 2.dp),
         )

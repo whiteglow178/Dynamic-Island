@@ -381,12 +381,12 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
                     modifier = Modifier.size(side).clip(RoundedCornerShape(side * 0.28f)),
                 )
             } else {
-                Text("♪", color = Color.White.copy(alpha = 0.8f), fontSize = 16.sp)
+                Text("♪", color = Pal.c("side_note"), fontSize = 16.sp)
             }
         }
         is IslandContent.ScreenRec -> when (c.phase) {
             RecPhase.Processing -> RecSpinner(14.dp)
-            RecPhase.Countdown -> Text(c.count.toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            RecPhase.Countdown -> Text(c.count.toString(), color = Pal.c("side_text"), fontWeight = FontWeight.Bold, fontSize = 13.sp)
             else -> RecDot(true, 10.dp)
         }
         is IslandContent.Call -> PhoneIcon(0f, Modifier.size(14.dp), CallGreen)
@@ -400,7 +400,7 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
                     modifier = Modifier.size(sz).clip(RoundedCornerShape(sz * 0.28f)),
                 )
             } else {
-                Text(c.title.trim().take(1).uppercase().ifEmpty { "•" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(c.title.trim().take(1).uppercase().ifEmpty { "•" }, color = Pal.c("side_text"), fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
         is IslandContent.Shazam -> {
@@ -417,8 +417,8 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
         }
         is IslandContent.Status -> when (c.kind) {
             // Gizlilik göstergesi: iOS gibi yeşil (kamera) / turuncu (mikrofon) nokta
-            StatusKind.Camera -> Box(Modifier.size(ch * 0.34f).background(Color(0xFF34C759), RoundedCornerShape(50)))
-            StatusKind.Mic -> Box(Modifier.size(ch * 0.34f).background(Color(0xFFFF9F0A), RoundedCornerShape(50)))
+            StatusKind.Camera -> Box(Modifier.size(ch * 0.34f).background(Pal.c("status_camera"), RoundedCornerShape(50)))
+            StatusKind.Mic -> Box(Modifier.size(ch * 0.34f).background(Pal.c("status_mic"), RoundedCornerShape(50)))
             else -> Text(
                 when (c.kind) {
                     StatusKind.Ringer -> if (c.silent) "🔕" else "🔔"

@@ -204,8 +204,8 @@ private fun DrawScope.drawCrack(cr: Crack, prog: Float, d: Float, dark: Color, l
     val kk = 1f - (1f - prog.coerceIn(0f, 1f)).pow(3f)            // hızlı yayılır, sona doğru yavaşlar
     // darbe noktası: ezilmiş beyaz bölge
     val ia = (kk * 5f).coerceIn(0f, 1f)
-    drawCircle(Color.White.copy(alpha = 0.10f * ia), 16f * d, cr.center)
-    drawCircle(Color.White.copy(alpha = 0.45f * ia), 3.2f * d, cr.center)
+    drawCircle(Pal.c("fx_white").copy(alpha = 0.10f * ia), 16f * d, cr.center)
+    drawCircle(Pal.c("fx_white").copy(alpha = 0.45f * ia), 3.2f * d, cr.center)
     for (sg in cr.segs) {
         val loc = ((kk - sg.delay) / (1f - sg.delay)).coerceIn(0f, 1f)
         if (loc <= 0f) continue
@@ -282,8 +282,8 @@ fun Modifier.fxTarget(id: String): Modifier {
                 fill.lineTo(w + 2f * d, -2f * d)
                 fill.close()
                 // erime cephesi: kenar yeşilimsi parlar, sonra üstü silinir
-                drawPath(front, Color(0xFF8BE000).copy(alpha = 0.55f), style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.SrcAtop)
-                drawPath(front, Color(0xFFD7FF6A).copy(alpha = 0.9f), style = Stroke(2.4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.SrcAtop)
+                drawPath(front, Pal.c("fx_acid_dark").copy(alpha = 0.55f), style = Stroke(8f * d, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.SrcAtop)
+                drawPath(front, Pal.c("fx_acid_light").copy(alpha = 0.9f), style = Stroke(2.4f * d, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.SrcAtop)
                 drawPath(fill, Color.Black, blendMode = BlendMode.Clear)
             }
         }
@@ -410,7 +410,7 @@ fun FxFallRoot() {
                         close()
                     }
                     drawPath(path, p.color)
-                    drawPath(path, Color.White.copy(alpha = 0.22f), style = Stroke(width = 1.2f))
+                    drawPath(path, Pal.c("fx_white").copy(alpha = 0.22f), style = Stroke(width = 1.2f))
                 }
             }
         }
@@ -709,7 +709,7 @@ private fun DrawScope.drawSnowMound(t: FxTarget, d: Float) {
     path.lineTo(rt, y0 + 2f * d)
     path.lineTo(l, y0 + 2f * d)
     path.close()
-    drawPath(path, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.97f), Color(0xFFD3E3F3).copy(alpha = 0.95f)), startY = y0 - h, endY = y0 + 2f * d))
+    drawPath(path, Brush.verticalGradient(listOf(Pal.c("fx_white").copy(alpha = 0.97f), Pal.c("fx_ice_d").copy(alpha = 0.95f)), startY = y0 - h, endY = y0 + 2f * d))
 }
 
 /** Don: kenarlardan içeri doğru büyüyen kırağı kristalleri, tamamen donunca parlak buz tabakası, sarkıtlar ve çatlaklar. */
@@ -721,10 +721,10 @@ private fun DrawScope.drawFrost(t: FxTarget, d: Float, thawTaps: Int) {
     val ref = min(r.width, r.height).coerceAtLeast(14f * d)
     clipPath(clip) {
         // buzlu cam gibi hafif mavi tonlama
-        drawRect(Color(0xFFCFEFFF).copy(alpha = 0.03f + 0.30f * a * a), r.topLeft, r.size)
+        drawRect(Pal.c("fx_ice_b").copy(alpha = 0.03f + 0.30f * a * a), r.topLeft, r.size)
         // kenarlarda yoğun kırağı bandı (içe doğru yumuşak)
-        drawRoundRect(Color.White.copy(alpha = 0.10f + 0.12f * a), r.topLeft, r.size, CornerRadius(corner), style = Stroke((10f + 44f * a) * d))
-        drawRoundRect(Color.White.copy(alpha = 0.18f + 0.30f * a), r.topLeft, r.size, CornerRadius(corner), style = Stroke((3f + 16f * a) * d))
+        drawRoundRect(Pal.c("fx_white").copy(alpha = 0.10f + 0.12f * a), r.topLeft, r.size, CornerRadius(corner), style = Stroke((10f + 44f * a) * d))
+        drawRoundRect(Pal.c("fx_white").copy(alpha = 0.18f + 0.30f * a), r.topLeft, r.size, CornerRadius(corner), style = Stroke((3f + 16f * a) * d))
         // dallı kırağı kristalleri (kenardan içeri büyür)
         val rr = java.util.Random(t.id.hashCode().toLong())
         for (k in 0 until 34) {
@@ -745,7 +745,7 @@ private fun DrawScope.drawFrost(t: FxTarget, d: Float, thawTaps: Int) {
             }
             val len = lenF * ref * 1.6f * grow
             val end = Offset(base.x + cos(ang) * len, base.y + sin(ang) * len)
-            val col = Color.White.copy(alpha = 0.45f + 0.4f * grow)
+            val col = Pal.c("fx_white").copy(alpha = 0.45f + 0.4f * grow)
             drawLine(col, base, end, 1.1f * d, StrokeCap.Round)
             for (bf in floatArrayOf(0.4f, 0.7f)) {
                 val bp = Offset(base.x + (end.x - base.x) * bf, base.y + (end.y - base.y) * bf)
@@ -760,7 +760,7 @@ private fun DrawScope.drawFrost(t: FxTarget, d: Float, thawTaps: Int) {
             // parlak buz yüzeyi: çapraz yansıma
             drawRect(
                 Brush.linearGradient(
-                    listOf(Color.Transparent, Color.White.copy(alpha = 0.30f), Color.Transparent),
+                    listOf(Color.Transparent, Pal.c("fx_white").copy(alpha = 0.30f), Color.Transparent),
                     start = Offset(r.left, r.top), end = Offset(r.left + r.width * 0.6f, r.top + r.height * 1.3f),
                 ),
                 r.topLeft, r.size,
@@ -771,10 +771,10 @@ private fun DrawScope.drawFrost(t: FxTarget, d: Float, thawTaps: Int) {
                 val cr = t.iceCrack?.takeIf { t.iceCrackW == r.width }
                     ?: buildCrack(java.util.Random(t.id.hashCode().toLong()), r.center, max(r.width, r.height) * 0.7f, d, 0L)
                         .also { t.iceCrack = it; t.iceCrackW = r.width }
-                drawCrack(cr, (t.taps.toFloat() / need).coerceIn(0f, 1f), d, Color(0xFF5F97B8).copy(alpha = 0.65f), Color.White.copy(alpha = 0.95f))
+                drawCrack(cr, (t.taps.toFloat() / need).coerceIn(0f, 1f), d, Pal.c("fx_crack").copy(alpha = 0.65f), Pal.c("fx_white").copy(alpha = 0.95f))
             }
         }
-        drawRoundRect(Color.White.copy(alpha = a * 0.85f), r.topLeft, r.size, CornerRadius(corner), style = Stroke(1.6f * d))
+        drawRoundRect(Pal.c("fx_white").copy(alpha = a * 0.85f), r.topLeft, r.size, CornerRadius(corner), style = Stroke(1.6f * d))
     }
     if (a > 0.55f) {
         // alt kenardan sarkan buz sarkıtları
@@ -787,8 +787,8 @@ private fun DrawScope.drawFrost(t: FxTarget, d: Float, thawTaps: Int) {
             val tri = Path().apply {
                 moveTo(x - 1.9f * d, r.bottom - 1f * d); lineTo(x + 1.9f * d, r.bottom - 1f * d); lineTo(x, r.bottom + len); close()
             }
-            drawPath(tri, Color(0xFFD6F1FF).copy(alpha = 0.88f))
-            drawLine(Color.White.copy(alpha = 0.8f), Offset(x - 0.5f * d, r.bottom), Offset(x - 0.2f * d, r.bottom + len * 0.7f), 0.7f * d, StrokeCap.Round)
+            drawPath(tri, Pal.c("fx_ice_c").copy(alpha = 0.88f))
+            drawLine(Pal.c("fx_white").copy(alpha = 0.8f), Offset(x - 0.5f * d, r.bottom), Offset(x - 0.2f * d, r.bottom + len * 0.7f), 0.7f * d, StrokeCap.Round)
         }
     }
 }
@@ -874,7 +874,7 @@ fun FxLayer(
                 val g = Offset((tri[0].x + tri[1].x + tri[2].x) / 3f, (tri[0].y + tri[1].y + tri[2].y) / 3f)
                 val rel = tri.map { Offset(it.x - g.x, it.y - g.y) }
                 val rad = rel.maxOf { max(abs(it.x), abs(it.y)) }
-                val col = lerp(base, Color.White, 0.05f + sim.f() * 0.09f)
+                val col = lerp(base, Pal.c("fx_white"), 0.05f + sim.f() * 0.09f)
                 val p = FxPiece(1, null, rel, col, rad, rad, o.x + g.x, o.y + g.y, g.x, g.y)
                 p.vx = (sim.f() - 0.5f) * 700f * d
                 p.vy = -(sim.f() * 500f) * d
@@ -966,35 +966,35 @@ fun FxLayer(
             // ---- parçacıklar
             for (p in sim.ps) {
                 when (p.kind) {
-                    K_RAIN -> drawLine(Color(0xFFA9D8FF).copy(alpha = 0.6f), Offset(p.x, p.y), Offset(p.x - p.vx * 0.022f, p.y - p.vy * 0.022f), 1.4f * d, StrokeCap.Round)
-                    K_ACID -> drawLine(Color(0xFFB5F23D).copy(alpha = 0.85f), Offset(p.x, p.y), Offset(p.x - p.vx * 0.022f, p.y - p.vy * 0.022f), 1.8f * d, StrokeCap.Round)
-                    K_FLAKE -> drawCircle(Color.White.copy(alpha = 0.9f), p.size, Offset(p.x, p.y))
-                    K_SPLASH -> drawCircle(Color.White.copy(alpha = (p.life / 0.28f).coerceIn(0f, 1f) * 0.7f), p.size, Offset(p.x, p.y))
+                    K_RAIN -> drawLine(Pal.c("fx_rain").copy(alpha = 0.6f), Offset(p.x, p.y), Offset(p.x - p.vx * 0.022f, p.y - p.vy * 0.022f), 1.4f * d, StrokeCap.Round)
+                    K_ACID -> drawLine(Pal.c("fx_acid").copy(alpha = 0.85f), Offset(p.x, p.y), Offset(p.x - p.vx * 0.022f, p.y - p.vy * 0.022f), 1.8f * d, StrokeCap.Round)
+                    K_FLAKE -> drawCircle(Pal.c("fx_white").copy(alpha = 0.9f), p.size, Offset(p.x, p.y))
+                    K_SPLASH -> drawCircle(Pal.c("fx_white").copy(alpha = (p.life / 0.28f).coerceIn(0f, 1f) * 0.7f), p.size, Offset(p.x, p.y))
                     K_BLOB -> {
-                        drawOval(Color(0xFF9BE81B).copy(alpha = 0.95f), Offset(p.x - p.size * 0.85f, p.y - p.size * 0.2f), Size(p.size * 1.7f, p.size * 2.3f))
-                        drawCircle(Color.White.copy(alpha = 0.4f), p.size * 0.3f, Offset(p.x - p.size * 0.3f, p.y + p.size * 0.35f))
+                        drawOval(Pal.c("fx_acid_blob").copy(alpha = 0.95f), Offset(p.x - p.size * 0.85f, p.y - p.size * 0.2f), Size(p.size * 1.7f, p.size * 2.3f))
+                        drawCircle(Pal.c("fx_white").copy(alpha = 0.4f), p.size * 0.3f, Offset(p.x - p.size * 0.3f, p.y + p.size * 0.35f))
                     }
                     K_ICE -> rotate(p.rot, Offset(p.x, p.y)) {
-                        drawRect(Color(0xFFCDEEFF).copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f) * 0.9f), Offset(p.x - p.size / 2f, p.y - p.size * 0.3f), Size(p.size, p.size * 0.6f))
+                        drawRect(Pal.c("fx_ice_a").copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f) * 0.9f), Offset(p.x - p.size / 2f, p.y - p.size * 0.3f), Size(p.size, p.size * 0.6f))
                     }
-                    K_DRIP -> drawLine(Color(0xFFB5F23D).copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f)), Offset(p.x, p.y - p.vy * 0.03f), Offset(p.x, p.y), p.size * 1.3f, StrokeCap.Round)
+                    K_DRIP -> drawLine(Pal.c("fx_acid").copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f)), Offset(p.x, p.y - p.vy * 0.03f), Offset(p.x, p.y), p.size * 1.3f, StrokeCap.Round)
                 }
             }
 
             // ---- çatlaklar (cam kırığı)
             for (cr in fx.cracks) {
                 val k = ((now - cr.bornMs) / 900f).coerceIn(0f, 1f)
-                drawCrack(cr, k, d, Color.Black.copy(alpha = 0.6f), Color.White.copy(alpha = 0.8f))
+                drawCrack(cr, k, d, Pal.c("fx_shade").copy(alpha = 0.6f), Pal.c("fx_white").copy(alpha = 0.8f))
             }
 
             // ---- şimşek
             sim.bolt?.let { b ->
                 val a = b.t.coerceIn(0f, 1f)
                 val path = Path().apply { b.pts.forEachIndexed { i, o -> if (i == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y) } }
-                drawPath(path, Color(0xFFBFD8FF).copy(alpha = 0.45f * a), style = Stroke(7f * d, cap = StrokeCap.Round))
-                drawPath(path, Color.White.copy(alpha = a), style = Stroke(2.4f * d, cap = StrokeCap.Round))
+                drawPath(path, Pal.c("fx_bolt").copy(alpha = 0.45f * a), style = Stroke(7f * d, cap = StrokeCap.Round))
+                drawPath(path, Pal.c("fx_white").copy(alpha = a), style = Stroke(2.4f * d, cap = StrokeCap.Round))
             }
-            if (sim.flash > 0f) drawRect(Color.White.copy(alpha = 0.32f * sim.flash))
+            if (sim.flash > 0f) drawRect(Pal.c("fx_white").copy(alpha = 0.32f * sim.flash))
         }
 
         // Kırma modu: hızlı dokunuş kırar; kaydırma ve uzun basma adanın kendi işlevine gider

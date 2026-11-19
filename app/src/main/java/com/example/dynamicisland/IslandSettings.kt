@@ -249,6 +249,10 @@ data class IslandSettings(
     val translateTrigger: Int = 0,           // 0 = dokununca, 1 = basılı tutunca
     val translateSrc: String = "tr",         // son kullanılan kaynak dil (ML Kit dil kodu)
     val translateTgt: String = "en",         // son kullanılan hedef dil
+
+    // ---------------------------------------------------------- Renk düzenleyici
+    val colorEditorEnabled: Boolean = false, // açıkken aşağıdaki özel renkler uygulanır; kapalıyken varsayılan renkler
+    val colorOverrides: String = "",         // "anahtar:AARRGGBB,..." biçiminde değiştirilmiş renkler (bkz. ColorEditor.kt)
 ) {
     /**
      * Servisin / arayüzün kullandığı etkin ayarlar. Üç nokta modunda kapalı ada, ortadaki noktanın çapında bir daire olur;
@@ -400,6 +404,7 @@ class SettingsRepository(context: Context) {
         val IP_OX = floatPreferencesKey("ip_ox"); val IP_OY = floatPreferencesKey("ip_oy")
         val TRN_ON = booleanPreferencesKey("trn_on"); val TRN_TRIG = intPreferencesKey("trn_trig")
         val TRN_SRC = stringPreferencesKey("trn_src"); val TRN_TGT = stringPreferencesKey("trn_tgt")
+        val CE_ON = booleanPreferencesKey("ce_on"); val CE_MAP = stringPreferencesKey("ce_map")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -573,7 +578,9 @@ class SettingsRepository(context: Context) {
             translateTrigger = p[K.TRN_TRIG] ?: d.translateTrigger,
             translateSrc = p[K.TRN_SRC] ?: d.translateSrc,
             translateTgt = p[K.TRN_TGT] ?: d.translateTgt,
-        )
+            colorEditorEnabled = p[K.CE_ON] ?: d.colorEditorEnabled,
+            colorOverrides = p[K.CE_MAP] ?: d.colorOverrides,
+        ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
 
     suspend fun save(s: IslandSettings) {
@@ -648,6 +655,7 @@ class SettingsRepository(context: Context) {
             it[K.IP_CTR] = s.iphoneCenterGroup; it[K.IP_OX] = s.iphoneOffsetXDp; it[K.IP_OY] = s.iphoneOffsetYDp
             it[K.TRN_ON] = s.translateEnabled; it[K.TRN_TRIG] = s.translateTrigger
             it[K.TRN_SRC] = s.translateSrc; it[K.TRN_TGT] = s.translateTgt
+            it[K.CE_ON] = s.colorEditorEnabled; it[K.CE_MAP] = s.colorOverrides
         }
     }
 

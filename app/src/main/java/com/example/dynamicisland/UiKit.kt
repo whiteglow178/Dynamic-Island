@@ -141,7 +141,7 @@ fun SwitchRow(title: String, desc: String? = null, checked: Boolean, onChange: (
     val cs = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
     val trackColor by animateColorAsState(
-        if (checked) Color(0xFF4CD964) else Color(0xFFE4E1DE), tween(200), label = "switchTrack",
+        if (checked) Pal.c("ui_switch_on") else Pal.c("ui_switch_off"), tween(200), label = "switchTrack",
     )
     // Düğme: 64 dp çubuk - 2x4 dp kenar boşluğu - 26 dp düğme = 30 dp yol
     val knobX by animateDpAsState(
@@ -171,7 +171,7 @@ fun SwitchRow(title: String, desc: String? = null, checked: Boolean, onChange: (
             Box(
                 Modifier.offset(x = knobX).size(26.dp)
                     .shadow(2.dp, CircleShape)          // gölge, arka plandan ÖNCE verilmeli
-                    .background(Color.White, CircleShape),
+                    .background(Pal.c("ui_switch_thumb"), CircleShape),
             )
         }
     }
@@ -257,9 +257,9 @@ fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float
         ) {
             val travel = maxWidth - thumbW
             // Boş kısım (yarı saydam)
-            Box(Modifier.fillMaxWidth().height(trackH).clip(CircleShape).background(Color.White.copy(alpha = 0.25f)))
+            Box(Modifier.fillMaxWidth().height(trackH).clip(CircleShape).background(Pal.c("ui_slider_track")))
             // Dolu kısım: düğmenin merkezine kadar uzanır
-            Box(Modifier.width(thumbW / 2 + travel * fraction).height(trackH).clip(CircleShape).background(Color.White))
+            Box(Modifier.width(thumbW / 2 + travel * fraction).height(trackH).clip(CircleShape).background(Pal.c("ui_slider_fill")))
             // Cam düğme: renk tonu yok, LiquidGlass.kt'deki cam yüzey + kenar parlaması çizilir
             Box(
                 Modifier.offset(x = travel * fraction).size(thumbW, thumbH)
@@ -312,11 +312,11 @@ fun SegmentedTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) 
             segW * selected.coerceIn(0, (labels.size - 1).coerceAtLeast(0)),
             spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow), label = "tabX",
         )
-        Box(Modifier.offset(x = x).width(segW).height(34.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF636366)))
+        Box(Modifier.offset(x = x).width(segW).height(34.dp).clip(RoundedCornerShape(8.dp)).background(Pal.c("ui_tab_selected")))
         Row(Modifier.fillMaxWidth()) {
             labels.forEachIndexed { i, label ->
                 val sel = i == selected
-                val fg by animateColorAsState(if (sel) Color.White else cs.onSurfaceVariant, tween(220), label = "tabFg$i")
+                val fg by animateColorAsState(if (sel) Pal.c("ui_tab_selected_text") else cs.onSurfaceVariant, tween(220), label = "tabFg$i")
                 Box(
                     Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(8.dp))
                         .selectable(selected = sel, role = Role.Tab) { onSelect(i) },

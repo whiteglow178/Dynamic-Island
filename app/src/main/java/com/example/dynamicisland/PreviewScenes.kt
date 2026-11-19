@@ -48,7 +48,7 @@ internal fun PhoneMock(wDp: Float, hDp: Float, modifier: Modifier = Modifier, co
     val phoneShape = RoundedCornerShape((38f * k).dp)
     val screenShape = RoundedCornerShape(((38f - PHONE_BEZEL_DP) * k).dp)
     val dens = LocalDensity.current
-    val btn = Color(0xFF2A2D35)
+    val btn = Pal.c("preview_btn")
     Box(modifier.width(wDp.dp).height(hDp.dp)) {
         Box(Modifier.align(Alignment.TopEnd).offset(x = (2f * k).dp, y = (90f * k).dp).width((3f * k).dp).height((44f * k).dp)
             .clip(RoundedCornerShape(2.dp)).background(btn))
@@ -58,13 +58,13 @@ internal fun PhoneMock(wDp: Float, hDp: Float, modifier: Modifier = Modifier, co
             .clip(RoundedCornerShape(2.dp)).background(btn))
         Box(
             Modifier.fillMaxSize().clip(phoneShape)
-                .background(Color(0xFF08090C))
-                .border((1.5f * k).dp, Color(0xFF454956), phoneShape)
+                .background(Pal.c("preview_phone"))
+                .border((1.5f * k).dp, Pal.c("preview_phone_border"), phoneShape)
                 .padding(bezel.dp),
         ) {
             Box(
                 Modifier.fillMaxSize().clip(screenShape)
-                    .background(Brush.verticalGradient(listOf(Color(0xFF2E6A93), Color(0xFF5B4496), Color(0xFFB2557F)))),
+                    .background(Brush.verticalGradient(listOf(Pal.c("preview_wall_a"), Pal.c("preview_wall_b"), Pal.c("preview_wall_c")))),
             ) {
                 CompositionLocalProvider(LocalDensity provides Density(dens.density * scale, dens.fontScale)) {
                     Box(Modifier.fillMaxSize()) { content() }

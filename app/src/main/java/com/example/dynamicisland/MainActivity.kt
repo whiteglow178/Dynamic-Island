@@ -71,6 +71,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -88,6 +89,8 @@ class MainActivity : ComponentActivity() {
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
         }
         setContent {
+            // Renk düzenleyici: kayıtlı özel renkleri uygulamanın tamamına yayar (ayar akışı her değişiminde Pal'i günceller)
+            LaunchedEffect(Unit) { SettingsRepository(applicationContext).flow.collectLatest { } }
             IslandTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     // İlk açılışta açılış (onboarding) ekranı; bittikten sonra normal uygulama (Kurulum sayfası dahil) açılır
@@ -772,7 +775,7 @@ private fun SetupScreen() {
                     Text("Son kapanmalar:\n" + exits.joinToString("\n"), color = cs2.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
                 }
                 crash?.let {
-                    Text("Son çökme kaydı:\n" + it.take(900), color = Color(0xFFFF6B5E), fontSize = 11.sp, lineHeight = 15.sp)
+                    Text("Son çökme kaydı:\n" + it.take(900), color = Pal.c("ui_error"), fontSize = 11.sp, lineHeight = 15.sp)
                 }
                 if (winDump.isNotEmpty()) {
                     Text("Son asistan penceresi kaydı:\n" + winDump.take(900), color = cs2.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp)
@@ -838,7 +841,7 @@ private fun StatusBanner(missing: List<String>) {
     val title = if (ready) "Her şey hazır" else "Eksik izinler var"
     val desc = if (ready) "Başlat'a dokunarak adayı çalıştırabilirsin."
         else "Başlat'ı açmak için şunları ver: " + missing.joinToString(", ") + "."
-    val dot = when { ready -> Color(0xFF4CD964); missing.size == 1 -> Color(0xFFFFB340); else -> Color(0xFFFF6B5E) }
+    val dot = when { ready -> Pal.c("ui_ok"); missing.size == 1 -> Pal.c("ui_warn"); else -> Pal.c("ui_error") }
     val shape = RoundedCornerShape(22.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape)
@@ -859,11 +862,11 @@ private fun StatusBanner(missing: List<String>) {
 @Composable
 private fun PermRow(title: String, desc: String, granted: Boolean, required: Boolean, action: String = "Aç", onOpen: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val ok = Color(0xFF4CD964)
+    val ok = Pal.c("ui_ok")
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(
             Modifier.size(10.dp).background(
-                when { granted -> ok; required -> Color(0xFFFFB340); else -> cs.outline }, CircleShape
+                when { granted -> ok; required -> Pal.c("ui_warn"); else -> cs.outline }, CircleShape
             )
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

@@ -171,7 +171,7 @@ fun FlipAlbumArt(
             .drawWithContent {
                 drawContent()
                 val k = abs(foldDeg(angle())) / 90f
-                if (k > 0.01f) drawRect(Color.Black.copy(alpha = (k * k * 0.75f).coerceIn(0f, 0.85f)))
+                if (k > 0.01f) drawRect(Pal.c("island_flip_shade").copy(alpha = (k * k * 0.75f).coerceIn(0f, 0.85f)))
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -183,8 +183,8 @@ fun FlipAlbumArt(
                 filterQuality = FilterQuality.Medium, modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-                Text("♪", color = Color.White.copy(alpha = 0.7f), fontSize = 22.sp)
+            Box(Modifier.fillMaxSize().background(Pal.c("art_placeholder_bg")), contentAlignment = Alignment.Center) {
+                Text("♪", color = Pal.c("art_placeholder_note"), fontSize = 22.sp)
             }
         }
     }
@@ -537,16 +537,16 @@ private fun DrawScope.drawGlassBase(cornerT: Float = -1f) {
 
     drawRect(
         Brush.verticalGradient(
-            0f to Color.White.copy(0.17f),
-            0.40f to Color.White.copy(0.04f),
+            0f to Pal.c("glass_sheen").copy(0.17f),
+            0.40f to Pal.c("glass_sheen").copy(0.04f),
             0.72f to Color.Transparent,
-            1f to Color.White.copy(0.09f),
+            1f to Pal.c("glass_sheen").copy(0.09f),
         )
     )
     drawRect(
         Brush.radialGradient(
-            0f to Color.White.copy(0.22f),
-            0.6f to Color.White.copy(0.05f),
+            0f to Pal.c("glass_sheen").copy(0.22f),
+            0.6f to Pal.c("glass_sheen").copy(0.05f),
             1f to Color.Transparent,
             center = Offset(w * 0.20f, h * 0.02f),
             radius = max(w * 0.60f, h),
@@ -555,7 +555,7 @@ private fun DrawScope.drawGlassBase(cornerT: Float = -1f) {
     // Alt-sağ köşede çok hafif ikincil parlama (ışığın cam içinden geçip toplandığı yer)
     drawRect(
         Brush.radialGradient(
-            0f to Color.White.copy(0.08f),
+            0f to Pal.c("glass_sheen").copy(0.08f),
             1f to Color.Transparent,
             center = Offset(w * 0.88f, h * 1.0f),
             radius = max(w * 0.35f, h * 0.9f),
@@ -568,7 +568,7 @@ private fun DrawScope.drawGlassBase(cornerT: Float = -1f) {
         val inset = i * step + step / 2f
         val a = 0.12f * (1f - i / rings.toFloat())
         drawRoundRect(
-            color = Color.White.copy(alpha = a),
+            color = Pal.c("glass_sheen").copy(alpha = a),
             topLeft = Offset(inset, inset),
             size = Size((w - 2 * inset).coerceAtLeast(0f), (h - 2 * inset).coerceAtLeast(0f)),
             cornerRadius = CornerRadius((r - inset).coerceAtLeast(0f)),
@@ -588,10 +588,10 @@ private fun DrawScope.drawGlassRim(cornerT: Float = -1f) {
 
     val sw = 1.3.dp.toPx()
     val rim = Brush.linearGradient(
-        0f to Color.White.copy(0.90f),
-        0.28f to Color.White.copy(0.20f),
-        0.62f to Color.White.copy(0.07f),
-        1f to Color.White.copy(0.55f),
+        0f to Pal.c("glass_sheen").copy(0.90f),
+        0.28f to Pal.c("glass_sheen").copy(0.20f),
+        0.62f to Pal.c("glass_sheen").copy(0.07f),
+        1f to Pal.c("glass_sheen").copy(0.55f),
         start = Offset.Zero, end = Offset(w, h),
     )
     drawRoundRect(
@@ -606,7 +606,7 @@ private fun DrawScope.drawGlassRim(cornerT: Float = -1f) {
     val sw2 = 0.7.dp.toPx()
     val off = sw + sw2 / 2f
     drawRoundRect(
-        color = Color.White.copy(alpha = 0.10f),
+        color = Pal.c("glass_sheen").copy(alpha = 0.10f),
         topLeft = Offset(off, off),
         size = Size((w - 2 * off).coerceAtLeast(0f), (h - 2 * off).coerceAtLeast(0f)),
         cornerRadius = CornerRadius((r - off).coerceAtLeast(0f)),
@@ -620,8 +620,8 @@ private fun DrawScope.drawGlassRim(cornerT: Float = -1f) {
         drawLine(
             brush = Brush.horizontalGradient(
                 0f to Color.Transparent,
-                0.35f to Color.White.copy(0.55f),
-                0.65f to Color.White.copy(0.30f),
+                0.35f to Pal.c("glass_sheen").copy(0.55f),
+                0.65f to Pal.c("glass_sheen").copy(0.30f),
                 1f to Color.Transparent,
                 startX = x0, endX = x1,
             ),
@@ -747,7 +747,7 @@ fun IslandPill(
     val customArt = rememberCustomImage(CustomImages.Slot.ART, if (cfg.customArtEnabled) cfg.customArtUri else "")
 
     // Asistanda cam gövde en az %60 koyu kalır: renk bantları koyu zeminde okunur
-    val bodyTarget = if (assistant && cfg.glassEnabled) Color.Black.copy(alpha = max(cfg.glassAlpha, 0.6f)) else bodyColorFor(cfg, artColor, accent)
+    val bodyTarget = if (assistant && cfg.glassEnabled) Pal.c("island_assistant_body").copy(alpha = max(cfg.glassAlpha, 0.6f)) else bodyColorFor(cfg, artColor, accent)
     // Yutma efektinde ada rengi anında hedef renge geçer: panel animasyonuyla (aynı renk) uyumlu olsun
     val bodyAnim = animateColorAsState(bodyTarget, if (swallow) snap() else tween(450), label = "body")
     val body = remember(swallow, bodyTarget, bodyAnim) { derivedStateOf { if (swallow) bodyTarget else bodyAnim.value } }
@@ -957,7 +957,7 @@ fun IslandPill(
                             modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(sz * 0.28f)))
                     } else {
                         Box(Modifier.fillMaxSize().background(accent, RoundedCornerShape(sz * 0.28f)), contentAlignment = Alignment.Center) {
-                            Text(content.title.trim().take(1).uppercase().ifEmpty { "•" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(content.title.trim().take(1).uppercase().ifEmpty { "•" }, color = Pal.c("island_letter"), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         }
                     }
                 }
@@ -1043,7 +1043,7 @@ fun IslandPill(
                 }
                 Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
                     if (content.playing) Equalizer(eqColor, rainbow = rb)
-                    else Box(Modifier.size(6.dp).background(Color.White.copy(alpha = 0.40f), CircleShape))
+                    else Box(Modifier.size(6.dp).background(Pal.c("island_dot_idle"), CircleShape))
                 }
 
             }
@@ -1066,7 +1066,7 @@ private fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: Isla
             bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
             filterQuality = FilterQuality.Low, modifier = Modifier.fillMaxSize(),
         )
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.50f)))
+        Box(Modifier.fillMaxSize().background(Pal.c("island_scrim").copy(alpha = 0.50f)))
     }
 }
 
@@ -1088,7 +1088,7 @@ private fun CustomBackdrop(
                 bitmap = img, contentDescription = null, contentScale = ContentScale.Crop,
                 filterQuality = FilterQuality.Medium, modifier = Modifier.fillMaxSize(),
             )
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim.coerceIn(0f, 0.9f))))
+            Box(Modifier.fillMaxSize().background(Pal.c("island_scrim").copy(alpha = dim.coerceIn(0f, 0.9f))))
         }
     }
     Box(Modifier.fillMaxSize()) {
@@ -1129,24 +1129,24 @@ private fun NotifContent(c: IslandContent.Notif, accent: Color, rb: RainbowStyle
             Image(
                 bitmap = icon, contentDescription = null,
                 modifier = Modifier.size(46.dp).clip(iconShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.10f), iconShape),
+                    .border(1.dp, Pal.c("art_border"), iconShape),
             )
         } else {
             Box(Modifier.size(46.dp).background(accent, iconShape), contentAlignment = Alignment.Center) {
                 Text(
                     c.title.trim().take(1).uppercase().ifEmpty { "•" },
-                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                    color = Pal.c("island_letter"), fontWeight = FontWeight.Bold, fontSize = 20.sp,
                     modifier = Modifier.rainbowFill(rb, 0.dp),
                 )
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             if (c.title.isNotBlank()) {
-                Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
+                Text(c.title, color = Pal.c("island_text"), fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             }
             if (c.text.isNotBlank()) {
-                Text(c.text, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp, lineHeight = 18.sp,
+                Text(c.text, color = Pal.c("island_text_dim"), fontSize = 13.5.sp, lineHeight = 18.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             }
         }

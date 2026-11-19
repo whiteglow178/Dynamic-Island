@@ -99,10 +99,10 @@ internal class ShazamHold { var foundAt = 0L }
 
 private class ShazamSpark(val angle: Float, val speed: Float, val rad: Float, val delay: Float, val life: Float)
 
-private val ShazamBlueTop = Color(0xFF33AEFF)
-private val ShazamBlueBottom = Color(0xFF0A68FF)
+private val ShazamBlueTop: Color get() = Pal.c("shazam_blue_top")
+private val ShazamBlueBottom: Color get() = Pal.c("shazam_blue_bottom")
 
-private val ShazamBlue = Color(0xFF0088FF)
+private val ShazamBlue: Color get() = Pal.c("shazam_blue")
 
 /** Resmi Shazam "S" işareti: iki kalın, yuvarlak uçlu kanca; ikincisi birincinin 180° döndürülmüşü. */
 private fun shazamGlyphPath(topLeft: Offset, side: Float): Path {
@@ -145,7 +145,7 @@ internal fun ShazamGlyphSweep(modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val side = size.minDimension
         val c = Offset(size.width / 2f, size.height / 2f)
-        val cyan = Color(0xFF3CE6FF)
+        val cyan = Pal.c("shazam_cyan_a")
         val sw = Stroke(width = 0.1157f * side, cap = StrokeCap.Round, join = StrokeJoin.Round)
         // 1) mavi logo
         drawShazamGlyph(Offset.Zero, side, ShazamBlue, 1f)
@@ -209,7 +209,7 @@ private fun ShazamOrbit(modifier: Modifier = Modifier) {
         ) {
             val c = Offset(size.width / 2f, size.height / 2f)
             val r = size.minDimension / 2f
-            val cyan = Color(0xFF22E0FF)
+            val cyan = Pal.c("shazam_cyan_b")
             drawCircle(
                 brush = Brush.sweepGradient(
                     colorStops = arrayOf(
@@ -250,11 +250,11 @@ private fun ShazamOrbit(modifier: Modifier = Modifier) {
                 val p = Offset(c.x + r * sp[1] * cos(rad), c.y + r * sp[1] * sin(rad))
                 drawCircle(
                     brush = Brush.radialGradient(
-                        listOf(Color(0xFF9FE9FF).copy(alpha = a), Color(0xFF9FE9FF).copy(alpha = 0f)), center = p, radius = gr,
+                        listOf(Pal.c("shazam_spark").copy(alpha = a), Pal.c("shazam_spark").copy(alpha = 0f)), center = p, radius = gr,
                     ),
                     radius = gr, center = p,
                 )
-                drawCircle(Color.White.copy(alpha = a * 0.9f), radius = 0.7.dp.toPx(), center = p)
+                drawCircle(Pal.c("shazam_glow").copy(alpha = a * 0.9f), radius = 0.7.dp.toPx(), center = p)
             }
         }
     }
@@ -278,7 +278,7 @@ internal fun ShazamWave(modifier: Modifier = Modifier, bars: Int = 5, flat: Bool
             val v: Float = 0.30f + 0.70f * abs(sin(phase + i * 1.15f))
             val h: Float = (size.height * v).coerceAtLeast(bw)
             val x: Float = gap * i + gap / 2f
-            val color = if (flat) Color(0xFF1E7BFF) else androidx.compose.ui.graphics.lerp(ShazamBlue, Color(0xFF6BBBFF), i / (n - 1).toFloat())
+            val color = if (flat) Pal.c("shazam_bar_flat") else androidx.compose.ui.graphics.lerp(ShazamBlue, Pal.c("shazam_bar_end"), i / (n - 1).toFloat())
             drawLine(color, Offset(x, (size.height - h) / 2f), Offset(x, (size.height + h) / 2f), strokeWidth = bw, cap = StrokeCap.Round)
         }
     }
@@ -327,7 +327,7 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
             if (ga > 0.01f) {
                 drawCircle(
                     brush = Brush.radialGradient(
-                        listOf(Color.White.copy(alpha = ga), Color.White.copy(alpha = ga * 0.5f), Color.Transparent),
+                        listOf(Pal.c("shazam_glow").copy(alpha = ga), Pal.c("shazam_glow").copy(alpha = ga * 0.5f), Color.Transparent),
                         center = center, radius = gr,
                     ),
                     radius = gr, center = center,
@@ -342,7 +342,7 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
                     val r0 = full * 0.08f
                     val r1 = r0 + full * (0.10f + 0.34f * burstP) * k
                     drawLine(
-                        Color.White.copy(alpha = rayA),
+                        Pal.c("shazam_glow").copy(alpha = rayA),
                         Offset(cx + r0 * cos(a), cy + r0 * sin(a)), Offset(cx + r1 * cos(a), cy + r1 * sin(a)),
                         strokeWidth = 1.3.dp.toPx(), cap = StrokeCap.Round,
                     )
@@ -360,14 +360,14 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
                     for (k in layers downTo 1) {
                         val g = k * 1.1.dp.toPx()
                         drawRoundRect(
-                            color = Color.White.copy(alpha = (0.085f * glowA * (1f - k / (layers + 1f))).coerceIn(0f, 1f)),
+                            color = Pal.c("shazam_glow").copy(alpha = (0.085f * glowA * (1f - k / (layers + 1f))).coerceIn(0f, 1f)),
                             topLeft = Offset(cx - side / 2f - g, cy - side / 2f - g),
                             size = Size(side + 2f * g, side + 2f * g), cornerRadius = CornerRadius(rad + g),
                         )
                     }
                 }
                 drawRoundRect(
-                    color = Color.White.copy(alpha = e), topLeft = Offset(cx - side / 2f, cy - side / 2f),
+                    color = Pal.c("shazam_glow").copy(alpha = e), topLeft = Offset(cx - side / 2f, cy - side / 2f),
                     size = Size(side, side), cornerRadius = CornerRadius(rad, rad),
                 )
             }
@@ -406,10 +406,10 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
                     } else {
                         // Kapak bildirimde yoksa: Shazam logolu mavi kare
                         drawRect(ShazamBlue)
-                        drawShazamGlyph(Offset(c.x - full * 0.36f, c.y - full * 0.36f), full * 0.72f, Color.White, 1f)
+                        drawShazamGlyph(Offset(c.x - full * 0.36f, c.y - full * 0.36f), full * 0.72f, Pal.c("shazam_glyph"), 1f)
                     }
                     // Beyaz örtü: kapağı beyazlatır, yavaşça şeffaflaşır
-                    drawRect(Color.White.copy(alpha = (1f - s).coerceIn(0f, 1f)))
+                    drawRect(Pal.c("shazam_glow").copy(alpha = (1f - s).coerceIn(0f, 1f)))
                 }
             }
         }
@@ -426,7 +426,7 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
                 val eo = 1f - (1f - l) * (1f - l) * (1f - l)
                 val r = full * 0.16f + sp.speed * full * 0.36f * eo
                 val pos = Offset(cx + r * cos(sp.angle), cy + r * sin(sp.angle))
-                drawCircle(Color.White.copy(alpha = (1f - l) * 0.95f), radius = sp.rad.dp.toPx() * (1f - 0.5f * l), center = pos)
+                drawCircle(Pal.c("shazam_glow").copy(alpha = (1f - l) * 0.95f), radius = sp.rad.dp.toPx() * (1f - 0.5f * l), center = pos)
             }
             val s = shzSmooth((t - 0.45f) / 0.55f)
             val ga = 0.8f * sin(3.1415927f * s)
@@ -434,7 +434,7 @@ private fun ShazamCoverBurst(cover: ImageBitmap?, progress: () -> Float, modifie
                 for ((gx, gy, gv) in grain) {
                     val a = ga * (0.35f + 0.65f * gv)
                     drawCircle(
-                        Color.White.copy(alpha = a), radius = (0.7f + gv * 0.9f).dp.toPx(),
+                        Pal.c("shazam_glow").copy(alpha = a), radius = (0.7f + gv * 0.9f).dp.toPx(),
                         center = Offset(cx - full * 0.45f + gx * full * 0.9f, cy - full * 0.45f + gy * full * 0.9f),
                     )
                 }
@@ -471,10 +471,10 @@ internal fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
                 },
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                Text(c.title, color = Pal.c("shazam_title"), fontWeight = FontWeight.Bold, fontSize = 17.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (c.artist.isNotBlank()) {
-                    Text(c.artist, color = Color.White.copy(alpha = 0.66f), fontWeight = FontWeight.Medium, fontSize = 15.sp,
+                    Text(c.artist, color = Pal.c("shazam_artist"), fontWeight = FontWeight.Medium, fontSize = 15.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -491,25 +491,25 @@ internal fun ShazamContent(c: IslandContent.Shazam, onStop: () -> Unit = {}) {
                 contentAlignment = Alignment.Center,
             ) {
                 ShazamOrbit(Modifier.fillMaxSize())
-                Canvas(Modifier.size(46.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Color.White, 1f) }
+                Canvas(Modifier.size(46.dp)) { drawShazamGlyph(Offset.Zero, size.minDimension, Pal.c("shazam_glyph"), 1f) }
             }
             Spacer(Modifier.width(12.dp))
             Text(
-                "Dinliyor", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp,
+                "Dinliyor", color = Pal.c("shazam_listen"), fontWeight = FontWeight.SemiBold, fontSize = 20.sp,
                 maxLines = 1, modifier = Modifier.weight(1f),
             )
             ShazamWave(Modifier.width(32.dp).height(18.dp), bars = 6, flat = true)
             Spacer(Modifier.width(14.dp))
             Box(
-                Modifier.size(46.dp).clip(CircleShape).background(Color(0xFF14224A))
+                Modifier.size(46.dp).clip(CircleShape).background(Pal.c("shazam_close_bg"))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onStop),
                 contentAlignment = Alignment.Center,
             ) {
                 Canvas(Modifier.size(18.dp)) {
                     val w = 2.5.dp.toPx()
                     val m = w / 2f
-                    drawLine(Color(0xFF3D7BFF), Offset(m, m), Offset(size.width - m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
-                    drawLine(Color(0xFF3D7BFF), Offset(size.width - m, m), Offset(m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
+                    drawLine(Pal.c("shazam_close_x"), Offset(m, m), Offset(size.width - m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
+                    drawLine(Pal.c("shazam_close_x"), Offset(size.width - m, m), Offset(m, size.height - m), strokeWidth = w, cap = StrokeCap.Round)
                 }
             }
         }

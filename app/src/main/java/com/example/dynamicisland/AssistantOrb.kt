@@ -61,10 +61,20 @@ fun islandCornerPx(w: Float, h: Float, density: Float, cornerT: Float): Float {
 }
 
 // Videodaki renk geçişi: mavi -> mor -> pembe/kırmızı -> turuncu -> sarı -> beyaz -> cyan -> mavi (döngüsel)
-private val SIRI = arrayOf(
-    Color(0xFF0A84FF), Color(0xFF7B4DFF), Color(0xFFFF2D87), Color(0xFFFF3B30),
-    Color(0xFFFF9500), Color(0xFFFFD60A), Color(0xFFFFFFFF), Color(0xFF64D2FF), Color(0xFF0A84FF),
-)
+private var siriCache: Array<Color>? = null
+private var siriVer = -1
+private val SIRI: Array<Color>
+    get() {
+        val v = Pal.version                       // palet değişince önbellek yenilenir (Renk düzenleyici)
+        val c = siriCache
+        if (c != null && siriVer == v) return c
+        val n = arrayOf(
+            Pal.c("asst_1"), Pal.c("asst_2"), Pal.c("asst_3"), Pal.c("asst_4"),
+            Pal.c("asst_5"), Pal.c("asst_6"), Pal.c("asst_7"), Pal.c("asst_8"), Pal.c("asst_1"),
+        )
+        siriCache = n; siriVer = v
+        return n
+    }
 
 private fun siriColor(t: Float, alpha: Float = 1f): Color {
     val n = SIRI.size - 1
@@ -115,7 +125,7 @@ fun AssistantOrb(fullWidth: Boolean = false) {
         // 1) Alt kenarda mat gri geçiş (cam yansıması)
         if (!fullWidth) drawRect(
             Brush.verticalGradient(
-                colorStops = arrayOf(0.60f to Color.Transparent, 1f to Color(0xFFAEB4BE).copy(alpha = 0.62f)),
+                colorStops = arrayOf(0.60f to Color.Transparent, 1f to Pal.c("orb_rim").copy(alpha = 0.62f)),
             ),
         )
 
@@ -164,8 +174,8 @@ fun AssistantOrb(fullWidth: Boolean = false) {
         drawPath(
             path,
             Brush.horizontalGradient(
-                0f to Color(0x00FFFFFF), 0.30f to Color(0xAAFFFFFF), 0.5f to Color(0xFFFFFFFF),
-                0.70f to Color(0xAAFFFFFF), 1f to Color(0x00FFFFFF), startX = x0, endX = x0 + span,
+                0f to Pal.c("orb_sweep").copy(alpha = 0f), 0.30f to Pal.c("orb_sweep").copy(alpha = 0.667f), 0.5f to Pal.c("orb_sweep"),
+                0.70f to Pal.c("orb_sweep").copy(alpha = 0.667f), 1f to Pal.c("orb_sweep").copy(alpha = 0f), startX = x0, endX = x0 + span,
             ),
             alpha = 0.85f,
             style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
@@ -178,8 +188,8 @@ fun AssistantOrb(fullWidth: Boolean = false) {
             th2[i] = th[i] * 0.22f
         }
         val silver = Brush.horizontalGradient(
-            0f to Color(0x00DADDE4), 0.25f to Color(0xFFC9CDD6), 0.5f to Color(0xFFFFFFFF),
-            0.75f to Color(0xFFC9CDD6), 1f to Color(0x00DADDE4), startX = x0, endX = x0 + span,
+            0f to Pal.c("orb_sweep2_edge").copy(alpha = 0f), 0.25f to Pal.c("orb_sweep2_mid"), 0.5f to Pal.c("orb_sweep"),
+            0.75f to Pal.c("orb_sweep2_mid"), 1f to Pal.c("orb_sweep2_edge").copy(alpha = 0f), startX = x0, endX = x0 + span,
         )
         floatArrayOf(2.2f, 1.0f, 0.4f).forEachIndexed { li, sc ->
             path.reset()
@@ -196,7 +206,7 @@ fun AssistantOrb(fullWidth: Boolean = false) {
         // 5) Cam hissi: sol üstte hafif parlama
         if (!fullWidth) drawRect(
             Brush.radialGradient(
-                0f to Color.White.copy(alpha = 0.12f), 1f to Color.Transparent,
+                0f to Pal.c("orb_sweep").copy(alpha = 0.12f), 1f to Color.Transparent,
                 center = Offset(w * 0.30f, h * 0.08f), radius = w * 0.30f,
             ),
         )

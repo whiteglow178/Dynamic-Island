@@ -347,7 +347,7 @@ fun LyricLineText(
         val bleed = ceil(glowPx)       // parıltının kesilmeden çizilebilmesi için çizim payı
         val shadow: Shadow? = when {
             glowPx > 0f -> Shadow(color.copy(alpha = 0.8f), Offset.Zero, glowPx)
-            outside -> Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 2f), 8f)   // glow kapalıyken okunurluk
+            outside -> Shadow(Pal.c("lyrics_shadow").copy(alpha = 0.55f), Offset(0f, 2f), 8f)   // glow kapalıyken okunurluk
             else -> null
         }
 
@@ -494,7 +494,7 @@ fun PanelLyrics(cfg: IslandSettings, state: LyricsState, frame: LyricFrame, modi
 }
 
 @Composable
-private fun StatusText(s: String) = Text(s, color = Color.White.copy(alpha = 0.5f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+private fun StatusText(s: String) = Text(s, color = Pal.c("lyrics_status"), fontSize = 14.sp, fontWeight = FontWeight.Medium)
 
 // ---------------------------------------------------------------- Kapalı adanın ortası (tek satır, yana kayar)
 @Composable

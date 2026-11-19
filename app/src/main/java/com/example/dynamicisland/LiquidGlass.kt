@@ -187,10 +187,10 @@ fun DrawScope.drawLiquidBase(specular: Float, cornerT: Float = -1f) {
 
     drawRect(
         Brush.verticalGradient(
-            0f to Color.White.copy(0.20f * k),
-            0.38f to Color.White.copy(0.05f * k),
+            0f to Pal.c("glass_sheen").copy(0.20f * k),
+            0.38f to Pal.c("glass_sheen").copy(0.05f * k),
             0.70f to Color.Transparent,
-            1f to Color.Black.copy(0.22f),
+            1f to Pal.c("glass_shade").copy(0.22f),
         )
     )
 
@@ -200,7 +200,7 @@ fun DrawScope.drawLiquidBase(specular: Float, cornerT: Float = -1f) {
         val inset = i * sStep + sStep / 2f
         val a = 0.26f * (1f - i / shadowRings.toFloat())
         drawRoundRect(
-            brush = Brush.verticalGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 1f to Color.Black.copy(a)),
+            brush = Brush.verticalGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 1f to Pal.c("glass_shade").copy(a)),
             topLeft = Offset(inset, inset),
             size = Size((w - 2 * inset).coerceAtLeast(0f), (h - 2 * inset).coerceAtLeast(0f)),
             cornerRadius = CornerRadius((r - inset).coerceAtLeast(0f)),
@@ -210,8 +210,8 @@ fun DrawScope.drawLiquidBase(specular: Float, cornerT: Float = -1f) {
 
     drawRect(
         Brush.radialGradient(
-            0f to Color.White.copy(0.26f * k),
-            0.55f to Color.White.copy(0.06f * k),
+            0f to Pal.c("glass_sheen").copy(0.26f * k),
+            0.55f to Pal.c("glass_sheen").copy(0.06f * k),
             1f to Color.Transparent,
             center = Offset(w * 0.18f, h * 0.02f),
             radius = max(w * 0.55f, h),
@@ -220,7 +220,7 @@ fun DrawScope.drawLiquidBase(specular: Float, cornerT: Float = -1f) {
 
     drawRect(
         Brush.radialGradient(
-            0f to Color.White.copy(0.14f * k),
+            0f to Pal.c("glass_sheen").copy(0.14f * k),
             1f to Color.Transparent,
             center = Offset(w * 0.86f, h * 1.02f),
             radius = max(w * 0.32f, h * 0.9f),
@@ -233,7 +233,7 @@ fun DrawScope.drawLiquidBase(specular: Float, cornerT: Float = -1f) {
         val inset = i * step + step / 2f
         val a = 0.13f * k * (1f - i / rings.toFloat())
         drawRoundRect(
-            color = Color.White.copy(alpha = a),
+            color = Pal.c("glass_sheen").copy(alpha = a),
             topLeft = Offset(inset, inset),
             size = Size((w - 2 * inset).coerceAtLeast(0f), (h - 2 * inset).coerceAtLeast(0f)),
             cornerRadius = CornerRadius((r - inset).coerceAtLeast(0f)),
@@ -251,10 +251,10 @@ fun DrawScope.drawLiquidRim(specular: Float, cornerT: Float = -1f) {
     val sw = 1.4.dp.toPx()
     drawRoundRect(
         brush = Brush.linearGradient(
-            0f to Color.White.copy((0.95f * k).coerceAtMost(1f)),
-            0.28f to Color.White.copy(0.22f * k),
-            0.62f to Color.White.copy(0.07f * k),
-            1f to Color.White.copy((0.65f * k).coerceAtMost(1f)),
+            0f to Pal.c("glass_sheen").copy((0.95f * k).coerceAtMost(1f)),
+            0.28f to Pal.c("glass_sheen").copy(0.22f * k),
+            0.62f to Pal.c("glass_sheen").copy(0.07f * k),
+            1f to Pal.c("glass_sheen").copy((0.65f * k).coerceAtMost(1f)),
             start = Offset.Zero, end = Offset(w, h),
         ),
         topLeft = Offset(sw / 2f, sw / 2f),
@@ -266,7 +266,7 @@ fun DrawScope.drawLiquidRim(specular: Float, cornerT: Float = -1f) {
     val sw2 = 0.8.dp.toPx()
     val off = sw + sw2 / 2f
     drawRoundRect(
-        color = Color.White.copy(alpha = 0.10f * k),
+        color = Pal.c("glass_sheen").copy(alpha = 0.10f * k),
         topLeft = Offset(off, off),
         size = Size((w - 2 * off).coerceAtLeast(0f), (h - 2 * off).coerceAtLeast(0f)),
         cornerRadius = CornerRadius((r - off).coerceAtLeast(0f)),
@@ -277,7 +277,7 @@ fun DrawScope.drawLiquidRim(specular: Float, cornerT: Float = -1f) {
     val ar = (r - 1.5.dp.toPx()).coerceAtLeast(2f)
     drawArc(
         brush = Brush.linearGradient(
-            0f to Color.White.copy((0.95f * k).coerceAtMost(1f)), 1f to Color.Transparent,
+            0f to Pal.c("glass_sheen").copy((0.95f * k).coerceAtMost(1f)), 1f to Color.Transparent,
             start = Offset(0f, 0f), end = Offset(ar * 1.6f, ar * 1.6f),
         ),
         startAngle = 180f, sweepAngle = 90f, useCenter = false,
@@ -286,7 +286,7 @@ fun DrawScope.drawLiquidRim(specular: Float, cornerT: Float = -1f) {
     )
     drawArc(
         brush = Brush.linearGradient(
-            0f to Color.Transparent, 1f to Color.White.copy(0.55f * k),
+            0f to Color.Transparent, 1f to Pal.c("glass_sheen").copy(0.55f * k),
             start = Offset(w - ar * 1.6f, h - ar * 1.6f), end = Offset(w, h),
         ),
         startAngle = 0f, sweepAngle = 90f, useCenter = false,
@@ -300,8 +300,8 @@ fun DrawScope.drawLiquidRim(specular: Float, cornerT: Float = -1f) {
         drawLine(
             brush = Brush.horizontalGradient(
                 0f to Color.Transparent,
-                0.30f to Color.White.copy((0.60f * k).coerceAtMost(1f)),
-                0.65f to Color.White.copy(0.28f * k),
+                0.30f to Pal.c("glass_sheen").copy((0.60f * k).coerceAtMost(1f)),
+                0.65f to Pal.c("glass_sheen").copy(0.28f * k),
                 1f to Color.Transparent,
                 startX = x0, endX = x1,
             ),
@@ -312,8 +312,8 @@ fun DrawScope.drawLiquidRim(specular: Float, cornerT: Float = -1f) {
         drawLine(
             brush = Brush.horizontalGradient(
                 0f to Color.Transparent,
-                0.55f to Color.White.copy(0.10f * k),
-                0.85f to Color.White.copy(0.32f * k),
+                0.55f to Pal.c("glass_sheen").copy(0.10f * k),
+                0.85f to Pal.c("glass_sheen").copy(0.32f * k),
                 1f to Color.Transparent,
                 startX = x0, endX = x1,
             ),

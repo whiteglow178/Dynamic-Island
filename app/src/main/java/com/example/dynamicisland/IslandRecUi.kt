@@ -92,7 +92,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 // ---------------------------------------------------------------- Ekran kaydı
-private val RecRed = Color(0xFFFF3B30)
+private val RecRed: Color get() = Pal.c("rec_red")
 
 /** Kırmızı kayıt noktası; blink açıksa yavaşça yanıp söner, dim açıksa soluk durur. */
 @Composable
@@ -117,7 +117,7 @@ internal fun RecSpinner(size: Dp, modifier: Modifier = Modifier) {
     Canvas(modifier.size(size).graphicsLayer { rotationZ = rot.value }) {
         val sw = 2.5.dp.toPx()
         drawArc(
-            Color.White, startAngle = -90f, sweepAngle = 290f, useCenter = false,
+            Pal.c("rec_ring"), startAngle = -90f, sweepAngle = 290f, useCenter = false,
             topLeft = Offset(sw / 2, sw / 2), size = Size(this.size.width - sw, this.size.height - sw),
             style = Stroke(sw, cap = StrokeCap.Round),
         )
@@ -132,7 +132,7 @@ private fun RecCountRing(count: Int, size: Dp, modifier: Modifier = Modifier) {
     Canvas(modifier.size(size)) {
         val sw = 2.5.dp.toPx()
         drawArc(
-            Color.White, startAngle = -90f, sweepAngle = sweep.value, useCenter = false,
+            Pal.c("rec_ring"), startAngle = -90f, sweepAngle = sweep.value, useCenter = false,
             topLeft = Offset(sw / 2, sw / 2), size = Size(this.size.width - sw, this.size.height - sw),
             style = Stroke(sw, cap = StrokeCap.Round),
         )
@@ -148,7 +148,7 @@ internal fun ScreenRecCompact(c: IslandContent.ScreenRec, modifier: Modifier = M
             RecPhase.Countdown -> {
                 RecCountRing(c.count, 17.dp, Modifier.align(Alignment.CenterStart).padding(start = 12.dp))
                 Text(
-                    c.count.toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                    c.count.toString(), color = Pal.c("rec_text"), fontWeight = FontWeight.Bold, fontSize = 15.sp,
                     modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp),
                 )
             }
@@ -187,7 +187,7 @@ internal fun ScreenRecContent(c: IslandContent.ScreenRec, onStop: () -> Unit) {
             }
             Text(
                 if (c.phase == RecPhase.Saved) "Kayıt galeriye kaydedildi" else "Ekran Kaydediliyor",
-                color = Color.White, fontWeight = FontWeight.Medium, fontSize = 15.sp,
+                color = Pal.c("rec_text"), fontWeight = FontWeight.Medium, fontSize = 15.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -197,14 +197,14 @@ internal fun ScreenRecContent(c: IslandContent.ScreenRec, onStop: () -> Unit) {
                 Image(th, null, Modifier.size(46.dp).clip(RoundedCornerShape(11.dp)), contentScale = ContentScale.Crop)
             } else {
                 // Önizleme bildirimden gelmediyse boş kalmasın
-                Box(Modifier.size(46.dp).clip(RoundedCornerShape(11.dp)).background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-                    Text("▶", color = Color.White.copy(alpha = 0.75f), fontSize = 18.sp)
+                Box(Modifier.size(46.dp).clip(RoundedCornerShape(11.dp)).background(Pal.c("rec_play_bg")), contentAlignment = Alignment.Center) {
+                    Text("▶", color = Pal.c("rec_play_icon"), fontSize = 18.sp)
                 }
             }
         } else if (rec) {
             Box(
                 Modifier.size(46.dp).clip(CircleShape)
-                    .border(2.5.dp, Color.White, CircleShape)
+                    .border(2.5.dp, Pal.c("rec_ring"), CircleShape)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onStop),
                 contentAlignment = Alignment.Center,
             ) { Box(Modifier.size(20.dp).background(RecRed, RoundedCornerShape(6.dp))) }
