@@ -240,7 +240,7 @@ private fun DotMergePill(rightBusy: Boolean, leftBusy: Boolean, geo: Geo, progre
         val mid = cfg.dotMidDp.dp.toPx()
         val gap = sideGapDp(cfg).dp.toPx()
         val cx = size.width / 2f
-        val cy = h / 2f
+        val cy = if (cfg.invertedIsland) size.height - h / 2f else h / 2f
         val eR = mid / 2f + fr * (gap + dotExtentDp(cfg, 1).dp.toPx())
         val eL = mid / 2f + fl * (gap + dotExtentDp(cfg, -1).dp.toPx())
         val pill = RoundRect(cx - eL, cy - h / 2f, cx + eR, cy + h / 2f, CornerRadius(h / 2f, h / 2f))
@@ -279,7 +279,7 @@ private fun DotPlaceholder(dir: Int, level: Int, hasTarget: Boolean, geo: Geo, p
             cxd += dir * (rs + gap + ro)
             r = ro
         }
-        val c = Offset(cxd, geo.ch.toPx() / 2f)
+        val c = Offset(cxd, if (cfg.invertedIsland) size.height - geo.ch.toPx() / 2f else geo.ch.toPx() / 2f)
         drawCircle(color.value.let { it.copy(alpha = it.alpha * k) }, r, c)
         if (cfg.borderEnabled) {
             val bw = cfg.borderWidthDp.dp.toPx()
@@ -334,7 +334,7 @@ private fun SideSlot(
             val gap = sideGapDp(cfg).dp.toPx()
             val skip = if (level == 2) sideSizeDp(cfg, dir).dp.toPx() + gap else 0f   // dış nokta: iç noktanın yerini atlar
             val cx = size.width / 2f
-            val cy = ch / 2f
+            val cy = if (cfg.invertedIsland) size.height - ch / 2f else ch / 2f
             val pillHalf = lerp(geo.cw, geo.ew, progress.w.value).toPx() / 2f
             val a = Offset(cx + dir * (pillHalf - rm), cy)           // adanın bu yandaki ucu (yuvarlak kısım)
             val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value, rs, gap, skip), cy)     // baloncuk
@@ -350,8 +350,8 @@ private fun SideSlot(
         // İçerik: baloncuk ayrıldıkça görünür (albüm kapağı / kırmızı nokta / telefon simgesi)
         val sizeDp = slotSizeDp(cfg, dir, level).dp
         Box(
-            Modifier.align(Alignment.TopCenter)
-                .offset { IntOffset(0, ((geo.ch.toPx() - sizeDp.toPx()) / 2f).roundToInt()) }
+            Modifier.align(cfg.vAlign())
+                .offset { IntOffset(0, (((geo.ch.toPx() - sizeDp.toPx()) / 2f) * (if (cfg.invertedIsland) -1f else 1f)).roundToInt()) }
                 .requiredSize(sizeDp)
                 .graphicsLayer {
                     val s = sep.value

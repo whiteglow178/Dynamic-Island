@@ -95,6 +95,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private var wantX = 0
     private var wantY = 0                 // adanın pencere üstünün olması gereken ekran Y'si
+    private var wantYIn = 0               // setGeometry'ye verilen (ters adada dönüştürülmemiş) üst konum
     private var calibDy = 0               // ölçülen kayma (px)
     private var calibTries = 0
     private val calibrateRunnable = Runnable { calibrate() }
@@ -712,7 +713,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             val sw = wm.currentWindowMetrics.bounds.width()
             Triple(
                 sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
-                (cutCenterYPx + dp(s.offsetYDp)).toFloat(),
+                islandCenterYPx(s).toFloat(),
                 // iPhone modunda daire adanın solundaysa kilit noktası dairenin de soluna geçer
                 dp(compactWidthFor(s, false)) / 2f + (if (s.iphoneCircleOn() && s.iphoneDir() < 0) dp(s.iphoneCircleSizeDp() + s.iphoneGapDp) else 0),
             )
@@ -931,9 +932,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /** Adayı dikey kaydırma: aşağı (+1) genişletir, yukarı (-1) küçültür. */
-    private fun onPillSwipe(dir: Int) {
+    private fun onPillSwipe(rawDir: Int) {
         val cur = ui.value
         val s = settings.value
+        val dir = if (s.invertedIsland) -rawDir else rawDir      // ters adada yön aynalanır: yukarı kaydırma açar, aşağı kaydırma kapatır
         if (cur.swallow) return
         if (dir > 0 && openStack()) return
         when (val c = cur.content) {
@@ -1090,7 +1092,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val chPx = dp(s.compactHeightDp)
         val spec = LaunchSpec(
             cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
-            top = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)).toFloat(),
+            top = islandTopPx(s, chPx).toFloat(),
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
             speed = speed,
@@ -1177,7 +1179,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val chPx = dp(s.compactHeightDp)
         val spec = LaunchSpec(
             cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
-            top = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)).toFloat(),
+            top = islandTopPx(s, chPx).toFloat(),
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
             speed = s.musicExitSpeed,
@@ -1205,7 +1207,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val chPx = dp(s.compactHeightDp)
         val spec = LaunchSpec(
             cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
-            top = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)).toFloat(),
+            top = islandTopPx(s, chPx).toFloat(),
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
             speed = s.musicExitSpeed,
@@ -1262,6 +1264,21 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cutCenterXOffsetPx = 0
             cutCenterYPx = dp(22f)
         }
+    }
+
+    // ---- Ters ada: ada ekranın altında; kamera deliğinin ekranın üstüne olan uzaklığı, ekranın altına göre aynalanır
+    private fun screenHPx(): Int = wm.currentWindowMetrics.bounds.height()
+
+    /** Kapalı adanın üst kenarının ekran Y'si (normalde üstten, ters adada alttan ölçülür). */
+    private fun islandTopPx(s: IslandSettings, chPx: Int): Int {
+        val t = (cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)
+        return if (s.invertedIsland) screenHPx() - t - chPx else t
+    }
+
+    /** Kapalı adanın dikey merkezinin ekran Y'si. */
+    private fun islandCenterYPx(s: IslandSettings): Int {
+        val c = cutCenterYPx + dp(s.offsetYDp)
+        return if (s.invertedIsland) screenHPx() - c else c
     }
 
     /**
@@ -1436,9 +1453,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
-    private fun setGeometry(w: Int, h: Int, x: Int, y: Int, recalibrate: Boolean = true, force: Boolean = false) {
+    private fun setGeometry(w: Int, h: Int, x: Int, yIn: Int, recalibrate: Boolean = true, force: Boolean = false) {
         val win = dialog?.window ?: return
         val big = w > 1 && h > 1
+        // Ters ada: pencerenin ALT kenarı sabit kalır, pencere yukarı doğru büyür (yIn, normal moddaki üst konumdur)
+        val y = if (settings.value.invertedIsland) screenHPx() - yIn - h else yIn
+        wantYIn = yIn
         wantX = x; wantY = y
         lastGeoAt = android.os.SystemClock.uptimeMillis()
         val ay = if (big) y - calibDy else y
@@ -1510,10 +1530,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                         if (abs(dx) > 2) {
                             xFixing = true
                             val ox = wantX
-                            setGeometry(curW, curH, ox + 1, wantY, recalibrate = false, force = true)
+                            setGeometry(curW, curH, ox + 1, wantYIn, recalibrate = false, force = true)
                             view.postDelayed({
                                 // Bu arada başka bir geometri uygulandıysa (wantX değiştiyse) ona dokunma
-                                if (wantX == ox + 1) setGeometry(curW, curH, ox, wantY, recalibrate = false)
+                                if (wantX == ox + 1) setGeometry(curW, curH, ox, wantYIn, recalibrate = false)
                                 xFixing = false
                             }, 32)
                         }
@@ -1544,9 +1564,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (abs(dy) > 2) calibDy = (calibDy + dy).coerceIn(-300, 600)
         if (abs(dx) > 2) {
             // Aynı değerleri yeniden atamak sistemde işlem yapmayabilir: 1 px kaydırıp hemen gerçek konuma getir
-            setGeometry(curW, curH, wantX + 1, wantY, recalibrate = false, force = true)
-            v.postDelayed({ setGeometry(curW, curH, wantX - 1, wantY, recalibrate = false) }, 32)
-        } else setGeometry(curW, curH, wantX, wantY, recalibrate = false)
+            setGeometry(curW, curH, wantX + 1, wantYIn, recalibrate = false, force = true)
+            v.postDelayed({ setGeometry(curW, curH, wantX - 1, wantYIn, recalibrate = false) }, 32)
+        } else setGeometry(curW, curH, wantX, wantYIn, recalibrate = false)
     }
 
     /** Boşta görünen adaya dokunuş yakalamasın: durum çubuğu altından normal çalışsın. */
@@ -1704,7 +1724,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
         // "Adadan çıkış" animasyonları: sözler adadan başlayıp yerine gelir. Pencere adaya kadar yukarı uzatılır
         // (aksi halde pencere sınırında kesilirdi); söz alanı altta ve eski konumunda kalır.
-        val islandCy = cutCenterYPx + dp(s.offsetYDp)
+        val islandCy = islandCenterYPx(s)
         val textCy = dp(s.lyricsOutsideYDp) + contentH / 2
         if (s.lyricsFromIsland()) {
             val wantTop = (islandCy - dp(10f)).coerceAtLeast(0)

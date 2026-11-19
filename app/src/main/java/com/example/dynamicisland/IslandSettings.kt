@@ -142,6 +142,7 @@ data class IslandSettings(
     val sfxCall: SoundCue = SoundCue(),
     val musicExpandedSec: Float = 8f,        // müzik adası genişletilince açık kalma süresi (sn); 0 = kendiliğinden kapanmasın
     val sideTapPromote: Boolean = false,     // baloncuğa dokununca o olay kalıcı olarak ortaya geçsin (kapalıysa yalnızca paneli açılır)
+    val invertedIsland: Boolean = false,     // ters ada: ada ekranın ÜSTÜNDE değil ALTINDA durur; içerik düz kalır, panel yukarı doğru açılır
     val hideStatusBar: Boolean = false,      // şarj / zil modu gibi durum görünümleri açıkken durum çubuğunu gizle
     val notifLaunchAnim: Boolean = true,     // ... ve açılırken adadan siyah ekran animasyonu oynasın
     val favoriteLaunchAnim: Boolean = true,  // uygulamaya dokununca adadan siyah ekran çıkıp ekranı kaplasın
@@ -371,6 +372,7 @@ class SettingsRepository(context: Context) {
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
         val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
+        val INV_ISLAND = booleanPreferencesKey("inv_island")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val REC_ON = booleanPreferencesKey("rec_on"); val REC_WIDE = booleanPreferencesKey("rec_wide_v2")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full")
@@ -497,6 +499,7 @@ class SettingsRepository(context: Context) {
             sfxNotif = SoundCue.decode(p[K.SFX_NTF]), sfxSilent = SoundCue.decode(p[K.SFX_SIL]), sfxCall = SoundCue.decode(p[K.SFX_CALL]),
             notifCompactSec = p[K.NT_CMP_S] ?: d.notifCompactSec,
             hideStatusBar = p[K.HIDE_SB] ?: d.hideStatusBar,
+            invertedIsland = p[K.INV_ISLAND] ?: d.invertedIsland,
             notifLaunchAnim = p[K.NT_ANIM] ?: d.notifLaunchAnim,
             musicExitAnim = p[K.MX_ANIM] ?: d.musicExitAnim,
             musicExitSpeed = p[K.MX_SPD] ?: d.musicExitSpeed,
@@ -619,6 +622,7 @@ class SettingsRepository(context: Context) {
             it[K.EXP_LONG] = s.expandOnLong; it[K.SW_DN] = s.swipeDownExpand; it[K.SW_UP] = s.swipeUpCollapse; it[K.LP_MS] = s.longPressMs
             it[K.MX_CLASSIC] = s.musicExitClassic; it[K.MX_ATOMIC] = s.musicExitAtomic; it[K.MX_ATOMIC_FULL] = s.musicExitAtomicFull; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
+            it[K.INV_ISLAND] = s.invertedIsland
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.REC_ON] = s.screenRecEnabled; it[K.REC_WIDE] = s.screenRecWide
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp

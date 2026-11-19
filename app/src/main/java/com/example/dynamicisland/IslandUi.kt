@@ -193,6 +193,9 @@ fun FlipAlbumArt(
 @Immutable
 data class Geo(val cw: Dp, val ch: Dp, val ew: Dp, val eh: Dp)
 
+/** Adanın pencere içindeki dikey hizası: normalde üst, "Ters ada" açıkken alt. */
+fun IslandSettings.vAlign(): Alignment = if (invertedIsland) Alignment.BottomCenter else Alignment.TopCenter
+
 fun compactWidthFor(cfg: IslandSettings, compactLyrics: Boolean): Float =
     if (compactLyrics) maxOf(cfg.compactWidthDp, cfg.lyricsCompactWidthDp) else cfg.compactWidthDp
 
@@ -379,7 +382,7 @@ fun IslandRoot(
 
     // Yığın görünümü: birden fazla olay alt alta kartlar halinde (servis s.stack'i doldurur)
     if (s.stack.isNotEmpty()) {
-        Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = cfg.vAlign()) {
             IslandStackPanel(
                 items = s.stack, closing = s.stackClosing, cfg = cfg, lyrics = lyrics,
                 onClose = onStackClose, onCommand = cmd, onOutput = onOutput, onOpenMusic = onOpenMusic,
@@ -393,7 +396,7 @@ fun IslandRoot(
     // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
     Box(
         Modifier.fillMaxSize().onSizeChanged { winH = it.height }.padding(cfg.windowPadDp().dp),
-        contentAlignment = Alignment.TopCenter,
+        contentAlignment = cfg.vAlign(),
     ) {
         // Boştayken de göster açıksa Idle içerikte de (boş) ada çizilir; kapalıysa hiçbir şey çizilmez.
         if (content !is IslandContent.Idle || cfg.showIdle) {
