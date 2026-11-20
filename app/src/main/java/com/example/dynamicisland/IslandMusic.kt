@@ -488,14 +488,14 @@ private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
 }
 
 
-// ---------------------------------------------------------------- Hap tasarımı: müzik
+// ---------------------------------------------------------------- Hap tasarımı: müzik (küçültülmüş ada, PILL_MUSIC_H_DP yüksekliğinde)
 @Composable
 private fun PillCtl(kind: Ctl, size: Dp, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "pillCtlPress")
     Box(
-        Modifier.size(38.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
+        Modifier.size(34.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
             .clickable(interactionSource = src, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -555,12 +555,12 @@ fun MusicPillPanel(
     val waveR by animateColorAsState(tgtR, tween(450), label = "pillWaveR")
 
     Row(
-        Modifier.fillMaxSize().padding(start = 16.dp, end = 10.dp, top = 14.dp, bottom = 14.dp),
+        Modifier.fillMaxSize().padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box((if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier).fxTarget("art")) {
-            FlipAlbumArt(customArt ?: m.art, 68.dp, artFlip, artSpin, 16.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
+            FlipAlbumArt(customArt ?: m.art, 64.dp, artFlip, artSpin, 14.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
             Box(
@@ -570,20 +570,20 @@ fun MusicPillPanel(
             ) {
                 MarqueeText(
                     m.title.ifBlank { "Bilinmeyen parça" }, Modifier.fillMaxWidth().rainbowFill(rb),
-                    color = Pal.c("music_title"), fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                    color = Pal.c("music_title"), fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 )
             }
             Text(
-                m.artist, color = Pal.c("music_artist"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                m.artist, color = Pal.c("music_artist"), fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().rainbowFill(rb),
             )
             PillWave(
                 listOf(waveL, waveM, waveR),
-                Modifier.fillMaxWidth().height(24.dp), active = m.playing,
+                Modifier.fillMaxWidth().height(18.dp), active = m.playing,
             )
             Row(Modifier.fxTarget("progress"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(fmt(shownMs), color = gray, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
-                Box(Modifier.weight(1f)) {
+                Box(Modifier.weight(1f).height(16.dp)) {
                     SeekBar(frac.coerceIn(0f, 1f), dur > 0, d != null, null, rb) { f, commit ->
                         if (commit) { drag = null; onCommand(MediaCommand.SeekTo((f * dur).toLong())) } else drag = f
                     }

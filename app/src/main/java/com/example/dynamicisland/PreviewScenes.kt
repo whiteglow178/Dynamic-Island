@@ -131,7 +131,7 @@ internal fun previewHint(kind: PreviewKind, cfg: IslandSettings, bigDismissed: B
     PreviewKind.Privacy -> if (cfg.privacyIndicator) "Kamera / mikrofon kullanılırken ada böyle haber verir" else "Gösterge kapalı"
     PreviewKind.ScreenRec -> if (cfg.screenRecEnabled) "Ekran kaydı: geri sayım, kayıt ve kaydedildi" else "Ekran kaydı adası kapalı"
     PreviewKind.SideBubbles -> "Müzik çalarken ekran kaydı yan baloncukta"
-    PreviewKind.PillStyle -> "Hap tasarımları: gelen arama, aktif arama ve müzik sırayla gösterilir"
+    PreviewKind.PillStyle -> "Küçültülmüş adada gelen arama, aktif arama ve müzik sırayla gösterilir"
     PreviewKind.Island -> ""
 }
 
@@ -223,12 +223,11 @@ private fun SideCallScene(cfg: IslandSettings) {
 
 
 // ---------------------------------------------------------------- Hap tasarımları (arama + müzik)
-/** Gelen arama -> aktif arama -> müzik sırayla açılıp kapanır; gerçek IslandPill kullanılır, ayarlar canlı uygulanır. */
+/** Küçültülmüş (kapalı) adada gelen arama -> aktif arama -> müzik sırayla gösterilir; gerçek IslandPill, ayarlar canlı uygulanır. */
 @Composable
 private fun PillStyleScene(cfg: IslandSettings) {
-    val open = rememberLoopOpen()
     var step by remember { mutableIntStateOf(0) }
-    LaunchedEffect(open) { if (!open) step = (step + 1) % 3 }
+    LaunchedEffect(Unit) { while (true) { delay(3500); step = (step + 1) % 3 } }
     val art = remember { sampleArt() }
     val content = remember(step) {
         when (step) {
@@ -240,13 +239,14 @@ private fun PillStyleScene(cfg: IslandSettings) {
             )
         }
     }
-    val geo = when (step) {
-        0 -> islandGeo(cfg, false).copy(eh = 74.dp)
-        1 -> islandGeo(cfg, false).copy(eh = 88.dp)
+    val base = when (step) {
+        0 -> islandGeo(cfg, false).copy(cw = maxOf(cfg.compactWidthDp, CALL_COMPACT_W_DP).dp, eh = 74.dp)
+        1 -> islandGeo(cfg, false).copy(cw = maxOf(cfg.compactWidthDp, CALL_COMPACT_W_DP).dp, eh = 88.dp)
         else -> islandGeo(cfg, true)
     }
+    val geo = pillCompactSizeDp(cfg, content)?.let { (w, h) -> base.copy(cw = w.dp, ch = h.dp) } ?: base
     Box(Modifier.fillMaxSize()) {
-        PreviewPill(content, open, geo, cfg, Modifier.align(Alignment.TopCenter))
+        PreviewPill(content, false, geo, cfg, Modifier.align(Alignment.TopCenter))
     }
 }
 

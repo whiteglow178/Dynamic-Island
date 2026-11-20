@@ -1595,7 +1595,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         dotWin = persistSides
         setFocusable(k.kind == 12 && k.expanded)          // çeviri paneli: klavye için odak
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
-        val cw = dp(if (s.dotMode) s.compactWidthDp else if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
+        val pillC = pillCompactSizeForKind(s, k.kind)      // hap tasarımı: kapalı ada daha büyük
+        val cw = dp(if (pillC != null) pillC.first else if (s.dotMode) s.compactWidthDp else if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
+        val chWin = if (pillC != null) dp(pillC.second) else ch     // kapalı halde pencere yüksekliği (konum hesabı ch ile kalır: ada kameradan aşağı büyür)
         val music = k.kind == 2
         val assistant = k.kind == 3
         val ew = dp(
@@ -1656,7 +1658,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
             k.expanded && k.swallow && music -> {
                 // Yutma efekti: pencere, büyüyen adanın boyutunda (tam açık panel kadar büyük değil)
-                val sz = swallowSizeDp(compactWidthFor(s, false), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp())
+                val sz = swallowSizeDp(pillC?.first ?: compactWidthFor(s, false), pillC?.second ?: s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp())
                 setBlur(false, s)
                 val sw2 = dp(sz.first) + 2 * pad
                 val maxSh = ((screenW - sw2) / 2).coerceAtLeast(0)
@@ -1688,8 +1690,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 // Yan baloncuklar birleşirken (sıvı animasyonu) pencere de aynı şekilde geç küçülür
                 val hold = if ((k.kind == 2 && !k.swallow) || winSide > 0) WINDOW_HOLD_MS else 0L
                 val wantW = cw + 2 * pad + 2 * sideExtra
-                if (curW > wantW || curH > ch + 2 * pad) delay(settle + hold)
-                setGeometry(wantW, ch + 2 * pad, baseX, y)
+                if (curW > wantW || curH > chWin + 2 * pad) delay(settle + hold)
+                setGeometry(wantW, chWin + 2 * pad, baseX, y)
                 winSide = sideExtra
                 if (blurOk) setBlur(true, s)
             }

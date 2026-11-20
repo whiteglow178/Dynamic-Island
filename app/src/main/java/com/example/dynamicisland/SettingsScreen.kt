@@ -591,9 +591,9 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         }
 
         sec("Hap tasarımları", "Arama ve müzik adası için alternatif görünüm", PreviewKind.PillStyle) {
-            SwitchRow("Arama hapı", "Solda yeşil, sağda kırmızı yuvarlak düğme; ortada süre / isim ve hareketli ses dalgası. Aktif aramada soldaki yeşil düğme hoparlörü açıp kapatır",
+            SwitchRow("Arama hapı", "KÜÇÜLTÜLMÜŞ adada: solda yeşil, sağda kırmızı yuvarlak düğme; ortada süre / isim ve hareketli ses dalgası. Genişletilmiş görünüm değişmez. Aktif aramada yeşil düğme hoparlörü açıp kapatır",
                 draft.pillCallStyle) { draft = draft.copy(pillCallStyle = it) }
-            SwitchRow("Müzik hapı", "Solda büyük albüm kapağı, ortada şarkı adı, renkli dalga ve ilerleme çubuğu, sağda önceki / duraklat / sonraki düğmeleri",
+            SwitchRow("Müzik hapı", "KÜÇÜLTÜLMÜŞ adada: solda albüm kapağı, ortada şarkı adı, renkli dalga ve ilerleme çubuğu, sağda önceki / duraklat / sonraki düğmeleri. Genişletilmiş panel değişmez",
                 draft.pillMusicStyle) { draft = draft.copy(pillMusicStyle = it) }
             if (draft.pillMusicStyle) {
                 SectionDivider()
@@ -980,7 +980,10 @@ private fun PreviewCard(
         active = music && cfg.lyricsEnabled, fine = cfg.lyricsFillEnabled, loopMs = SAMPLE_LOOP,
     )
     val progress = rememberIslandProgress(cfg, expanded)
-    val geo = islandGeo(cfg, music, compactLy)
+    // Hap tasarımı açıksa küçültülmüş ada ekran görüntüsündeki gibi büyük hap olur (genişletilmiş panel değişmez)
+    val geo = islandGeo(cfg, music, compactLy).let { g ->
+        pillCompactSizeDp(cfg, sample)?.let { (w, h) -> g.copy(cw = w.dp, ch = h.dp) } ?: g
+    }
     val showOutside = music && !expanded && cfg.lyricsEnabled && cfg.lyricsOutside
 
     // Konum ayarları (Yatay / Dikey) telefondaki adaya da uygulanır
@@ -993,7 +996,7 @@ private fun PreviewCard(
         PreviewKind.Privacy -> 60f
         PreviewKind.ScreenRec -> 74f
         PreviewKind.SideBubbles -> cfg.expandedHeightDp
-        PreviewKind.PillStyle -> geo.eh.value.coerceAtLeast(cfg.expandedHeightDp + MUSIC_EXTRA_DP)
+        PreviewKind.PillStyle -> PILL_MUSIC_H_DP
     }
     // 3 boyutlu telefon: normal modda büyük çizilip üst kısmı gösterilir, tam modda tamamı karta sığar
     val phoneWDp = if (showBig) p3dFullWidthDp() else P3D_W_DP

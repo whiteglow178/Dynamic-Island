@@ -271,7 +271,7 @@ internal fun CallContent(
 }
 
 
-// ---------------------------------------------------------------- Hap tasarımı: arama
+// ---------------------------------------------------------------- Hap tasarımı: arama (küçültülmüş ada)
 /** Kenarlarda nokta, ortada çubuk olan hareketli ses dalgası. [colors] soldan sağa renk geçişi verir. */
 @Composable
 internal fun PillWave(colors: List<Color>, modifier: Modifier = Modifier, active: Boolean = true, bars: Int = 33) {
@@ -312,7 +312,7 @@ private fun pillTime(d: String?): String {
 }
 
 /**
- * Hap arama tasarımı: solda yeşil, sağda kırmızı yuvarlak düğme; ortada süre (aktif) ya da isim (gelen) ve ses dalgası.
+ * Hap arama tasarımı (küçültülmüş ada, PILL_CALL_H_DP yüksekliğinde): solda yeşil, sağda kırmızı yuvarlak düğme; ortada süre (aktif) ya da isim (gelen) ve ses dalgası.
  * Gelen aramada yeşil = cevapla; aktif aramada yeşil = hoparlör aç / kapa (açıkken beyaz halka çıkar).
  */
 @Composable
@@ -324,14 +324,14 @@ internal fun CallPillContent(
     onSpeaker: () -> Unit,
 ) {
     val incoming = c.isIncoming
-    val btn = if (incoming) 52.dp else 56.dp
+    val btn = 48.dp
     Row(
         Modifier.fillMaxSize().padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(
-            Modifier.size(btn + 6.dp)
+            Modifier.size(btn + 4.dp)
                 .then(if (!incoming && c.speaker) Modifier.border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
@@ -345,12 +345,12 @@ internal fun CallPillContent(
             Text(
                 if (incoming) c.name else pillTime(c.duration),
                 color = Pal.c("call_text"), fontWeight = if (incoming) FontWeight.Bold else FontWeight.Medium,
-                fontSize = if (incoming) 16.sp else 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = if (incoming) 15.sp else 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.rainbowFill(rb),
             )
-            PillWave(listOf(CallGreen), Modifier.fillMaxWidth().height(if (incoming) 22.dp else 30.dp))
+            PillWave(listOf(CallGreen), Modifier.fillMaxWidth().height(if (incoming) 20.dp else 26.dp))
         }
-        Box(Modifier.size(btn + 6.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(btn + 4.dp), contentAlignment = Alignment.Center) {
             CallButton(DeclineColor, btn, onDecline) { sz -> PhoneIcon(135f, Modifier.size(sz)) }
         }
     }
