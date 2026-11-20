@@ -89,25 +89,25 @@ import kotlin.math.sin
 
 /** Zaman çizelgesi (saniye). T = animasyon başından beri; v = T - EXP (yüz görününce 0). */
 object FaceIdTl {
-    const val EXP = 0.35f           // hap -> kare açılma süresi
-    const val FEAT_FADE0 = 1.50f    // göz / burun / ağız solar
-    const val FEAT_FADE1 = 1.70f
-    const val SPR0 = 1.65f          // 3B dönme sprite'ı başlar (köşe parantezleri halkaya dönüşüp döner)
-    const val SPR_FPS = 37f         // sprite kare hızı: video yavaşlatılmıştı, gerçek hız ~2.5 kat (dönme ~1.8 sn)
+    const val EXP = 0.25f           // hap -> kare açılma süresi
+    const val FEAT_FADE0 = 0.70f    // göz / burun / ağız solar
+    const val FEAT_FADE1 = 0.90f
+    const val SPR0 = 0.85f          // 3B dönme sprite'ı başlar (köşe parantezleri halkaya dönüşüp döner)
+    const val SPR_FPS = 60f         // sprite kare hızı: video yavaşlatılmıştı, gerçek hız ~2.5 kat (dönme ~1.8 sn)
     const val SPR_N = 68            // sprite kare sayısı
     const val SPR1 = SPR0 + (SPR_N - 1) / SPR_FPS   // dönme biter: düz halka
     const val DECIDE_V = SPR1 + 0.15f               // karar anı: kilit açıldıysa ✓, açılmadıysa gri titreme
     const val CHECK0 = SPR1 + 0.30f // ✓ çizilmeye başlar (önce orta nokta)
-    const val CHECK1 = CHECK0 + 0.60f
-    const val FADE0 = CHECK1 + 0.75f   // içerik söner
-    const val FADE1 = FADE0 + 0.25f    // kare -> hap küçülme başlar
-    const val END_V = FADE1 + 0.30f
+    const val CHECK1 = CHECK0 + 0.45f
+    const val FADE0 = CHECK1 + 0.55f   // içerik söner
+    const val FADE1 = FADE0 + 0.22f    // kare -> hap küçülme başlar
+    const val END_V = FADE1 + 0.28f
     const val END = EXP + END_V
     const val FF_V = DECIDE_V       // kilit açılınca buraya kadar 3 kat hızlı oynatılır
     // başarısız (kilit açılmadı) akış: karar anından (failT) itibaren geçen süre
-    const val F_FADE0 = 1.25f
-    const val F_FADE1 = 1.50f
-    const val F_END = 1.85f
+    const val F_FADE0 = 1.00f
+    const val F_FADE1 = 1.25f
+    const val F_END = 1.60f
     const val SHAKE_HZ = 4f
     const val SPRITE_SQ = 207f      // videodaki karenin px genişliği (sprite ölçeği)
     const val SPRITE_CELL = 180     // sprite hücre boyutu (px)
@@ -284,7 +284,8 @@ private fun DrawScope.fidBody(
     // ---- 2a) Face ID yüzü
     if (!failed) {
         // nabız atan yüz; köşe parantezleri 3B dönme başlarken solar
-        val pulseA = if (v < 1.5f) fidPulse(v) else fidLerp(fidPulse(1.5f), 1f, fidSeg(v, 1.5f, 1.65f))
+        val p0 = FaceIdTl.SPR0 - 0.15f
+        val pulseA = if (v < p0) fidPulse(v) else fidLerp(fidPulse(p0), 1f, fidSeg(v, p0, FaceIdTl.SPR0))
         val brA = 1f - fidSeg(v, FaceIdTl.SPR0 - 0.05f, FaceIdTl.SPR0 + 0.20f)
         val ftA = 1f - fidSeg(v, FaceIdTl.FEAT_FADE0, FaceIdTl.FEAT_FADE1)
         if (brA > 0.004f) fidFace(cx, ccy, a, sw, green.copy(alpha = pulseA * brA * vis), green.copy(alpha = pulseA * ftA * vis))
@@ -296,7 +297,7 @@ private fun DrawScope.fidBody(
 
     // ---- 2b) 3B dönme sprite'ı (videodan birebir kareler), sonunda düz halka olarak kalır
     if (sprite != null && v >= FaceIdTl.SPR0) {
-        val spA = vis * (if (failed) 1f - fidSeg(fv, 0f, 0.20f) else 1f)
+        val spA = vis * (1f - fidSeg(v, FaceIdTl.SPR1 - 0.30f, FaceIdTl.SPR1)) * (if (failed) 1f - fidSeg(fv, 0f, 0.20f) else 1f)
         if (spA > 0.004f) {
             val n = FaceIdTl.SPR_N
             val pos = ((v - FaceIdTl.SPR0) * FaceIdTl.SPR_FPS).coerceIn(0f, (n - 1).toFloat())
@@ -321,6 +322,18 @@ private fun DrawScope.fidBody(
                 cellDraw(i0, spA)
                 if (f > 0.02f && i1 != i0) cellDraw(i1, spA * f)
             }
+        }
+    }
+
+    // ---- 2b') sprite biterken tam yuvarlak, kameraya dik bakan halkaya yumuşakça geçilir
+    if (v >= FaceIdTl.SPR1 - 0.30f) {
+        val ra = vis * fidSeg(v, FaceIdTl.SPR1 - 0.30f, FaceIdTl.SPR1) * (if (failed) 1f - fidSeg(fv, 0f, 0.20f) else 1f)
+        if (ra > 0.004f) {
+            val rw = sq * 0.025f
+            val c = Offset(cx, ccy)
+            drawCircle(col.copy(alpha = 0.07f * ra), ringR, c, style = Stroke(width = rw * 4.6f))
+            drawCircle(col.copy(alpha = 0.16f * ra), ringR, c, style = Stroke(width = rw * 2.5f))
+            drawCircle(col.copy(alpha = ra), ringR, c, style = Stroke(width = rw))
         }
     }
 
