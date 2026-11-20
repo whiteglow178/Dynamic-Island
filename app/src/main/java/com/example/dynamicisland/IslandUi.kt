@@ -747,6 +747,7 @@ fun IslandPill(
     // Asistan modunda: kendi şekli; cam ve sıvı cam ayarları uygulanır. Çerçeve / dış parıltı kapalı (şekle uymaz).
     val assistant = content is IslandContent.Assistant
     val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false) else cfg
+    assistantGlassShape = assistant && cfg.assistantStyle == 1 && !cfg.assistantFullWidth   // oval stil: köşe yarıçapı tam yuvarlak
     val cornerT = if (assistant) progress.mean else -1f
     val cfgNow by rememberUpdatedState(cfg)
     val isMediaNow by rememberUpdatedState(content is IslandContent.Media)
@@ -911,7 +912,7 @@ fun IslandPill(
                             else -> StatusContent(content, rb)
                         }
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin, artVideo)
-                    IslandContent.Assistant -> AssistantOrb()
+                    IslandContent.Assistant -> if (cfg.assistantStyle == 1) AssistantGlassOrb() else AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     IslandContent.Translate -> TranslatePanel(cfg.compactHeightDp.dp)
                     is IslandContent.ScreenRec -> ScreenRecContent(content, onRecStop)

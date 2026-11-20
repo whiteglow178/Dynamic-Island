@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -48,6 +49,9 @@ class AssistantShape(private val t: Float) : Shape {
 
 private const val ASSISTANT_CORNER = 0.42f   // köşe yarıçapı / yükseklik (0.5 = hap şekli, küçüldükçe daha köşeli)
 
+/** "Cam oval" asistan stili açıkken şekil tam yuvarlak köşeli (oval) olur. IslandRoot her kompozisyonda ayarlar. */
+@Volatile internal var assistantGlassShape = false
+
 /**
  * Adanın o anki köşe yarıçapı (px). cornerT < 0: normal ada (36dp'lik hap).
  * 0..1: normal adadan asistan şekline geçiş. Şekil, cam / sıvı cam çizimleri ve shader'lar hep bunu kullanır,
@@ -56,7 +60,7 @@ private const val ASSISTANT_CORNER = 0.42f   // köşe yarıçapı / yükseklik 
 fun islandCornerPx(w: Float, h: Float, density: Float, cornerT: Float): Float {
     val base = min(36f * density, h / 2f)
     if (cornerT < 0f) return base
-    val target = min(h * ASSISTANT_CORNER, w / 2f)
+    val target = min(h * (if (assistantGlassShape) 0.5f else ASSISTANT_CORNER), w / 2f)
     return base + (target - base) * cornerT.coerceIn(0f, 1f)
 }
 
@@ -209,6 +213,138 @@ fun AssistantOrb(fullWidth: Boolean = false) {
                 0f to Pal.c("orb_sweep").copy(alpha = 0.12f), 1f to Color.Transparent,
                 center = Offset(w * 0.30f, h * 0.08f), radius = w * 0.30f,
             ),
+        )
+    }
+}
+
+
+/**
+ * "Cam oval" asistan animasyonu (ekran kaydındaki tasarım): siyah camsı oval, ince beyaz çerçeve (kenarlarda hafif renk kayması),
+ * ortada akan renkli Siri bandı. Bandın üst yarısı ve alt yarısı farklı renk fazında akar; merkez çizgisi beyaz-sıcak parlar.
+ */
+@Composable
+fun AssistantGlassOrb() {
+    val t = rememberInfiniteTransition(label = "glassOrb")
+    val wave = t.animateFloat(0f, 1f, infiniteRepeatable(tween(4200, easing = LinearEasing)), label = "gWave")
+    val hue = t.animateFloat(0f, 1f, infiniteRepeatable(tween(7000, easing = LinearEasing)), label = "gHue")
+    val pulse = t.animateFloat(
+        0.9f, 1.1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "gPulse",
+    )
+    val path = remember { Path() }
+    val clip = remember { Path() }
+    val yc = remember { FloatArray(STEPS + 1) }
+    val up = remember { FloatArray(STEPS + 1) }
+    val lo = remember { FloatArray(STEPS + 1) }
+
+    Canvas(Modifier.fillMaxSize()) {
+        val w = size.width; val h = size.height
+        if (w <= 1f || h <= 1f) return@Canvas
+        val p = wave.value; val hp = hue.value; val b = pulse.value
+        val tau = (2 * PI).toFloat(); val pi = PI.toFloat()
+        val r = min(h, w) / 2f
+        val dp = density
+
+        clip.reset()
+        clip.addRoundRect(RoundRect(0f, 0f, w, h, CornerRadius(r, r)))
+        clipPath(clip) {
+            // 1) Zemin: üstte siyah, altta hafif gri cam yansıması
+            drawRect(
+                Brush.verticalGradient(
+                    0f to Color.Black, 0.55f to Color.Black, 1f to Color(0xFF30333C),
+                ),
+            )
+            drawRect(
+                Brush.radialGradient(
+                    0f to Color.White.copy(alpha = 0.16f), 1f to Color.Transparent,
+                    center = Offset(w * 0.5f, h * 1.08f), radius = w * 0.55f,
+                ),
+            )
+
+            // 2) Bant: dalgalı merkez çizgisi; üstte ve altta ayrı kalınlık
+            val cy = h * 0.48f
+            val x0 = w * 0.04f
+            val span = w * 0.92f
+            for (i in 0..STEPS) {
+                val u = i / STEPS.toFloat()
+                val env = sin(pi * u).coerceAtLeast(0f)
+                val mv = env.pow(1.4f)
+                yc[i] = cy + mv * h * 0.06f * b * sin(tau * (u * 1.1f - p)) +
+                    mv * h * 0.03f * sin(tau * (u * 2.3f + p * 2f))
+                up[i] = h * 0.20f * (0.70f + 0.30f * sin(tau * (u * 1.3f + p))) * env.pow(0.8f) * b
+                lo[i] = h * 0.14f * (0.70f + 0.30f * sin(tau * (u * 1.7f - p + 0.3f))) * env.pow(0.8f)
+            }
+            fun ribbonBrush(shift: Float): Brush {
+                val cols = List(SAMPLES) { k ->
+                    val s = k / (SAMPLES - 1).toFloat()
+                    val a = 0.25f + 0.75f * sin(pi * s).coerceAtLeast(0f).pow(0.5f)
+                    siriColor(s * 0.8f + hp + shift, a)
+                }
+                return Brush.horizontalGradient(cols, startX = x0, endX = x0 + span)
+            }
+            val upBrush = ribbonBrush(0f)
+            val loBrush = ribbonBrush(0.45f)
+            val scales = floatArrayOf(1.0f, 0.72f, 0.46f, 0.24f)
+            val alphas = floatArrayOf(0.22f, 0.34f, 0.55f, 0.90f)
+            scales.forEachIndexed { li, sc ->
+                // üst yarı
+                path.reset()
+                for (i in 0..STEPS) {
+                    val x = x0 + span * i / STEPS
+                    val y = yc[i] - up[i] * sc
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                for (i in STEPS downTo 0) path.lineTo(x0 + span * i / STEPS, yc[i])
+                path.close()
+                drawPath(path, upBrush, alpha = alphas[li], blendMode = BlendMode.Plus)
+                // alt yarı
+                path.reset()
+                for (i in 0..STEPS) {
+                    val x = x0 + span * i / STEPS
+                    val y = yc[i] + lo[i] * sc
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                for (i in STEPS downTo 0) path.lineTo(x0 + span * i / STEPS, yc[i])
+                path.close()
+                drawPath(path, loBrush, alpha = alphas[li], blendMode = BlendMode.Plus)
+            }
+
+            // 3) Merkez çizgisi: beyaz-sıcak parlama
+            path.reset()
+            for (i in 0..STEPS) {
+                val x = x0 + span * i / STEPS
+                if (i == 0) path.moveTo(x, yc[i]) else path.lineTo(x, yc[i])
+            }
+            val core = Brush.horizontalGradient(
+                0f to Color.White.copy(alpha = 0f), 0.25f to Color.White.copy(alpha = 0.75f), 0.5f to Color.White,
+                0.75f to Color.White.copy(alpha = 0.75f), 1f to Color.White.copy(alpha = 0f), startX = x0, endX = x0 + span,
+            )
+            drawPath(path, core, alpha = 0.30f, style = Stroke(width = 9f * dp, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.Plus)
+            drawPath(path, core, alpha = 0.95f, style = Stroke(width = 2.4f * dp, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.Plus)
+        }
+
+        // 4) Cam çerçeve: kırmızı / mavi kayma + ince beyaz çizgi (altta ve yanlarda daha parlak)
+        val inset = 0.8f * dp
+        val rs = Size(w - 2 * inset, h - 2 * inset)
+        val rc = CornerRadius((r - inset).coerceAtLeast(1f))
+        val fringe = 0.9f * dp
+        drawRoundRect(
+            Color(0xFFFF4060).copy(alpha = 0.30f), Offset(inset + fringe, inset), rs, rc,
+            style = Stroke(1.2f * dp), blendMode = BlendMode.Plus,
+        )
+        drawRoundRect(
+            Color(0xFF4080FF).copy(alpha = 0.30f), Offset(inset - fringe, inset), rs, rc,
+            style = Stroke(1.2f * dp), blendMode = BlendMode.Plus,
+        )
+        drawRoundRect(
+            Color.White.copy(alpha = 0.14f), Offset(inset, inset), rs, rc, style = Stroke(4f * dp),
+        )
+        drawRoundRect(
+            Brush.sweepGradient(
+                0f to Color.White.copy(alpha = 0.80f), 0.25f to Color.White.copy(alpha = 0.95f),
+                0.5f to Color.White.copy(alpha = 0.80f), 0.75f to Color.White.copy(alpha = 0.50f),
+                1f to Color.White.copy(alpha = 0.80f), center = Offset(w / 2f, h / 2f),
+            ),
+            Offset(inset, inset), rs, rc, style = Stroke(1.2f * dp),
         )
     }
 }

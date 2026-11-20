@@ -187,6 +187,7 @@ data class IslandSettings(
     val longPressMs: Int = 500,               // basılı tutma süresi (ms)
     val hideInMusicApp: Boolean = false,      // müzik uygulamasındayken adada çalan müzik görünmez
     val musicExitAnim: Boolean = true,        // müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı gösterir
+    val assistantStyle: Int = 0,              // asistan animasyonu stili: 0 = klasik bant, 1 = cam oval (siyah cam içinde renkli Siri dalgası)
     val assistantFullWidth: Boolean = false,  // ada kutusu yok; renkli animasyon ekranın solundan sağına uzanır
 
     // Gökkuşağı modu
@@ -389,7 +390,7 @@ class SettingsRepository(context: Context) {
         val INV_ISLAND = booleanPreferencesKey("inv_island")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val REC_ON = booleanPreferencesKey("rec_on"); val REC_WIDE = booleanPreferencesKey("rec_wide_v2")
-        val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full")
+        val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full"); val AS_STYLE = intPreferencesKey("as_style")
         val RB_ON = booleanPreferencesKey("rb_on"); val RB_A = floatPreferencesKey("rb_a")
 
         val LY_ON = booleanPreferencesKey("ly_on"); val LY_PANEL = booleanPreferencesKey("ly_panel")
@@ -546,6 +547,7 @@ class SettingsRepository(context: Context) {
             assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
             assistantHeightDp = p[K.AS_H] ?: d.assistantHeightDp,
             assistantFullWidth = p[K.AS_FULL] ?: d.assistantFullWidth,
+            assistantStyle = (p[K.AS_STYLE] ?: d.assistantStyle).coerceIn(0, 1),
             rainbowEnabled = p[K.RB_ON] ?: d.rainbowEnabled,
             rainbowAlpha = p[K.RB_A] ?: d.rainbowAlpha,
             lyricsEnabled = p[K.LY_ON] ?: d.lyricsEnabled,
@@ -653,7 +655,7 @@ class SettingsRepository(context: Context) {
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.REC_ON] = s.screenRecEnabled; it[K.REC_WIDE] = s.screenRecWide
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
-            it[K.AS_FULL] = s.assistantFullWidth
+            it[K.AS_FULL] = s.assistantFullWidth; it[K.AS_STYLE] = s.assistantStyle
             it[K.RB_ON] = s.rainbowEnabled; it[K.RB_A] = s.rainbowAlpha
             it[K.LY_ON] = s.lyricsEnabled; it[K.LY_PANEL] = s.lyricsInPanel
             it[K.LY_COMPACT] = s.lyricsCompact; it[K.LY_OUT] = s.lyricsOutside

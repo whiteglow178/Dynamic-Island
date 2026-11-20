@@ -364,6 +364,10 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SwitchRow("Tam genişlik animasyon", "Ada kutusu olmadan, renkli animasyon ekranın solundan sağına uzanır",
                     draft.assistantFullWidth) { draft = draft.copy(assistantFullWidth = it) }
                 if (!draft.assistantFullWidth) {
+                    SubHeader("Animasyon stili")
+                    SegmentedTabs(listOf("Klasik", "Cam oval"), draft.assistantStyle) { draft = draft.copy(assistantStyle = it) }
+                    Text("Cam oval: siyah camsı bir oval içinde, ortada renkli (mavi, mor, kırmızı, turuncu, beyaz) akan Siri dalgası. En iyi görünüm için genişlik 150, yükseklik 112 dp civarında olsun.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
                     SliderRow("Genişlik", draft.assistantWidthDp, 100f..300f, "${draft.assistantWidthDp.toInt()} dp") { draft = draft.copy(assistantWidthDp = it) }
                 }
                 SliderRow("Yükseklik", draft.assistantHeightDp, 60f..180f, "${draft.assistantHeightDp.toInt()} dp") { draft = draft.copy(assistantHeightDp = it) }
