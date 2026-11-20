@@ -230,37 +230,52 @@ internal fun StatusContent(c: IslandContent.Status, rb: RainbowStyle?) {
 
 
 // ---------------------------------------------------------------- Zil modu: Zil / Sessiz / Titreşim (iOS tarzı hap)
-/** Solda animasyonlu simge, sağda yazı. Ortada kamera deliği için boşluk kalır. */
+/**
+ * Solda simge, sağda yazı (Zil / Sessiz / Titreşim). Ekran kaydındaki gibi: sessizde kırmızı (titreşimde turuncu) kapsül
+ * içinde beyaz çizgili zil, yazı kapsül renginde; zilde kapsülsüz beyaz zil ve beyaz yazı.
+ * [compact]: ada genişlemiyorsa aynı düzen küçük yazı / simgeyle kapalı adanın içine sığar. Ortada kamera deliği için boşluk kalır.
+ * [heightDp]: hap yüksekliği; simge, kapsül ve yazı boyutu buna göre ölçeklenir.
+ */
 @Composable
-internal fun RingerContent(c: IslandContent.Status, rb: RainbowStyle?, compact: Boolean = false) {
-    val color = when {
+internal fun RingerContent(c: IslandContent.Status, rb: RainbowStyle?, compact: Boolean = false, heightDp: Float = 36f) {
+    val accent = when {
         c.silent -> Pal.c("status_ringer_silent")      // sessiz: kırmızı
         c.vibrate -> Pal.c("status_ringer_vibrate")     // titreşim: turuncu
         else -> Pal.c("status_ringer_normal")                // zil: beyaz
     }
-    if (compact) {
-        // Genişleme kapalı: ada boyutunu değiştirmez, yalnızca solda animasyonlu simge
-        Row(Modifier.fillMaxSize().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            RingerGlyph(c, color, Modifier.size(15.dp))
-        }
-        return
-    }
-    // Ekran kaydındaki gibi: solda simge, sağda yazı; iki yanda ~20 dp boşluk
+    val capsule = c.silent || c.vibrate
+    val iconColor = if (capsule) Color.White else accent
+    val capH = (heightDp * 0.62f).dp
+    val capW = (heightDp * 0.62f * 1.9f).dp
+    val glyphSize = (heightDp * (if (capsule) 0.40f else 0.50f)).dp
+    val textSp = if (compact) 10.sp else (heightDp * 0.34f).coerceIn(11f, 22f).sp
+    val padStart = if (compact) 5.dp else (heightDp * 0.17f).dp
+    val padEnd = if (compact) 8.dp else (heightDp * 0.43f).dp
     Row(
-        Modifier.fillMaxSize().padding(horizontal = 20.dp),
+        Modifier.fillMaxSize().padding(start = padStart, end = padEnd),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RingerGlyph(c, color, Modifier.size(20.dp))
+        if (capsule) {
+            Box(
+                Modifier.size(width = if (compact) capW * 0.85f else capW, height = if (compact) capH * 0.85f else capH)
+                    .clip(RoundedCornerShape(50)).background(accent),
+                contentAlignment = Alignment.Center,
+            ) { RingerGlyph(c, iconColor, accent, Modifier.size(if (compact) glyphSize * 0.9f else glyphSize)) }
+        } else {
+            Box(Modifier.padding(start = 3.dp), contentAlignment = Alignment.Center) {
+                RingerGlyph(c, iconColor, Color.Black, Modifier.size(glyphSize))
+            }
+        }
         Spacer(Modifier.weight(1f))
         Text(
-            c.title, color = color, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1,
-            modifier = if (c.silent || c.vibrate) Modifier else Modifier.rainbowFill(rb),
+            c.title, color = accent, fontWeight = FontWeight.Bold, fontSize = textSp, maxLines = 1, softWrap = false,
+            modifier = if (capsule) Modifier else Modifier.rainbowFill(rb),
         )
     }
 }
 
 @Composable
-private fun RingerGlyph(c: IslandContent.Status, color: Color, modifier: Modifier = Modifier) {
+private fun RingerGlyph(c: IslandContent.Status, color: Color, gap: Color, modifier: Modifier = Modifier) {
     val swing = remember(c.title) { Animatable(0f) }
     val slash = remember(c.title) { Animatable(if (c.silent) 0f else 1f) }
     LaunchedEffect(c.title) {
@@ -288,7 +303,7 @@ private fun RingerGlyph(c: IslandContent.Status, color: Color, modifier: Modifie
                 val p = slash.value
                 if (c.silent && p > 0.01f) {
                     val end = Offset(3.5f + 17f * p, 3.5f + 17f * p)
-                    drawLine(Color.Black, Offset(3.5f, 3.5f), end, strokeWidth = 5f, cap = StrokeCap.Round)   // çizginin kenarında boşluk
+                    drawLine(gap, Offset(3.5f, 3.5f), end, strokeWidth = 5f, cap = StrokeCap.Round)   // çizginin kenarında boşluk (kapsül rengi)
                     drawLine(color, Offset(3.5f, 3.5f), end, strokeWidth = 2.4f, cap = StrokeCap.Round)
                 }
             }
