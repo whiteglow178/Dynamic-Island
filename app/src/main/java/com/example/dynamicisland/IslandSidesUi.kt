@@ -425,6 +425,7 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
                     StatusKind.Charging -> "⚡"
                     StatusKind.Timer -> "⏱"
                     StatusKind.Alarm -> "⏰"
+                    StatusKind.Volume -> "🔊"
                     else -> ""
                 },
                 fontSize = 13.sp,

@@ -233,6 +233,7 @@ data class IslandSettings(
     val dotRight2Dp: Float = 20f,            // sağdaki dış nokta çapı (4 ve 5 nokta)
     val dotOffsetXDp: Float = 0f,            // üç nokta konumu: normal Konum ayarına eklenir (+ sağa)
     val dotOffsetYDp: Float = 0f,            // (+ aşağı)
+    val volumeIndicator: Boolean = true,           // medya sesi artınca / azalınca ada hap şeklinde seviyeyi gösterir
     val ringerIndicator: Boolean = true,           // zil / sessiz / titreşim modu değişince ada haber verir
     val privacyIndicator: Boolean = false,         // nokta modu: kamera / mikrofon kullanılırken yeşil / turuncu nokta olayı
     val hideInApps: Boolean = false,         // seçili uygulamalar ön plandayken ada gizlensin
@@ -379,7 +380,7 @@ class SettingsRepository(context: Context) {
 
         val IDLE = booleanPreferencesKey("idle")
         val PILL_CALL = booleanPreferencesKey("pill_call"); val PILL_MUSIC = booleanPreferencesKey("pill_music")
-        val PILL_FIT = booleanPreferencesKey("pill_fit"); val PILL_MW = floatPreferencesKey("pill_music_w"); val PILL_MH = floatPreferencesKey("pill_music_h")
+        val PILL_FIT = booleanPreferencesKey("pill_fit"); val VOL_IND = booleanPreferencesKey("volume_ind"); val PILL_MW = floatPreferencesKey("pill_music_w"); val PILL_MH = floatPreferencesKey("pill_music_h")
         val PILL_ART = booleanPreferencesKey("pill_art"); val PILL_WL = intPreferencesKey("pill_wl")
         val PILL_WM = intPreferencesKey("pill_wm"); val PILL_WR = intPreferencesKey("pill_wr")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
@@ -584,6 +585,7 @@ class SettingsRepository(context: Context) {
             dotMergeKeep = p[K.DOT_MERGE_KEEP] ?: d.dotMergeKeep,
             privacyIndicator = p[K.PRIV_IND] ?: d.privacyIndicator,
             ringerIndicator = p[K.RINGER_IND] ?: d.ringerIndicator,
+            volumeIndicator = p[K.VOL_IND] ?: d.volumeIndicator,
             hideInApps = p[K.HIDE_APPS] ?: d.hideInApps,
             hiddenAppPkgs = p[K.HIDE_PKGS] ?: d.hiddenAppPkgs,
             uiHaptics = p[K.UI_HAPTIC] ?: d.uiHaptics,
@@ -675,7 +677,7 @@ class SettingsRepository(context: Context) {
             it[K.SFX_TAP] = s.sfxTap.encode(); it[K.SFX_CHG] = s.sfxCharge.encode(); it[K.SFX_UNP] = s.sfxUnplug.encode()
             it[K.SFX_NTF] = s.sfxNotif.encode(); it[K.SFX_SIL] = s.sfxSilent.encode(); it[K.SFX_CALL] = s.sfxCall.encode()
             it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
-            it[K.RINGER_IND] = s.ringerIndicator
+            it[K.RINGER_IND] = s.ringerIndicator; it[K.VOL_IND] = s.volumeIndicator
             it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
             it[K.STACK_EXP] = s.stackExpand

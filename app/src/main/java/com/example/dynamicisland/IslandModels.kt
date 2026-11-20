@@ -11,10 +11,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 @Immutable
 data class FavApp(val pkg: String, val label: String, val icon: ImageBitmap?)
 
-enum class StatusKind { Ringer, Charging, Timer, Alarm, Camera, Mic }
+enum class StatusKind { Ringer, Charging, Timer, Alarm, Camera, Mic, Volume }
 
 /** Dar "hap" şeklinde açılan durumlar: şarj ve zil modu (Zil / Sessiz / Titreşim). */
-fun IslandContent.Status.isPill(): Boolean = kind == StatusKind.Charging || kind == StatusKind.Ringer
+fun IslandContent.Status.isPill(): Boolean = kind == StatusKind.Charging || kind == StatusKind.Ringer || kind == StatusKind.Volume
 
 /** Sistem ekran kaydı aşamaları. */
 enum class RecPhase { Countdown, Recording, Processing, Saved }

@@ -907,6 +907,7 @@ fun IslandPill(
                         when (content.kind) {
                             StatusKind.Charging -> ChargeContent(content, rb)
                             StatusKind.Ringer -> RingerContent(content, rb)
+                            StatusKind.Volume -> VolumeContent(content, rb)
                             else -> StatusContent(content, rb)
                         }
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin, artVideo)

@@ -142,6 +142,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
+        runCatching { volume.start() }
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
@@ -163,6 +164,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { SideCallStore.flow(applicationContext).collect { call.syncSideButtons() } }
         // Kenar müzik çubukları: ayar, müzik ya da ada içeriği (arama vb.) değişince göster / gizle
         scope.launch { SideMusicStore.flow(applicationContext).collect { syncSideMusic() } }
+        scope.launch { SideVolumeStore.flow(applicationContext).collect { syncSideMusic() } }
         scope.launch { combine(ui, mediaState) { _, _ -> Unit }.collect { syncSideMusic() } }
         // Durum görünümü (şarj, zil modu...) açıkken durum çubuğunu kapat
         scope.launch {
@@ -710,6 +712,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val rec: ScreenRecController by lazy { ScreenRecController(host) }
     private val privacy: PrivacyController by lazy { PrivacyController(host) }
     private val ringer: RingerController by lazy { RingerController(host) }
+    private val volume: VolumeController by lazy { VolumeController(host) }
 
     // ---- Kilit ekranı noktası
     private val lockDot by lazy {
@@ -757,6 +760,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Arama (gelen / aktif) -> CallController.kt
     private val sideCall: SideCallOverlay by lazy { SideCallOverlay(this, this, this, wm) }
+    private val sideVolume: SideVolumeOverlay by lazy { SideVolumeOverlay(this, this, this, wm) }
     private val sideMusic: SideMusicOverlay by lazy { SideMusicOverlay(this, this, this, wm, mediaState) { c -> IslandBus.send(c) } }
 
     /** Müzik varsa (ve ayar açıksa) kenar çubuklarını gösterir; müzik uygulamasındayken, gelen aramada ya da müzik yokken gizler. */
@@ -767,6 +771,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             !(c is IslandContent.Call && c.isIncoming) &&
             android.provider.Settings.canDrawOverlays(this)
         if (should) sideMusic.show(p) else sideMusic.hide()
+
+        // Kenar ses tuşları (müzik çubuğundan bağımsız)
+        val v = SideVolumeStore.flow(applicationContext).value
+        val showVol = v.enabled && (!v.onlyWithMusic || lastMedia != null) &&
+            !(c is IslandContent.Call && c.isIncoming) &&
+            android.provider.Settings.canDrawOverlays(this)
+        if (showVol) sideVolume.show(v) else sideVolume.hide()
     }
     private val notifBanner by lazy { NotifBannerOverlay(this, this, this, wm, scope) { n -> openNotification(n) } }
     private val call: CallController by lazy { CallController(host, sideCall) }
@@ -1870,6 +1881,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { TranslateSession.release() }
         runCatching { privacy.stop() }
         runCatching { ringer.stop() }
+        runCatching { volume.stop() }
+        runCatching { sideVolume.hide() }
         runCatching { sfxTriggers.stop() }
         runCatching { lockDot.stop() }
         IslandSounds.stopAll()

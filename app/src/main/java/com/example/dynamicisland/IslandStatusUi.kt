@@ -104,6 +104,7 @@ internal fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
     StatusKind.Alarm -> Pal.c("status_alarm")
     StatusKind.Camera -> Pal.c("status_camera")
     StatusKind.Mic -> Pal.c("status_mic")
+    StatusKind.Volume -> Pal.c("status_text")
 }
 
 @Composable
@@ -142,6 +143,7 @@ private fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
                     val lens = Path().apply { moveTo(16.5f, 10.5f); lineTo(21.5f, 7.5f); lineTo(21.5f, 16.5f); lineTo(16.5f, 13.5f); close() }
                     drawPath(lens, w)
                 }
+                StatusKind.Volume -> drawSpeaker(w, c.progress, c.silent)
                 StatusKind.Mic -> {
                     drawRoundRect(w, Offset(9f, 2.5f), Size(6f, 11f), CornerRadius(3f, 3f))
                     drawArc(w, 0f, 180f, false, Offset(5.5f, 6f), Size(13f, 12f), style = st)
@@ -291,4 +293,49 @@ private fun DrawScope.drawVibratePhone(color: Color) {
     for ((x, y0, y1) in listOf(
         Triple(4.5f, 8f, 16f), Triple(1.8f, 10f, 14f), Triple(19.5f, 8f, 16f), Triple(22.2f, 10f, 14f),
     )) drawLine(color, Offset(x, y0), Offset(x, y1), strokeWidth = 2f, cap = StrokeCap.Round)
+}
+
+
+// ---------------------------------------------------------------- Medya sesi: hoparlör + seviye çubuğu + yüzde (hap)
+/** 24x24 ızgarada hoparlör: seviyeye göre 0 / 1 / 2 ses dalgası, sessizde çapraz çizgi. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSpeaker(w: Color, level: Float, mute: Boolean) {
+    val body = Path().apply {
+        moveTo(3f, 9f); lineTo(7f, 9f); lineTo(12f, 4.5f); lineTo(12f, 19.5f); lineTo(7f, 15f); lineTo(3f, 15f); close()
+    }
+    drawPath(body, w)
+    val st = Stroke(width = 2f, cap = StrokeCap.Round)
+    if (mute) {
+        drawLine(w, Offset(15f, 9.5f), Offset(21f, 14.5f), strokeWidth = 2f, cap = StrokeCap.Round)
+        drawLine(w, Offset(21f, 9.5f), Offset(15f, 14.5f), strokeWidth = 2f, cap = StrokeCap.Round)
+        return
+    }
+    if (level > 0f) drawArc(w, -45f, 90f, false, Offset(7f, 7f), Size(10f, 10f), style = st)
+    if (level > 0.5f) drawArc(w, -45f, 90f, false, Offset(4f, 4f), Size(16f, 16f), style = st)
+}
+
+/** Solda hoparlör, sağda seviye çubuğu ve yüzde. Ortada kamera deliği için boşluk kalır. */
+@Composable
+internal fun VolumeContent(c: IslandContent.Status, rb: RainbowStyle?) {
+    val frac by androidx.compose.animation.core.animateFloatAsState(
+        c.progress.coerceIn(0f, 1f), androidx.compose.animation.core.tween(160), label = "volFrac",
+    )
+    val fg = Pal.c("status_text")
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Canvas(Modifier.size(20.dp)) {
+            val sc = size.width / 24f
+            withTransform({ scale(sc, sc, Offset.Zero) }) { drawSpeaker(fg, c.progress, c.silent) }
+        }
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier.width(44.dp).height(5.dp).clip(RoundedCornerShape(3.dp)).background(Pal.c("status_track")),
+        ) {
+            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(fg, RoundedCornerShape(3.dp)))
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(c.value, color = fg, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, maxLines = 1,
+            modifier = Modifier.rainbowFill(rb))
+    }
 }
