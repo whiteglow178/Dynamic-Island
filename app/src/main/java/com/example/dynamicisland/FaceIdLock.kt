@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
@@ -37,14 +38,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp as colorLerp
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -57,6 +69,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -66,11 +79,12 @@ import kotlin.math.sin
 /*
  * KİLİT EKRANI FACE ID ANİMASYONU
  * Ekran açılıp telefon kilitliyken ada kamera deliğinden yuvarlak köşeli bir kareye dönüşür; içinde
- * Face ID yüzü nabız gibi atar, dört köşe parantezi halkaya dönüşüp 3B dönerek (hareket bulanıklığıyla)
- * düzleşir, ✓ onay işareti çizilir, yüz geri gelir ve ada tekrar hap şekline küçülür.
- * Zamanlama, ekran kaydındaki (1000022465.mp4 / 1000022461.mp4) kareler tek tek incelenerek çıkarıldı.
+ * Face ID yüzü nabız gibi atar, sonra halka 3B dönmeye başlar. Dönme, ekran kaydındaki (1000022474.mp4)
+ * gerçek kareler şeffaf sprite olarak çıkarılıp (res/drawable-nodpi/faceid_tumble.png, 68 kare) birebir oynatılır.
+ *  - Kilit ekranından ana ekrana geçildiyse (kilit açıldıysa): düz halka içinde ✓ çizilir, kare hap şekline küçülür.
+ *  - Geçilmediyse: yüz griye döner ve tüm kare yatay titreyip (sönümlü ~4 Hz) söner, sonra hap şekline küçülür.
  * Ek izin gerekmez; LockDot ile aynı şekilde erişilebilirlik overlay penceresi kullanılır.
- * Kilit açılırsa (USER_PRESENT) animasyon ✓ aşamasına hızlı sarılır, sonra normal biter.
+ * Kilit açılırsa (USER_PRESENT) animasyon karar anına hızlı sarılır.
  */
 
 /** Zaman çizelgesi (saniye). T = animasyon başından beri; v = T - EXP (yüz görününce 0). */
@@ -78,21 +92,26 @@ object FaceIdTl {
     const val EXP = 0.35f           // hap -> kare açılma süresi
     const val FEAT_FADE0 = 1.50f    // göz / burun / ağız solar
     const val FEAT_FADE1 = 1.70f
-    const val MORPH0 = 1.65f        // köşe parantezleri -> halka
-    const val MORPH1 = 1.90f
-    const val GAP0 = 1.85f          // 4 yay birleşip tam halka olur
-    const val GAP1 = 2.15f
-    const val TUMBLE0 = 2.00f       // 3B dönüş
-    const val TUMBLE1 = 3.50f
-    const val CHECK0 = 4.35f        // ✓ çizilmeye başlar (önce orta nokta)
-    const val CHECK1 = 5.10f
-    const val SWAP0 = 5.30f         // halka + ✓ solar, yüz geri gelir
-    const val SWAP1 = 5.55f
-    const val FADE0 = 6.50f         // yüz söner
-    const val FADE1 = 6.80f
-    const val END_V = 7.15f         // kare -> hap küçülme biter
+    const val SPR0 = 1.65f          // 3B dönme sprite'ı başlar (köşe parantezleri halkaya dönüşüp döner)
+    const val SPR_FPS = 14.995f     // sprite kare hızı (30 fps videodan her 2. kare)
+    const val SPR_N = 68            // sprite kare sayısı
+    const val SPR1 = SPR0 + (SPR_N - 1) / SPR_FPS   // dönme biter: düz halka
+    const val DECIDE_V = SPR1 + 0.15f               // karar anı: kilit açıldıysa ✓, açılmadıysa gri titreme
+    const val CHECK0 = SPR1 + 0.30f // ✓ çizilmeye başlar (önce orta nokta)
+    const val CHECK1 = CHECK0 + 0.60f
+    const val FADE0 = CHECK1 + 0.75f   // içerik söner
+    const val FADE1 = FADE0 + 0.25f    // kare -> hap küçülme başlar
+    const val END_V = FADE1 + 0.30f
     const val END = EXP + END_V
-    const val FF_V = 3.5f           // kilit açılınca buraya kadar 3 kat hızlı oynatılır
+    const val FF_V = DECIDE_V       // kilit açılınca buraya kadar 3 kat hızlı oynatılır
+    // başarısız (kilit açılmadı) akış: karar anından (failT) itibaren geçen süre
+    const val F_FADE0 = 1.25f
+    const val F_FADE1 = 1.50f
+    const val F_END = 1.85f
+    const val SHAKE_HZ = 4f
+    const val SPRITE_SQ = 207f      // videodaki karenin px genişliği (sprite ölçeği)
+    const val SPRITE_CELL = 180     // sprite hücre boyutu (px)
+    const val SPRITE_COLS = 10
 }
 
 /** Çizim ölçüleri (px). Pencere (sq + 2*pad) kare; hap üst kenardan (ters adada alt kenardan) büyür. */
@@ -202,23 +221,44 @@ private fun DrawScope.fidFace(cx: Float, cy: Float, a: Float, w: Float, bracketC
     fidFeatures(cx, cy, a, w, featC)
 }
 
+private val FID_GRAY = Color(0xFF9A9AA0)
+
 /**
  * Tüm animasyonu t saniyesinde çizer. Tuval (sq + 2*pad) karelik pencere/alandır.
- * Hap, tuvalin üst kenarına (pad kadar içeride) yaslıdır; ters adada alt kenara.
+ * failT >= 0: kilit açılmadı, animasyon o t anında gri titreme akışına geçti.
  */
-fun DrawScope.drawFaceId(t: Float, s: IslandSettings, g: FaceIdGeo) {
+fun DrawScope.drawFaceId(t: Float, s: IslandSettings, g: FaceIdGeo, sprite: ImageBitmap?, failT: Float = -1f) {
+    val failed = failT >= 0f
+    val fv = if (failed) t - failT else 0f
+    val green = Color(s.faceIdColorArgb)
+    val failMix = if (failed) fidSmooth(fidSeg(fv, 0.10f, 0.40f)) else 0f
+    val col = colorLerp(green, FID_GRAY, failMix)
+    val fadeA = if (failed) failT + FaceIdTl.F_FADE0 else FaceIdTl.EXP + FaceIdTl.FADE0
+    val fadeB = if (failed) failT + FaceIdTl.F_FADE1 else FaceIdTl.EXP + FaceIdTl.FADE1
+    val endT = if (failed) failT + FaceIdTl.F_END else FaceIdTl.EXP + FaceIdTl.END_V
+    // sönümlü yatay titreme (tüm kare)
+    val u = max(0f, fv - 0.08f)
+    val shake = if (failed && fv < FaceIdTl.F_FADE1) g.sq * 0.05f * sin(2f * PI.toFloat() * FaceIdTl.SHAKE_HZ * u) * exp(-3.2f * u) else 0f
+    translate(left = shake, top = 0f) {
+        fidBody(t, g, sprite, green, col, failed, fv, fadeA, fadeB, endT)
+    }
+}
+
+private fun DrawScope.fidBody(
+    t: Float, g: FaceIdGeo, sprite: ImageBitmap?, green: Color, col: Color,
+    failed: Boolean, fv: Float, fadeA: Float, fadeB: Float, endT: Float,
+) {
     val cx = size.width / 2f
     val v = t - FaceIdTl.EXP
     val sq = g.sq
-    val green = Color(s.faceIdColorArgb)
 
     // ---- 1) kara gövde: hap -> kare (açılma) ... kare -> hap (küçülme)
     val ew: Float; val eh: Float
     if (t < FaceIdTl.EXP) {
         ew = fidOut(t / FaceIdTl.EXP)
         eh = fidOut(fidSeg(t, 0.06f, FaceIdTl.EXP))
-    } else if (v > FaceIdTl.FADE1) {
-        val k = fidSeg(v, FaceIdTl.FADE1, FaceIdTl.END_V)
+    } else if (t > fadeB) {
+        val k = fidSeg(t, fadeB, endT)
         ew = 1f - fidOut(k)
         eh = 1f - fidSmooth(k)
     } else { ew = 1f; eh = 1f }
@@ -231,82 +271,73 @@ fun DrawScope.drawFaceId(t: Float, s: IslandSettings, g: FaceIdGeo) {
 
     // ---- 2) içerik
     val appear = fidSeg(t, 0.12f, FaceIdTl.EXP)
-    if (appear <= 0f || v > FaceIdTl.FADE1 + 0.02f) return
-    val ccx = cx
+    if (appear <= 0f || t > fadeB + 0.02f) return
     val ccy = g.pad + sq / 2f                // içerik her zaman karenin merkezinde
     val a = sq * 0.228f                      // yüz yarı genişliği
     val sw = sq * 0.029f                     // çizgi kalınlığı
-    val ringR = FID_RING * a
+    val ringR = sq * 0.205f                  // videodaki düz halkanın orta çizgi yarıçapı
+    val vis = appear * (1f - fidSeg(t, fadeA, fadeB))
 
-    val fadeOut = 1f - fidSeg(v, FaceIdTl.FADE0, FaceIdTl.FADE1)
-    val vis = appear * fadeOut
+    // Kenarlıkta çok silik çizgi
+    drawRoundRect(col.copy(alpha = 0.20f * vis), Offset(left, top), Size(w, h), CornerRadius(rad), style = Stroke(width = max(1f, sq * 0.007f)))
 
-    // Kenarlıkta çok silik yeşil çizgi (ekran kaydında karenin kenarı hafif yeşil)
-    drawRoundRect(green.copy(alpha = 0.20f * vis), Offset(left, top), Size(w, h), CornerRadius(rad), style = Stroke(width = max(1f, sq * 0.007f)))
+    // ---- 2a) Face ID yüzü
+    if (!failed) {
+        // nabız atan yüz; köşe parantezleri 3B dönme başlarken solar
+        val pulseA = if (v < 1.5f) fidPulse(v) else fidLerp(fidPulse(1.5f), 1f, fidSeg(v, 1.5f, 1.65f))
+        val brA = 1f - fidSeg(v, FaceIdTl.SPR0 - 0.05f, FaceIdTl.SPR0 + 0.20f)
+        val ftA = 1f - fidSeg(v, FaceIdTl.FEAT_FADE0, FaceIdTl.FEAT_FADE1)
+        if (brA > 0.004f) fidFace(cx, ccy, a, sw, green.copy(alpha = pulseA * brA * vis), green.copy(alpha = pulseA * ftA * vis))
+    } else {
+        // başarısız: yüz geri gelir, griye döner
+        val fa = 0.62f * fidSeg(fv, 0.04f, 0.28f) * vis
+        fidFace(cx, ccy, a, sw, col.copy(alpha = fa), col.copy(alpha = fa))
+    }
 
-    if (v < FaceIdTl.SWAP1) {
-        // ---- 2a) yüz nabzı -> halka -> 3B dönüş -> düz halka -> ✓
-        val pulseA = run {
-            val p0 = fidPulse(1.6f)
-            if (v < 1.6f) fidPulse(v) else fidLerp(p0, 1f, fidSeg(v, 1.6f, 1.75f))
-        }
-        val ringFade = if (v < FaceIdTl.SWAP0) 1f else 1f - fidSeg(v, FaceIdTl.SWAP0, FaceIdTl.SWAP1)
-        val grpA = pulseA * ringFade * vis
-
-        val m = fidSmooth(fidSeg(v, FaceIdTl.MORPH0, FaceIdTl.MORPH1))
-        val delta = fidLerp(30f, 45f, fidSmooth(fidSeg(v, FaceIdTl.GAP0, FaceIdTl.GAP1))) * PI.toFloat() / 180f
-        val p = fidSeg(v, FaceIdTl.TUMBLE0, FaceIdTl.TUMBLE1)
-        val twoPi = 2f * PI.toFloat()
-        fun angles(pp: Float): FloatArray {
-            val e = fidOut(pp)
-            return floatArrayOf(twoPi * 1f * e, twoPi * 2f * e, (PI.toFloat() / 4f) * sin(PI.toFloat() * e))   // başta ve sonda 0: düz
-        }
-
-        // hareket bulanıklığı: hızlıyken geçmiş açılarda silik kopyalar
-        val speed = (1f - p).pow(2)
-        if (p > 0f && p < 1f && speed > 0.03f) {
-            for (k in 9 downTo 1) {
-                val ang = angles(max(0f, p - k * 0.007f))
-                val al = 0.32f * speed * 0.82f.pow(k) * grpA
-                val paths = fidRingPaths(ccx, ccy, a, m, delta, ang[0], ang[1], ang[2])
-                for (pa in paths) fidStroke(pa, green.copy(alpha = al), sw)
+    // ---- 2b) 3B dönme sprite'ı (videodan birebir kareler), sonunda düz halka olarak kalır
+    if (sprite != null && v >= FaceIdTl.SPR0) {
+        val spA = vis * (if (failed) 1f - fidSeg(fv, 0f, 0.20f) else 1f)
+        if (spA > 0.004f) {
+            val n = FaceIdTl.SPR_N
+            val pos = ((v - FaceIdTl.SPR0) * FaceIdTl.SPR_FPS).coerceIn(0f, (n - 1).toFloat())
+            val i0 = pos.toInt().coerceIn(0, n - 1)
+            val i1 = min(i0 + 1, n - 1)
+            val f = pos - i0
+            val k = sq / FaceIdTl.SPRITE_SQ
+            val cell = FaceIdTl.SPRITE_CELL
+            withTransform({
+                translate(cx - cell * k / 2f, ccy - cell * k / 2f)
+                scale(k, k, pivot = Offset.Zero)
+            }) {
+                fun cellDraw(i: Int, al: Float) = drawImage(
+                    sprite,
+                    srcOffset = IntOffset((i % FaceIdTl.SPRITE_COLS) * cell, (i / FaceIdTl.SPRITE_COLS) * cell),
+                    srcSize = IntSize(cell, cell),
+                    dstSize = IntSize(cell, cell),
+                    alpha = al,
+                    colorFilter = ColorFilter.tint(col, BlendMode.SrcIn),
+                    filterQuality = FilterQuality.Low,
+                )
+                cellDraw(i0, spA)
+                if (f > 0.02f && i1 != i0) cellDraw(i1, spA * f)
             }
-        }
-        val ang = angles(p)
-        val ring = fidRingPaths(ccx, ccy, a, m, delta, ang[0], ang[1], ang[2])
-        // yumuşak parıltı (neon)
-        val glowK = if (m > 0.5f) 1f else m * 2f
-        for (pa in ring) {
-            fidStroke(pa, green.copy(alpha = 0.07f * grpA * glowK), sw * 4.6f)
-            fidStroke(pa, green.copy(alpha = 0.16f * grpA * glowK), sw * 2.5f)
-        }
-        for (pa in ring) fidStroke(pa, green.copy(alpha = grpA), sw)
-
-        // göz / burun / ağız: parantezler halkaya dönerken solar
-        val feat = (1f - fidSeg(v, FaceIdTl.FEAT_FADE0, FaceIdTl.FEAT_FADE1)) * pulseA * vis
-        fidFeatures(ccx, ccy, a, sw, green.copy(alpha = feat))
-
-        // ---- ✓ : orta noktadan başlayıp iki kola büyür
-        val gk = fidOut(fidSeg(v, FaceIdTl.CHECK0, FaceIdTl.CHECK1))
-        if (gk > 0f) {
-            val ca = ringFade * vis
-            val vx = -0.08f * ringR * gk; val vy = 0.30f * ringR * gk
-            if (gk < 0.2f) drawCircle(green.copy(alpha = ca), sw * 0.6f, Offset(ccx, ccy))
-            val lx = vx + (-0.30f * ringR) * gk; val ly = vy + (-0.30f * ringR) * gk
-            val rx = vx + (0.48f * ringR) * gk; val ry = vy + (-0.60f * ringR) * gk
-            val ck = Path().apply {
-                moveTo(ccx + lx, ccy + ly); lineTo(ccx + vx, ccy + vy); lineTo(ccx + rx, ccy + ry)
-            }
-            if (gk >= 0.2f) fidStroke(ck, green.copy(alpha = ca), sw)
         }
     }
 
-    if (v >= FaceIdTl.SWAP0) {
-        // ---- 2b) yüz geri gelir (parlak başlar, nabız atar), sonra söner
-        val k = fidSeg(v, FaceIdTl.SWAP0, FaceIdTl.SWAP1)
-        val pul = 0.65f + 0.35f * cos(2f * PI.toFloat() * (v - FaceIdTl.SWAP1) / 0.85f)
-        val fa = k * pul * vis
-        fidFace(ccx, ccy, a, sw, green.copy(alpha = fa), green.copy(alpha = fa))
+    // ---- 2c) ✓ (yalnız kilit açıldıysa): orta noktadan başlayıp iki kola büyür
+    if (!failed) {
+        val gk = fidOut(fidSeg(v, FaceIdTl.CHECK0, FaceIdTl.CHECK1))
+        if (gk > 0f) {
+            val ca = vis
+            val vx = -0.08f * ringR * gk; val vy = 0.30f * ringR * gk
+            if (gk < 0.2f) drawCircle(green.copy(alpha = ca), sw * 0.6f, Offset(cx, ccy))
+            val lx = vx + (-0.30f * ringR) * gk; val ly = vy + (-0.30f * ringR) * gk
+            val rx = vx + (0.48f * ringR) * gk; val ry = vy + (-0.60f * ringR) * gk
+            val ck = Path().apply {
+                moveTo(cx + lx, ccy + ly); lineTo(cx + vx, ccy + vy); lineTo(cx + rx, ccy + ry)
+            }
+            if (gk >= 0.2f) fidStroke(ck, green.copy(alpha = ca), sw)
+        }
     }
 }
 
@@ -315,12 +346,15 @@ fun DrawScope.drawFaceId(t: Float, s: IslandSettings, g: FaceIdGeo) {
 private class FaceIdState {
     val runId = mutableStateOf(0)
     val unlocked = mutableStateOf(false)
+    val fail = mutableStateOf(-1f)          // başarısızlığa geçilen t (saniye); -1 = başarılı akış
     val geo = mutableStateOf(FaceIdGeo(100f, 30f, 300f, 40f, false))
 }
 
-/** Animasyon saatini ilerletir; bitince onDone çağırır. Kilit açılınca v < FF_V iken 3 kat hızlanır. */
+/** Animasyon saatini ilerletir; bitince onDone çağırır. Kilit açılınca karar anına kadar 3 kat hızlanır. */
 @Composable
-private fun rememberFaceIdClock(runId: Int, speed: State<Float>, unlocked: State<Boolean>, onDone: () -> Unit): State<Float> {
+private fun rememberFaceIdClock(
+    runId: Int, speed: State<Float>, unlocked: State<Boolean>, fail: MutableState<Float>, onDone: () -> Unit,
+): State<Float> {
     val t = remember(runId) { mutableStateOf(0f) }
     val done = rememberUpdatedState(onDone)
     LaunchedEffect(runId) {
@@ -334,19 +368,34 @@ private fun rememberFaceIdClock(runId: Int, speed: State<Float>, unlocked: State
                 t.value += dt * speed.value.coerceIn(0.25f, 3f) * warp
             }
             last = now
-            if (t.value >= FaceIdTl.END) { done.value(); break }
+            // karar anı: kilit hâlâ açılmadıysa gri titreme akışı
+            if (fail.value < 0f && !unlocked.value && t.value - FaceIdTl.EXP >= FaceIdTl.DECIDE_V) fail.value = t.value
+            val endT = if (fail.value >= 0f) fail.value + FaceIdTl.F_END else FaceIdTl.END
+            if (t.value >= endT) { done.value(); break }
         }
     }
     return t
 }
 
 @Composable
+private fun rememberFaceIdSprite(): ImageBitmap? {
+    val ctx = LocalContext.current
+    return remember {
+        runCatching {
+            val o = BitmapFactory.Options().apply { inScaled = false }
+            BitmapFactory.decodeResource(ctx.resources, R.drawable.faceid_tumble, o).asImageBitmap()
+        }.getOrNull()
+    }
+}
+
+@Composable
 private fun FaceIdWindowContent(settings: StateFlow<IslandSettings>, st: FaceIdState, onDone: () -> Unit) {
     val s by settings.collectAsState()
     val speed = rememberUpdatedState(s.faceIdSpeed)
-    val t = rememberFaceIdClock(st.runId.value, speed, st.unlocked, onDone)
+    val sprite = rememberFaceIdSprite()
+    val t = rememberFaceIdClock(st.runId.value, speed, st.unlocked, st.fail, onDone)
     val g = st.geo.value
-    Canvas(Modifier.fillMaxSize()) { drawFaceId(t.value, s, g) }
+    Canvas(Modifier.fillMaxSize()) { drawFaceId(t.value, s, g, sprite, st.fail.value) }
 }
 
 class FaceIdController(
@@ -442,6 +491,7 @@ class FaceIdController(
     private fun startAnim(s: IslandSettings) {
         running = true
         st.unlocked.value = false
+        st.fail.value = -1f
         st.geo.value = geoFor(s)
         st.runId.value = st.runId.value + 1
         show(s)
@@ -541,19 +591,26 @@ class FaceIdController(
 
 // ================================================================== Ayarlardaki canlı önizleme
 
-/** Ayar ekranında animasyonu döngüyle oynatır (gerçek pencereyle aynı çizim kodu). */
+/** Ayar ekranında animasyonu döngüyle oynatır: sırayla başarılı (✓) ve başarısız (gri titreme) akış. */
 @Composable
 fun FaceIdPreview(s: IslandSettings) {
     val d = LocalDensity.current.density
     val t = remember { mutableStateOf(0f) }
+    val failT = remember { mutableStateOf(-1f) }
+    val wantFail = remember { mutableStateOf(false) }
     val speed = rememberUpdatedState(s.faceIdSpeed)
+    val sprite = rememberFaceIdSprite()
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) {
             val now = withFrameNanos { it }
             if (last != 0L) t.value += min((now - last) / 1_000_000_000f, 0.05f) * speed.value.coerceIn(0.25f, 3f)
             last = now
-            if (t.value > FaceIdTl.END + 0.9f) t.value = 0f
+            if (wantFail.value && failT.value < 0f && t.value - FaceIdTl.EXP >= FaceIdTl.DECIDE_V) failT.value = t.value
+            val endT = if (failT.value >= 0f) failT.value + FaceIdTl.F_END else FaceIdTl.END
+            if (t.value > endT + 0.9f) {
+                t.value = 0f; failT.value = -1f; wantFail.value = !wantFail.value
+            }
         }
     }
     val sq = s.faceIdSizeDp
@@ -563,6 +620,6 @@ fun FaceIdPreview(s: IslandSettings) {
         Modifier.fillMaxWidth().height((sq + 2 * padDp + 8f).dp).clip(RoundedCornerShape(14.dp)).background(Pal.c("preview_lockbg")),
         contentAlignment = Alignment.TopCenter,
     ) {
-        Canvas(Modifier.size((sq + 2 * padDp).dp)) { drawFaceId(t.value, s, g) }
+        Canvas(Modifier.size((sq + 2 * padDp).dp)) { drawFaceId(t.value, s, g, sprite, failT.value) }
     }
 }
