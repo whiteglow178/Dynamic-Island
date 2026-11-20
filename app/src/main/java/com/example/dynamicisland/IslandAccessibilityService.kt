@@ -99,7 +99,7 @@ class IslandAccessibilityService : AccessibilityService() {
 
     private fun stopAssistantWatch() {
         handler.removeCallbacks(check)
-        recHandler.removeCallbacks(recCheck); recCheckPending = false
+        recHandler.removeCallbacks(recCheck); recCheckPending = false; recBurst = 0
         winPkgCache.clear()
         eventSaysOn = false
         runCatching { setAssistant(false) }
@@ -231,12 +231,23 @@ class IslandAccessibilityService : AccessibilityService() {
     @Volatile private var recA11yDigit = 0
     private var recMiss = 0
     @Volatile private var recCheckPending = false
+    // Pil: servis artık yalnızca pencere / bildirim olaylarını alır (typeAllMask kaldırıldı). Kaydedici çubuğu açılırken
+    // içerik olayı gelmediği için, pencere olayında kısa bir süre (~1,5 sn) birkaç kez taranır; çubuk bulunursa
+    // normal 350 ms izleme zaten devralır.
+    @Volatile private var recBurst = 0
+    private val REC_BURST = 5
     private val recCheck = object : Runnable {
         override fun run() {
             recCheckPending = false
             runCatching { checkRecorder() }
             if (recA11yOn || recA11yDigit != 0) scheduleRecCheck(350)
+            else if (recBurst > 0) { recBurst--; scheduleRecCheck(350) }
         }
+    }
+
+    private fun startRecBurst() {
+        recBurst = REC_BURST
+        scheduleRecCheck(120)
     }
 
     private fun scheduleRecCheck(delayMs: Long = 60) {
@@ -349,8 +360,10 @@ class IslandAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         runCatching {
             val e = event ?: return
-            if (isRecPkg(e.packageName?.toString())) scheduleRecCheck()
-            if (e.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED && (recA11yOn || recA11yDigit != 0)) scheduleRecCheck()
+            if (isRecPkg(e.packageName?.toString())) { scheduleRecCheck(); startRecBurst() }
+            if (e.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+                if (recA11yOn || recA11yDigit != 0) scheduleRecCheck() else startRecBurst()
+            }
             when (e.eventType) {
                 AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> {
                     if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) return

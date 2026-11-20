@@ -1541,10 +1541,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
      * Sistem pencereyi (özellikle küçülürken / hızlı aç-kapa sırasında) yana kaydırıp orada bırakabiliyor; durum
      * değişene kadar ada yanda kalıyordu. Pencerenin gerçek yatay konumu düzenli aralıkla ölçülür, yanlışsa yeniden uygulanır.
      */
+    private val powerMgr by lazy { getSystemService(android.os.PowerManager::class.java) }
+
     private fun startXWatch(view: View) {
         val r = object : Runnable {
             override fun run() {
                 if (view !== composeView) return
+                // Pil: ekran kapalıyken konum ölçülmez (kimse görmüyor); yavaş aralıkla beklenir, ekran açılınca normale döner
+                if (powerMgr?.isInteractive == false) { view.postDelayed(this, 2000L); return }
                 if (view.isAttachedToWindow && curW > 1 && curH > 1 && !xFixing &&
                     android.os.SystemClock.uptimeMillis() - lastGeoAt > 250L
                 ) {

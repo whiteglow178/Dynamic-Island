@@ -122,10 +122,10 @@ fun rememberLyricFrame(
         step()
         if (active && media.playing) {
             if (fine) {
-                var last = 0L
                 while (true) {
-                    val ms = withFrameMillis { it }
-                    if (ms - last >= 30) { last = ms; step() }   // ~30 fps yeter
+                    withFrameMillis { it }
+                    step()
+                    delay(24)       // pil: ~30 fps yeter; her ekran karesinde uyanmak yerine kare öncesi uyutulur
                 }
             } else {
                 while (true) { delay(150); step() }

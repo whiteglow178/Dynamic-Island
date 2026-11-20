@@ -7,6 +7,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameMillis
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
@@ -47,14 +48,10 @@ fun rememberRainbowPhase(enabled: Boolean, periodMs: Long = 5000L): State<Float>
     val phase = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(enabled) {
         if (!enabled) return@LaunchedEffect
-        var last = 0L
         while (true) {
-            withFrameMillis { ms ->
-                if (ms - last >= 33) {            // ~30 fps yeter
-                    last = ms
-                    phase.floatValue = (ms % periodMs).toFloat() / periodMs
-                }
-            }
+            withFrameMillis { ms -> phase.floatValue = (ms % periodMs).toFloat() / periodMs }
+            // Pil: ~30 fps yeter. Kare beklemeden ÖNCE uyutulur; böylece 60/120 Hz'de her karede uyanmak yerine yarısı kadar uyanır
+            delay(24)
         }
     }
     return phase
