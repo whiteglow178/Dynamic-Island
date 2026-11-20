@@ -878,14 +878,18 @@ fun IslandPill(
             ) {
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
-                    is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline, onSpeaker)
+                    is IslandContent.Call ->
+                        if (cfg.pillCallStyle) CallPillContent(content, rb, onAnswer, onDecline, onSpeaker)
+                        else CallContent(content, accent, rb, onAnswer, onDecline, onSpeaker)
                     is IslandContent.Status ->
                         when (content.kind) {
                             StatusKind.Charging -> ChargeContent(content, rb)
                             StatusKind.Ringer -> RingerContent(content, rb)
                             else -> StatusContent(content, rb)
                         }
-                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin, artVideo)
+                    is IslandContent.Media ->
+                        if (cfg.pillMusicStyle) MusicPillPanel(content, cfg, onCommand, customArt, onOpenMusic, artFlip, artSpin, artVideo)
+                        else MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin, artVideo)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     IslandContent.Translate -> TranslatePanel(cfg.compactHeightDp.dp)

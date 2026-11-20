@@ -590,6 +590,25 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
 
+        sec("Hap tasarımları", "Arama ve müzik adası için alternatif görünüm", PreviewKind.PillStyle) {
+            SwitchRow("Arama hapı", "Solda yeşil, sağda kırmızı yuvarlak düğme; ortada süre / isim ve hareketli ses dalgası. Aktif aramada soldaki yeşil düğme hoparlörü açıp kapatır",
+                draft.pillCallStyle) { draft = draft.copy(pillCallStyle = it) }
+            SwitchRow("Müzik hapı", "Solda büyük albüm kapağı, ortada şarkı adı, renkli dalga ve ilerleme çubuğu, sağda önceki / duraklat / sonraki düğmeleri",
+                draft.pillMusicStyle) { draft = draft.copy(pillMusicStyle = it) }
+            if (draft.pillMusicStyle) {
+                SectionDivider()
+                SwitchRow("Albüm kapağına göre renk", "Dalga renkleri çalan şarkının kapağından türetilir; şarkı değişince renk de değişir",
+                    draft.pillWaveArtColor) { draft = draft.copy(pillWaveArtColor = it) }
+                if (draft.pillWaveArtColor) SubHeader("Kapak yoksa kullanılacak renkler")
+                SubHeader("Sol dalga")
+                key(version) { ColorPicker(draft.pillWaveLeftArgb) { draft = draft.copy(pillWaveLeftArgb = it) } }
+                SubHeader("Orta dalga")
+                key(version) { ColorPicker(draft.pillWaveMidArgb) { draft = draft.copy(pillWaveMidArgb = it) } }
+                SubHeader("Sağ dalga")
+                key(version) { ColorPicker(draft.pillWaveRightArgb) { draft = draft.copy(pillWaveRightArgb = it) } }
+            }
+        }
+
         sec("Animasyon", "Açılma ve küçülme geçişi") {
             SwitchRow("Animasyonlar", "Kapatırsan ada anında açılır/kapanır", draft.animEnabled) { draft = draft.copy(animEnabled = it) }
             if (draft.animEnabled) {
@@ -914,9 +933,9 @@ private fun VideoPickRow(
 }
 
 // ---------------------------------------------------------------- Önizleme
-private const val SAMPLE_COLOR = 0xFFFF5F9E.toInt()
+internal const val SAMPLE_COLOR = 0xFFFF5F9E.toInt()
 
-private fun sampleArt(): ImageBitmap {
+internal fun sampleArt(): ImageBitmap {
     val bmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bmp)
     val paint = android.graphics.Paint().apply {
@@ -974,6 +993,7 @@ private fun PreviewCard(
         PreviewKind.Privacy -> 60f
         PreviewKind.ScreenRec -> 74f
         PreviewKind.SideBubbles -> cfg.expandedHeightDp
+        PreviewKind.PillStyle -> geo.eh.value.coerceAtLeast(cfg.expandedHeightDp + MUSIC_EXTRA_DP)
     }
     // 3 boyutlu telefon: normal modda büyük çizilip üst kısmı gösterilir, tam modda tamamı karta sığar
     val phoneWDp = if (showBig) p3dFullWidthDp() else P3D_W_DP

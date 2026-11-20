@@ -96,6 +96,12 @@ data class IslandSettings(
     val animStyle: Int = 0,                  // 0 Yaylı, 1 Yumuşak, 2 Hızlı, 3 Zıplamalı, 4 Sıvı
     val musicArtFlip: Boolean = true,        // albüm kapağı: açılırken 360° döner, küçülürken ters döner, şarkı değişince dönerek değişir
     val swipeTrackChange: Boolean = true,    // müzik adasında sağdan sola kaydır = sonraki, soldan sağa = önceki şarkı
+    val pillCallStyle: Boolean = false,      // arama adası: yeşil / kırmızı yuvarlak düğmeler + ortada ses dalgası (hap tasarımı)
+    val pillMusicStyle: Boolean = false,     // müzik adası: solda büyük kapak, ortada dalga + ilerleme, sağda kontrol düğmeleri (hap tasarımı)
+    val pillWaveArtColor: Boolean = false,   // müzik hapı dalgası: renkler çalan şarkının albüm kapağından türetilsin (kapak yoksa aşağıdaki 3 renk)
+    val pillWaveLeftArgb: Int = 0xFFFF5AC8.toInt(),   // sol dalga rengi
+    val pillWaveMidArgb: Int = 0xFFA06BFF.toInt(),    // orta dalga rengi
+    val pillWaveRightArgb: Int = 0xFF4C9BFF.toInt(),  // sağ dalga rengi
     val musicBlurAnim: Boolean = true,       // müzik adası: içerik bulanıktan netleşerek açılır, tersi yönde küçülür (iOS tarzı)
 
     // Görünürlük
@@ -369,6 +375,9 @@ class SettingsRepository(context: Context) {
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle"); val MX_BLUR = booleanPreferencesKey("mx_blur"); val MX_FLIP = booleanPreferencesKey("mx_flip"); val SW_TRK = booleanPreferencesKey("sw_trk")
 
         val IDLE = booleanPreferencesKey("idle")
+        val PILL_CALL = booleanPreferencesKey("pill_call"); val PILL_MUSIC = booleanPreferencesKey("pill_music")
+        val PILL_ART = booleanPreferencesKey("pill_art"); val PILL_WL = intPreferencesKey("pill_wl")
+        val PILL_WM = intPreferencesKey("pill_wm"); val PILL_WR = intPreferencesKey("pill_wr")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
         val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
@@ -471,6 +480,12 @@ class SettingsRepository(context: Context) {
             musicBlurAnim = p[K.MX_BLUR] ?: d.musicBlurAnim,
             musicArtFlip = p[K.MX_FLIP] ?: d.musicArtFlip,
             swipeTrackChange = p[K.SW_TRK] ?: d.swipeTrackChange,
+            pillCallStyle = p[K.PILL_CALL] ?: d.pillCallStyle,
+            pillMusicStyle = p[K.PILL_MUSIC] ?: d.pillMusicStyle,
+            pillWaveArtColor = p[K.PILL_ART] ?: d.pillWaveArtColor,
+            pillWaveLeftArgb = p[K.PILL_WL] ?: d.pillWaveLeftArgb,
+            pillWaveMidArgb = p[K.PILL_WM] ?: d.pillWaveMidArgb,
+            pillWaveRightArgb = p[K.PILL_WR] ?: d.pillWaveRightArgb,
             showIdle = p[K.IDLE] ?: d.showIdle,
             favoritesEnabled = p[K.FAV_ON] ?: d.favoritesEnabled,
             favoritesTrigger = p[K.FAV_TRIG] ?: d.favoritesTrigger,
@@ -611,6 +626,8 @@ class SettingsRepository(context: Context) {
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle; it[K.MX_BLUR] = s.musicBlurAnim; it[K.MX_FLIP] = s.musicArtFlip; it[K.SW_TRK] = s.swipeTrackChange
 
             it[K.IDLE] = s.showIdle
+            it[K.PILL_CALL] = s.pillCallStyle; it[K.PILL_MUSIC] = s.pillMusicStyle
+            it[K.PILL_ART] = s.pillWaveArtColor; it[K.PILL_WL] = s.pillWaveLeftArgb; it[K.PILL_WM] = s.pillWaveMidArgb; it[K.PILL_WR] = s.pillWaveRightArgb
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
             it[K.NT_BANNER] = s.notifBanner
             it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_OPEN_LONG] = s.notifOpenLong; it[K.NT_OPEN_DN] = s.notifOpenSwipeDown

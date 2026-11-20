@@ -269,3 +269,89 @@ internal fun CallContent(
         }
     }
 }
+
+
+// ---------------------------------------------------------------- Hap tasarımı: arama
+/** Kenarlarda nokta, ortada çubuk olan hareketli ses dalgası. [colors] soldan sağa renk geçişi verir. */
+@Composable
+internal fun PillWave(colors: List<Color>, modifier: Modifier = Modifier, active: Boolean = true, bars: Int = 33) {
+    val tr = rememberInfiniteTransition(label = "pillWave")
+    val phase: Float by tr.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.2831855f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "pillWavePhase",
+    )
+    Canvas(modifier) {
+        val gap: Float = size.width / bars
+        val bw: Float = (gap * 0.46f).coerceAtLeast(2f)
+        for (i in 0 until bars) {
+            val t: Float = i / (bars - 1).toFloat()
+            val edge: Float = abs(t - 0.5f) * 2f                         // 0 = orta, 1 = kenar
+            val env: Float = (1f - edge * edge * edge).coerceIn(0f, 1f)   // ortada yüksek, kenarda nokta
+            val v: Float = if (active) abs(sin(phase * 1f + i * 0.9f) * cos(phase * 2f + i * 0.37f)) else 0.35f
+            val h: Float = (size.height * env * (0.18f + 0.82f * v)).coerceAtLeast(bw)
+            val color: Color = if (colors.size == 1) colors[0] else {
+                val sc: Float = t * (colors.size - 1)
+                val k: Int = sc.toInt().coerceIn(0, colors.size - 2)
+                androidx.compose.ui.graphics.lerp(colors[k], colors[k + 1], sc - k)
+            }
+            val x: Float = gap * i + gap / 2f
+            drawLine(color, Offset(x, (size.height - h) / 2f), Offset(x, (size.height + h) / 2f), strokeWidth = bw, cap = StrokeCap.Round)
+        }
+    }
+}
+
+private fun pillTime(d: String?): String {
+    val p = d?.split(":")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
+    return when (p.size) {
+        2 -> String.format(java.util.Locale.ROOT, "%02d:%02d", p[0], p[1])
+        3 -> String.format(java.util.Locale.ROOT, "%d:%02d:%02d", p[0], p[1], p[2])
+        else -> "00:00"
+    }
+}
+
+/**
+ * Hap arama tasarımı: solda yeşil, sağda kırmızı yuvarlak düğme; ortada süre (aktif) ya da isim (gelen) ve ses dalgası.
+ * Gelen aramada yeşil = cevapla; aktif aramada yeşil = hoparlör aç / kapa (açıkken beyaz halka çıkar).
+ */
+@Composable
+internal fun CallPillContent(
+    c: IslandContent.Call,
+    rb: RainbowStyle?,
+    onAnswer: () -> Unit,
+    onDecline: () -> Unit,
+    onSpeaker: () -> Unit,
+) {
+    val incoming = c.isIncoming
+    val btn = if (incoming) 52.dp else 56.dp
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            Modifier.size(btn + 6.dp)
+                .then(if (!incoming && c.speaker) Modifier.border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            CallButton(AnswerColor, btn, if (incoming) onAnswer else onSpeaker) { sz -> PhoneIcon(0f, Modifier.size(sz)) }
+        }
+        Column(
+            Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+        ) {
+            Text(
+                if (incoming) c.name else pillTime(c.duration),
+                color = Pal.c("call_text"), fontWeight = if (incoming) FontWeight.Bold else FontWeight.Medium,
+                fontSize = if (incoming) 16.sp else 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.rainbowFill(rb),
+            )
+            PillWave(listOf(CallGreen), Modifier.fillMaxWidth().height(if (incoming) 22.dp else 30.dp))
+        }
+        Box(Modifier.size(btn + 6.dp), contentAlignment = Alignment.Center) {
+            CallButton(DeclineColor, btn, onDecline) { sz -> PhoneIcon(135f, Modifier.size(sz)) }
+        }
+    }
+}

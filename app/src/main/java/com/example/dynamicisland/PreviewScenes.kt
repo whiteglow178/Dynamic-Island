@@ -29,7 +29,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Üstteki önizleme telefonunda hangi ayar grubunun gösterileceği. */
-internal enum class PreviewKind { Island, Assistant, Favorites, SideCall, Privacy, ScreenRec, SideBubbles }
+internal enum class PreviewKind { Island, Assistant, Favorites, SideCall, Privacy, ScreenRec, SideBubbles, PillStyle }
 
 /** "Tam genişlik" gibi geniş ayarlar için ayarlar sayfasının üstüne binen, tamamı görünen telefon ölçüsü. */
 internal const val BIG_PHONE_W_DP = 200f
@@ -114,6 +114,7 @@ internal fun PreviewScene(kind: PreviewKind, cfg: IslandSettings) {
         PreviewKind.Privacy -> PrivacyScene(cfg)
         PreviewKind.ScreenRec -> ScreenRecScene(cfg)
         PreviewKind.SideBubbles -> SideBubblesScene(cfg)
+        PreviewKind.PillStyle -> PillStyleScene(cfg)
         PreviewKind.Island -> Unit
     }
 }
@@ -130,6 +131,7 @@ internal fun previewHint(kind: PreviewKind, cfg: IslandSettings, bigDismissed: B
     PreviewKind.Privacy -> if (cfg.privacyIndicator) "Kamera / mikrofon kullanılırken ada böyle haber verir" else "Gösterge kapalı"
     PreviewKind.ScreenRec -> if (cfg.screenRecEnabled) "Ekran kaydı: geri sayım, kayıt ve kaydedildi" else "Ekran kaydı adası kapalı"
     PreviewKind.SideBubbles -> "Müzik çalarken ekran kaydı yan baloncukta"
+    PreviewKind.PillStyle -> "Hap tasarımları: gelen arama, aktif arama ve müzik sırayla gösterilir"
     PreviewKind.Island -> ""
 }
 
@@ -219,6 +221,34 @@ private fun SideCallScene(cfg: IslandSettings) {
     }
 }
 
+
+// ---------------------------------------------------------------- Hap tasarımları (arama + müzik)
+/** Gelen arama -> aktif arama -> müzik sırayla açılıp kapanır; gerçek IslandPill kullanılır, ayarlar canlı uygulanır. */
+@Composable
+private fun PillStyleScene(cfg: IslandSettings) {
+    val open = rememberLoopOpen()
+    var step by remember { mutableIntStateOf(0) }
+    LaunchedEffect(open) { if (!open) step = (step + 1) % 3 }
+    val art = remember { sampleArt() }
+    val content = remember(step) {
+        when (step) {
+            0 -> IslandContent.Call(name = "Ayşe", isIncoming = true)
+            1 -> IslandContent.Call(name = "Ayşe", isIncoming = false, duration = "0:12")
+            else -> IslandContent.Media(
+                "Good Vibes", "The Weeknd", true, 228_000L, 84_000L, 1f,
+                android.os.SystemClock.elapsedRealtime(), art = art, artColor = SAMPLE_COLOR,
+            )
+        }
+    }
+    val geo = when (step) {
+        0 -> islandGeo(cfg, false).copy(eh = 74.dp)
+        1 -> islandGeo(cfg, false).copy(eh = 88.dp)
+        else -> islandGeo(cfg, true)
+    }
+    Box(Modifier.fillMaxSize()) {
+        PreviewPill(content, open, geo, cfg, Modifier.align(Alignment.TopCenter))
+    }
+}
 
 // ---------------------------------------------------------------- Kamera / mikrofon göstergesi
 @Composable

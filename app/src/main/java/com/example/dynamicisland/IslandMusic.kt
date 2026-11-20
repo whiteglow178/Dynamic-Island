@@ -486,3 +486,115 @@ private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
         }
     }
 }
+
+
+// ---------------------------------------------------------------- Hap tasarımı: müzik
+@Composable
+private fun PillCtl(kind: Ctl, size: Dp, onClick: () -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "pillCtlPress")
+    Box(
+        Modifier.size(38.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
+            .clickable(interactionSource = src, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(size)) {
+            val s = this.size.width
+            val col = Pal.c("music_ctl")
+            fun tri(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
+                val p = Path().apply { moveTo(x1 * s, y1 * s); lineTo(x2 * s, y2 * s); lineTo(x3 * s, y3 * s); close() }
+                drawPath(p, col)
+            }
+            fun bar(x: Float, w: Float) = drawRoundRect(col, Offset(x * s, 0.10f * s), Size(w * s, 0.80f * s), CornerRadius(0.08f * s))
+            when (kind) {
+                Ctl.Play -> tri(0.22f, 0.08f, 0.22f, 0.92f, 0.92f, 0.50f)
+                Ctl.Pause -> { bar(0.14f, 0.26f); bar(0.60f, 0.26f) }
+                Ctl.Next -> { tri(0.06f, 0.14f, 0.06f, 0.86f, 0.66f, 0.50f); bar(0.74f, 0.20f) }
+                Ctl.Prev -> { tri(0.94f, 0.14f, 0.94f, 0.86f, 0.34f, 0.50f); bar(0.06f, 0.20f) }
+                else -> Unit
+            }
+        }
+    }
+}
+
+/** Hap müzik tasarımı: solda büyük kapak, ortada başlık / sanatçı / renkli dalga / ilerleme, sağda önceki-duraklat-sonraki. */
+@Composable
+fun MusicPillPanel(
+    m: IslandContent.Media,
+    cfg: IslandSettings,
+    onCommand: (MediaCommand) -> Unit,
+    customArt: ImageBitmap? = null,
+    onOpenMusic: () -> Unit = {},
+    artFlip: ArtFlip? = null,
+    artSpin: () -> Float = { 0f },
+    artVideo: String = "",
+) {
+    val rb = rememberRainbowStyle(cfg)
+    val noRipple = remember { MutableInteractionSource() }
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    var drag by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(m.playing, m.updatedAt, m.positionMs) {
+        now = SystemClock.elapsedRealtime()
+        while (m.playing) { delay(500); now = SystemClock.elapsedRealtime() }
+    }
+    val dur = m.durationMs
+    val d = drag
+    val frac = d ?: if (dur > 0) m.positionAt(now).toFloat() / dur else 0f
+    val shownMs = if (d != null) (d * dur).toLong() else m.positionAt(now)
+    val gray = Pal.c("music_time")
+
+    // Dalga renkleri: albüm rengi açık ve kapak varsa kapaktan türetilir (orta = kapak rengi, yanlar = ±40° ton kaydırma), yoksa ayarlardaki 3 renk
+    val useArt = cfg.pillWaveArtColor && m.artColor != 0
+    val artMid = if (useArt) glowTone(Color(m.artColor)) else Color.Unspecified
+    val tgtL = if (useArt) hueShift(artMid, -40f) else Color(cfg.pillWaveLeftArgb)
+    val tgtM = if (useArt) artMid else Color(cfg.pillWaveMidArgb)
+    val tgtR = if (useArt) hueShift(artMid, 40f) else Color(cfg.pillWaveRightArgb)
+    val waveL by animateColorAsState(tgtL, tween(450), label = "pillWaveL")
+    val waveM by animateColorAsState(tgtM, tween(450), label = "pillWaveM")
+    val waveR by animateColorAsState(tgtR, tween(450), label = "pillWaveR")
+
+    Row(
+        Modifier.fillMaxSize().padding(start = 16.dp, end = 10.dp, top = 14.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box((if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier).fxTarget("art")) {
+            FlipAlbumArt(customArt ?: m.art, 68.dp, artFlip, artSpin, 16.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .then(if (cfg.openExpTitle) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier)
+                    .fxTarget("title")
+            ) {
+                MarqueeText(
+                    m.title.ifBlank { "Bilinmeyen parça" }, Modifier.fillMaxWidth().rainbowFill(rb),
+                    color = Pal.c("music_title"), fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                )
+            }
+            Text(
+                m.artist, color = Pal.c("music_artist"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().rainbowFill(rb),
+            )
+            PillWave(
+                listOf(waveL, waveM, waveR),
+                Modifier.fillMaxWidth().height(24.dp), active = m.playing,
+            )
+            Row(Modifier.fxTarget("progress"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(fmt(shownMs), color = gray, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
+                Box(Modifier.weight(1f)) {
+                    SeekBar(frac.coerceIn(0f, 1f), dur > 0, d != null, null, rb) { f, commit ->
+                        if (commit) { drag = null; onCommand(MediaCommand.SeekTo((f * dur).toLong())) } else drag = f
+                    }
+                }
+                Text(if (dur > 0) fmt(dur) else "", color = gray, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PillCtl(Ctl.Prev, 20.dp) { onCommand(MediaCommand.Previous) }
+            PillCtl(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp) { onCommand(MediaCommand.PlayPause) }
+            PillCtl(Ctl.Next, 20.dp) { onCommand(MediaCommand.Next) }
+        }
+    }
+}
