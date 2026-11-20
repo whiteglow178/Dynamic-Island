@@ -161,6 +161,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { lyrics.collect { update { it } } }
         // Kenar Cevapla / Reddet tuşları ayarı değişince (arama sürerken) güncelle
         scope.launch { SideCallStore.flow(applicationContext).collect { call.syncSideButtons() } }
+        // Kenar müzik çubukları: ayar, müzik ya da ada içeriği (arama vb.) değişince göster / gizle
+        scope.launch { SideMusicStore.flow(applicationContext).collect { syncSideMusic() } }
+        scope.launch { combine(ui, mediaState) { _, _ -> Unit }.collect { syncSideMusic() } }
         // Durum görünümü (şarj, zil modu...) açıkken durum çubuğunu kapat
         scope.launch {
             combine(ui, settings) { u, s -> s.hideStatusBar && u.content is IslandContent.Status }
@@ -239,6 +242,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun updateInMusicApp(fg: String? = IslandAccessibilityService.currentFg) {
         inMusicApp = settings.value.hideInMusicApp && fg != null && lastMedia?.playing == true && isPlayingMediaApp(fg)
+        syncSideMusic()
     }
 
     /** Gizleme durumu değişince ada içeriğini günceller. Yutma sürerken dokunmaz (yutma bitince müzik zaten gösterilir). */
@@ -753,6 +757,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Arama (gelen / aktif) -> CallController.kt
     private val sideCall: SideCallOverlay by lazy { SideCallOverlay(this, this, this, wm) }
+    private val sideMusic: SideMusicOverlay by lazy { SideMusicOverlay(this, this, this, wm, mediaState) { c -> IslandBus.send(c) } }
+
+    /** Müzik varsa (ve ayar açıksa) kenar çubuklarını gösterir; müzik uygulamasındayken, gelen aramada ya da müzik yokken gizler. */
+    private fun syncSideMusic() {
+        val p = SideMusicStore.flow(applicationContext).value
+        val c = ui.value.content
+        val should = p.enabled && lastMedia != null && !hidingMedia() &&
+            !(c is IslandContent.Call && c.isIncoming) &&
+            android.provider.Settings.canDrawOverlays(this)
+        if (should) sideMusic.show(p) else sideMusic.hide()
+    }
     private val notifBanner by lazy { NotifBannerOverlay(this, this, this, wm, scope) { n -> openNotification(n) } }
     private val call: CallController by lazy { CallController(host, sideCall) }
 
@@ -1862,6 +1877,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { fxWindow.detach() }
         FxBridge.clear()
         runCatching { call.destroy() }
+        runCatching { sideMusic.hide() }
         runCatching { notifBanner.release() }
         runCatching { removeLaunchView() }
         runCatching { removeSwallowView() }

@@ -370,6 +370,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         }
 
         page("Kenar tuşları", PreviewKind.SideCall, "Cevapla / Reddet kenar tuşları") { SideCallSettingsSection() }
+        page("Kenar müzik çubukları", PreviewKind.PillStyle, "Dikey müzik tuşları ve ilerleme çubuğu") { SideMusicSettingsSection() }
 
         // ---- Görünüm
         pendingGroup = "Görünüm"
@@ -598,6 +599,14 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Adanın boyutuna uydur", "Açıkken ada büyümez: hap tasarımları (arama ve müzik) ayarladığın küçültülmüş ada boyutuna sığacak şekilde ölçeklenir. Kapalıyken ada hap boyutuna (müzikte ~344×100 dp) büyür. Kapalı ada küçükse (varsayılan 120×32) yazılar küçük kalır; okunaklı olması için adanın genişlik / yüksekliğini artır",
                 draft.pillFitIsland) { draft = draft.copy(pillFitIsland = it) }
             if (draft.pillMusicStyle) {
+                SectionDivider()
+                SubHeader("Müzik hapı boyutu")
+                if (draft.pillFitIsland) {
+                    Text("Bu boyutlar \"Adanın boyutuna uydur\" kapalıyken geçerlidir. Açıkken hap, ayarladığın küçültülmüş ada boyutuna sığar.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+                SliderRow("Genişlik", draft.pillMusicWDp, 220f..400f, "${draft.pillMusicWDp.toInt()} dp") { draft = draft.copy(pillMusicWDp = it) }
+                SliderRow("Yükseklik", draft.pillMusicHDp, 70f..200f, "${draft.pillMusicHDp.toInt()} dp") { draft = draft.copy(pillMusicHDp = it) }
                 SectionDivider()
                 SwitchRow("Albüm kapağına göre renk", "Dalga renkleri çalan şarkının kapağından türetilir; şarkı değişince renk de değişir",
                     draft.pillWaveArtColor) { draft = draft.copy(pillWaveArtColor = it) }
@@ -998,7 +1007,7 @@ private fun PreviewCard(
         PreviewKind.Privacy -> 60f
         PreviewKind.ScreenRec -> 74f
         PreviewKind.SideBubbles -> cfg.expandedHeightDp
-        PreviewKind.PillStyle -> PILL_MUSIC_H_DP
+        PreviewKind.PillStyle -> cfg.pillMusicHDp
     }
     // 3 boyutlu telefon: normal modda büyük çizilip üst kısmı gösterilir, tam modda tamamı karta sığar
     val phoneWDp = if (showBig) p3dFullWidthDp() else P3D_W_DP

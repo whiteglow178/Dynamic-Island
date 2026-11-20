@@ -137,7 +137,7 @@ const val PILL_MUSIC_MIN_W_DP = 300f
 fun pillCompactSizeDp(cfg: IslandSettings, content: IslandContent): Pair<Float, Float>? = when {
     cfg.dotMode || cfg.pillFitIsland -> null     // "adanın boyutuna uydur": ada büyümez
     content is IslandContent.Call && cfg.pillCallStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_CALL_H_DP
-    content is IslandContent.Media && cfg.pillMusicStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_MUSIC_H_DP
+    content is IslandContent.Media && cfg.pillMusicStyle -> cfg.pillMusicWDp to cfg.pillMusicHDp
     else -> null
 }
 
@@ -145,7 +145,7 @@ fun pillCompactSizeDp(cfg: IslandSettings, content: IslandContent): Pair<Float, 
 fun pillCompactSizeForKind(cfg: IslandSettings, kind: Int): Pair<Float, Float>? = when {
     cfg.dotMode || cfg.pillFitIsland -> null
     (kind == 5 || kind == 6) && cfg.pillCallStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_CALL_H_DP
-    kind == 2 && cfg.pillMusicStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_MUSIC_H_DP
+    kind == 2 && cfg.pillMusicStyle -> cfg.pillMusicWDp to cfg.pillMusicHDp
     else -> null
 }
 

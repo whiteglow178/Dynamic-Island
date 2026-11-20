@@ -99,6 +99,8 @@ data class IslandSettings(
     val pillCallStyle: Boolean = false,      // arama adası: yeşil / kırmızı yuvarlak düğmeler + ortada ses dalgası (hap tasarımı)
     val pillMusicStyle: Boolean = false,     // müzik adası: solda büyük kapak, ortada dalga + ilerleme, sağda kontrol düğmeleri (hap tasarımı)
     val pillFitIsland: Boolean = true,       // hap tasarımları: true = ada BÜYÜMEZ, tasarım ayarlı küçültülmüş ada boyutuna sığacak şekilde ölçeklenir; false = ada hap boyutuna büyür
+    val pillMusicWDp: Float = 344f,          // müzik hapı genişliği (yalnızca "Adanın boyutuna uydur" kapalıyken)
+    val pillMusicHDp: Float = 100f,          // müzik hapı yüksekliği (yalnızca "Adanın boyutuna uydur" kapalıyken)
     val pillWaveArtColor: Boolean = false,   // müzik hapı dalgası: renkler çalan şarkının albüm kapağından türetilsin (kapak yoksa aşağıdaki 3 renk)
     val pillWaveLeftArgb: Int = 0xFFFF5AC8.toInt(),   // sol dalga rengi
     val pillWaveMidArgb: Int = 0xFFA06BFF.toInt(),    // orta dalga rengi
@@ -377,7 +379,7 @@ class SettingsRepository(context: Context) {
 
         val IDLE = booleanPreferencesKey("idle")
         val PILL_CALL = booleanPreferencesKey("pill_call"); val PILL_MUSIC = booleanPreferencesKey("pill_music")
-        val PILL_FIT = booleanPreferencesKey("pill_fit")
+        val PILL_FIT = booleanPreferencesKey("pill_fit"); val PILL_MW = floatPreferencesKey("pill_music_w"); val PILL_MH = floatPreferencesKey("pill_music_h")
         val PILL_ART = booleanPreferencesKey("pill_art"); val PILL_WL = intPreferencesKey("pill_wl")
         val PILL_WM = intPreferencesKey("pill_wm"); val PILL_WR = intPreferencesKey("pill_wr")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
@@ -485,6 +487,8 @@ class SettingsRepository(context: Context) {
             pillCallStyle = p[K.PILL_CALL] ?: d.pillCallStyle,
             pillMusicStyle = p[K.PILL_MUSIC] ?: d.pillMusicStyle,
             pillFitIsland = p[K.PILL_FIT] ?: d.pillFitIsland,
+            pillMusicWDp = (p[K.PILL_MW] ?: d.pillMusicWDp).coerceIn(220f, 400f),
+            pillMusicHDp = (p[K.PILL_MH] ?: d.pillMusicHDp).coerceIn(70f, 200f),
             pillWaveArtColor = p[K.PILL_ART] ?: d.pillWaveArtColor,
             pillWaveLeftArgb = p[K.PILL_WL] ?: d.pillWaveLeftArgb,
             pillWaveMidArgb = p[K.PILL_WM] ?: d.pillWaveMidArgb,
@@ -630,7 +634,7 @@ class SettingsRepository(context: Context) {
 
             it[K.IDLE] = s.showIdle
             it[K.PILL_CALL] = s.pillCallStyle; it[K.PILL_MUSIC] = s.pillMusicStyle
-            it[K.PILL_FIT] = s.pillFitIsland
+            it[K.PILL_FIT] = s.pillFitIsland; it[K.PILL_MW] = s.pillMusicWDp; it[K.PILL_MH] = s.pillMusicHDp
             it[K.PILL_ART] = s.pillWaveArtColor; it[K.PILL_WL] = s.pillWaveLeftArgb; it[K.PILL_WM] = s.pillWaveMidArgb; it[K.PILL_WR] = s.pillWaveRightArgb
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
             it[K.NT_BANNER] = s.notifBanner
