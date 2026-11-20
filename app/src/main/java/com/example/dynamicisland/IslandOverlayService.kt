@@ -52,6 +52,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val WINDOW_HOLD_MS = 700L   // müzik adası kapandıktan sonra pencerenin küçülmeden önce ek bekleme süresi
+private const val SETTLE_POKE_MS = 650L   // pencere boyutu değiştikten sonra taşıma animasyonu bitince yüzeyi oturtma gecikmesi
 private const val RESIZE_HIDE_MS = 80L   // pencere küçülürken içeriğin gizli kalma süresi
 private const val MEDIA_BG_GRACE_MS = 1_400L   // müzik "durdu" bildirse de yan baloncuğun kalma süresi (parça geçişi)
 
@@ -287,6 +288,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             stack = st, stackClosing = stackClosing && st.isNotEmpty(),
         )
         syncRevert(ui.value)
+        guardStuckFromSide()
         // Çeviri paneli başka bir içerikle değişti ya da kapandı: bekleyen çeviri iptal, yazı temizlenir
         if (translateOpen && ui.value.content !is IslandContent.Translate) { translateOpen = false; TranslateSession.close() }
     }
@@ -583,6 +585,28 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun scheduleCollapse(holdMs: Long) {
         collapseJob?.cancel()
         collapseJob = scope.launch { delay(holdMs); collapseAndRest() }
+    }
+
+    /**
+     * Yana kayma düzeltmesi: yan baloncuktan açılan olay küçülürken fromSide bilerek korunur (ada baloncuğun yerine döner)
+     * ve kısa süre sonra rest() onu sıfırlar. Bu aralıkta collapseJob başka bir olay / müzik güncellemesi / bildirim
+     * yüzünden iptal edilirse rest() hiç çalışmıyordu: ada kapalı ama fromSide != 0 kalıyor, ada baloncuğun yerinde
+     * (en sağda / en solda / biraz kaymış) çiziliyordu; dokununca açılıp kapanınca düzeliyordu.
+     * Burada, bu durum normal küçülme süresinden uzun sürerse rest() zorla çağrılır.
+     */
+    private var fromSideGuard: Job? = null
+    private fun guardStuckFromSide() {
+        val u = ui.value
+        if (!u.expanded && u.fromSide != 0) {
+            if (fromSideGuard?.isActive == true) return
+            fromSideGuard = scope.launch {
+                delay(settings.value.settleMs() + 400L)
+                val c = ui.value
+                if (!c.expanded && c.fromSide != 0) rest()
+            }
+        } else {
+            fromSideGuard?.cancel(); fromSideGuard = null
+        }
     }
 
     /** Yan baloncuğa dokunulup (ortaya kalıcı geçmeden) açılan olay: küçülünce hemen yana geri döner. */
@@ -1368,6 +1392,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun detachOverlay() {
         composeView?.removeCallbacks(calibrateRunnable)
+        composeView?.removeCallbacks(settlePoke)
         composeView?.let { v ->
             v.disposeComposition()
             v.setViewTreeLifecycleOwner(null)
@@ -1495,6 +1520,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val lp = WindowManager.LayoutParams().also { it.copyFrom(cur) }
         lp.width = w; lp.height = ah; lp.x = x; lp.y = ay
         disableMoveAnimation(lp)
+        // Yana kayma düzeltmesi: pencere boyutu / konumu değişince sistem taşıma animasyonu oynatır; arka arkaya
+        // değişimde yarıda kalırsa pencere yüzeyi yanlış yerde (çerçeve doğru olduğu için ölçümle görünmez) takılabiliyor.
+        // Animasyon bittikten sonra 1 px'lik bir dürtme yüzeyi doğru yere oturtur.
+        if (!pokeCall && big && (cur.width != w || abs(cur.x - x) > 2)) scheduleSettlePoke()
         // Pencere KÜÇÜLÜRKEN ve yatay konumu da DEĞİŞİRKEN sistem eski kareyi bir an yanlış yerde
         // gösterebiliyor (yana kayma): yalnızca o durumda içeriği kısa süre gizleyip geri getiriyoruz.
         // Konum aynıysa (ada pencerenin ortasında kalıyorsa) gizlemeye gerek yok; gizlemek
@@ -1532,6 +1561,26 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (recalibrate) calibTries = 0
             composeView?.let { it.removeCallbacks(calibrateRunnable); it.postDelayed(calibrateRunnable, 150) }
         }
+    }
+
+    private var pokeCall = false
+    private val settlePoke = Runnable {
+        val v = composeView ?: return@Runnable
+        if (!v.isAttachedToWindow || curW <= 1 || curH <= 1 || xFixing) return@Runnable
+        val ox = wantX
+        pokeCall = true
+        try { setGeometry(curW, curH, ox + 1, wantYIn, recalibrate = false, force = true) } finally { pokeCall = false }
+        v.postDelayed({
+            // Bu arada başka bir geometri uygulandıysa (wantX değiştiyse) ona dokunma
+            if (wantX == ox + 1) {
+                pokeCall = true
+                try { setGeometry(curW, curH, ox, wantYIn, recalibrate = false) } finally { pokeCall = false }
+            }
+        }, 40L)
+    }
+
+    private fun scheduleSettlePoke() {
+        composeView?.let { it.removeCallbacks(settlePoke); it.postDelayed(settlePoke, SETTLE_POKE_MS) }
     }
 
     private var lastGeoAt = 0L
