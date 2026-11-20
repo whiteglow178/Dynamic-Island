@@ -271,11 +271,11 @@ internal fun SideVolumeStrip(p: SideVolumePrefs, left: Boolean) {
 
 /** Dokununca bir adım, basılı tutunca sürekli artır / azalt. */
 @Composable
-private fun SideVolumeBtn(plus: Boolean, icon: Dp, size: Dp, step: () -> Unit) {
+private fun SideVolumeBtn(plus: Boolean, icon: Dp, boxSize: Dp, step: () -> Unit) {
     val scope = rememberCoroutineScope()
     val cb by rememberUpdatedState(step)
     Box(
-        Modifier.size(size).pointerInput(Unit) {
+        Modifier.size(boxSize).pointerInput(Unit) {
             detectTapGestures(
                 onPress = {
                     cb()
