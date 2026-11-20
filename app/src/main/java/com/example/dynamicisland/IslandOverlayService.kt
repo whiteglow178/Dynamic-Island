@@ -139,12 +139,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { edgeGlow.attach() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
-        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() } }
+        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() } }
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
         runCatching { volume.start() }
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
+        runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
         runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
@@ -749,6 +750,20 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 dp(compactWidthFor(s, false)) / 2f + (if (s.iphoneCircleOn() && s.iphoneDir() < 0) dp(s.iphoneCircleSizeDp() + s.iphoneGapDp) else 0),
             )
         }
+    }
+
+    // ---- Kilit ekranı Face ID animasyonu
+    private val faceId by lazy {
+        FaceIdController(this, this, this, wm, settings, scope) { s ->
+            val sw = wm.currentWindowMetrics.bounds.width()
+            FaceIdAnchor(
+                cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+                cy = islandCenterYPx(s).toFloat(),
+                pillW = dp(compactWidthFor(s, false)).toFloat(),
+                pillH = dp(s.compactHeightDp).toFloat(),
+                inverted = s.invertedIsland,
+            )
+        }.also { c -> c.onCover = { on -> lockDot.suppress = on; lockDot.recheck() } }
     }
 
     // ---- Ses efektleri
@@ -1938,6 +1953,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { sideVolume.hide() }
         runCatching { sfxTriggers.stop() }
         runCatching { lockDot.stop() }
+        runCatching { faceId.stop() }
         IslandSounds.stopAll()
         lyricsJob?.cancel()
         runCatching { fxWindow.detach() }

@@ -673,6 +673,23 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
 
+        sec("Kilit ekranı Face ID animasyonu", "Telefon kilitliyken ada kareye dönüşüp Face ID taraması ve ✓ onayı oynatır") {
+            SwitchRow("Face ID animasyonu", "Ekran açılıp telefon kilitliyken bir kez oynar: ada kare olur, yüz atar, halka 3B döner, ✓ çizilir, ada hap şekline döner. Kilit açılırsa ✓ aşamasına hızlanır. Animasyon sırasında kilit noktası gizlenir",
+                draft.faceIdEnabled) { draft = draft.copy(faceIdEnabled = it) }
+            if (draft.faceIdEnabled) {
+                FaceIdPreview(draft)
+                SubHeader("Renk")
+                key(version) { ColorPicker(draft.faceIdColorArgb) { draft = draft.copy(faceIdColorArgb = it) } }
+                SubHeader("Boyut ve konum")
+                SliderRow("Kare boyutu", draft.faceIdSizeDp, 90f..180f, "${draft.faceIdSizeDp.toInt()} dp") { draft = draft.copy(faceIdSizeDp = kotlin.math.round(it)) }
+                SliderRow("Dikey konum", draft.faceIdOffsetYDp, -20f..40f, "${draft.faceIdOffsetYDp.toInt()} dp") { draft = draft.copy(faceIdOffsetYDp = kotlin.math.round(it)) }
+                SubHeader("Hız")
+                SliderRow("Animasyon hızı (1x = ekran kaydı)", draft.faceIdSpeed, 0.5f..2f, "%.1fx".format(draft.faceIdSpeed)) { draft = draft.copy(faceIdSpeed = kotlin.math.round(it * 10f) / 10f) }
+                Text("Ada, erişilebilirlik servisi açıkken kilit ekranının üstünde görünür. Servis kapalıysa bazı telefonlarda kilit ekranında görünmeyebilir.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        }
+
         // ---- Renk düzenleyici: uygulamadaki her rengi tek tek ayarlama
         pendingGroup = "Renk düzenleyici"
         sec("Renk düzenleyici", "Uygulamadaki her şeyin rengini tek tek ayarla") {

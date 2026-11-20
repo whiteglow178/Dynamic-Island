@@ -141,6 +141,12 @@ data class IslandSettings(
     val lockDotBlinkMs: Int = 400,           // bir yanıp sönme turunun süresi (ms)
     val lockDotMinAlpha: Float = 0.08f,      // "sönük" anındaki parlaklık
     val lockDotBlinkStyle: Int = 0,          // 0 yumuşak, 1 sert (ani aç / kapa)
+    // Kilit ekranı Face ID animasyonu: kilitliyken ada kare olur, Face ID taraması + onay işareti oynar
+    val faceIdEnabled: Boolean = true,
+    val faceIdColorArgb: Int = 0xFF98FF98.toInt(),    // açık yeşil (ekran kaydındaki renk)
+    val faceIdSizeDp: Float = 120f,                   // açık haldeki kare boyutu
+    val faceIdOffsetYDp: Float = 0f,
+    val faceIdSpeed: Float = 1f,                      // 1 = ekran kaydıyla birebir hız
     // Ses efektleri (dosya kopyalanmaz; yalnızca adres tutulur)
     val sfxEnabled: Boolean = true,
     val sfxTap: SoundCue = SoundCue(),
@@ -410,6 +416,8 @@ class SettingsRepository(context: Context) {
         val LD_ON = booleanPreferencesKey("ld_on"); val LD_C = intPreferencesKey("ld_c"); val LD_S = floatPreferencesKey("ld_s"); val LD_G = floatPreferencesKey("ld_g"); val LD_Y = floatPreferencesKey("ld_y")
         val LD_GL = booleanPreferencesKey("ld_gl"); val LD_GD = floatPreferencesKey("ld_gd"); val LD_GA = floatPreferencesKey("ld_ga")
         val LD_B = booleanPreferencesKey("ld_b"); val LD_BM = intPreferencesKey("ld_bm"); val LD_BA = floatPreferencesKey("ld_ba"); val LD_BS = intPreferencesKey("ld_bs")
+        val FID_ON = booleanPreferencesKey("fid_on"); val FID_C = intPreferencesKey("fid_c"); val FID_S = floatPreferencesKey("fid_s")
+        val FID_Y = floatPreferencesKey("fid_y"); val FID_SP = floatPreferencesKey("fid_sp")
         val SFX_ON = booleanPreferencesKey("sfx_on"); val SFX_TAP = stringPreferencesKey("sfx_tap"); val SFX_CHG = stringPreferencesKey("sfx_chg"); val SFX_UNP = stringPreferencesKey("sfx_unp")
         val SFX_NTF = stringPreferencesKey("sfx_ntf"); val SFX_SIL = stringPreferencesKey("sfx_sil"); val SFX_CALL = stringPreferencesKey("sfx_call")
         val MU_EXP_S = floatPreferencesKey("mu_exp_s"); val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
@@ -518,6 +526,8 @@ class SettingsRepository(context: Context) {
             lockDotGlow = p[K.LD_GL] ?: d.lockDotGlow, lockDotGlowDp = p[K.LD_GD] ?: d.lockDotGlowDp, lockDotGlowAlpha = p[K.LD_GA] ?: d.lockDotGlowAlpha,
             lockDotBlink = p[K.LD_B] ?: d.lockDotBlink, lockDotBlinkMs = p[K.LD_BM] ?: d.lockDotBlinkMs,
             lockDotMinAlpha = p[K.LD_BA] ?: d.lockDotMinAlpha, lockDotBlinkStyle = p[K.LD_BS] ?: d.lockDotBlinkStyle,
+            faceIdEnabled = p[K.FID_ON] ?: d.faceIdEnabled, faceIdColorArgb = p[K.FID_C] ?: d.faceIdColorArgb,
+            faceIdSizeDp = p[K.FID_S] ?: d.faceIdSizeDp, faceIdOffsetYDp = p[K.FID_Y] ?: d.faceIdOffsetYDp, faceIdSpeed = p[K.FID_SP] ?: d.faceIdSpeed,
             sfxEnabled = p[K.SFX_ON] ?: d.sfxEnabled,
             sfxTap = SoundCue.decode(p[K.SFX_TAP]), sfxCharge = SoundCue.decode(p[K.SFX_CHG]), sfxUnplug = SoundCue.decode(p[K.SFX_UNP]),
             sfxNotif = SoundCue.decode(p[K.SFX_NTF]), sfxSilent = SoundCue.decode(p[K.SFX_SIL]), sfxCall = SoundCue.decode(p[K.SFX_CALL]),
@@ -675,6 +685,8 @@ class SettingsRepository(context: Context) {
             it[K.LD_ON] = s.lockDotEnabled; it[K.LD_C] = s.lockDotColorArgb; it[K.LD_S] = s.lockDotSizeDp; it[K.LD_G] = s.lockDotGapDp; it[K.LD_Y] = s.lockDotOffsetYDp
             it[K.LD_GL] = s.lockDotGlow; it[K.LD_GD] = s.lockDotGlowDp; it[K.LD_GA] = s.lockDotGlowAlpha
             it[K.LD_B] = s.lockDotBlink; it[K.LD_BM] = s.lockDotBlinkMs; it[K.LD_BA] = s.lockDotMinAlpha; it[K.LD_BS] = s.lockDotBlinkStyle
+            it[K.FID_ON] = s.faceIdEnabled; it[K.FID_C] = s.faceIdColorArgb; it[K.FID_S] = s.faceIdSizeDp
+            it[K.FID_Y] = s.faceIdOffsetYDp; it[K.FID_SP] = s.faceIdSpeed
             it[K.SFX_ON] = s.sfxEnabled
             it[K.SFX_TAP] = s.sfxTap.encode(); it[K.SFX_CHG] = s.sfxCharge.encode(); it[K.SFX_UNP] = s.sfxUnplug.encode()
             it[K.SFX_NTF] = s.sfxNotif.encode(); it[K.SFX_SIL] = s.sfxSilent.encode(); it[K.SFX_CALL] = s.sfxCall.encode()

@@ -131,6 +131,10 @@ class LockDotController(
 
     private val poll = Runnable { evaluate() }
 
+    /** Face ID animasyonu adanın yanını kapladığı sürece nokta gizlenir. */
+    @Volatile var suppress = false
+    fun recheck() { runCatching { refresh() } }
+
     fun start() {
         if (receiver != null) return
         val r = object : BroadcastReceiver() {
@@ -174,7 +178,7 @@ class LockDotController(
 
     private fun refresh() {
         val s = settings.value
-        if (locked && s.lockDotEnabled) show(s) else hide()
+        if (locked && s.lockDotEnabled && !suppress) show(s) else hide()
     }
 
     private fun place(s: IslandSettings, p: WindowManager.LayoutParams) {
