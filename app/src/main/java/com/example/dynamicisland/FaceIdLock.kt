@@ -93,7 +93,7 @@ object FaceIdTl {
     const val FEAT_FADE0 = 1.50f    // göz / burun / ağız solar
     const val FEAT_FADE1 = 1.70f
     const val SPR0 = 1.65f          // 3B dönme sprite'ı başlar (köşe parantezleri halkaya dönüşüp döner)
-    const val SPR_FPS = 14.995f     // sprite kare hızı (30 fps videodan her 2. kare)
+    const val SPR_FPS = 37f         // sprite kare hızı: video yavaşlatılmıştı, gerçek hız ~2.5 kat (dönme ~1.8 sn)
     const val SPR_N = 68            // sprite kare sayısı
     const val SPR1 = SPR0 + (SPR_N - 1) / SPR_FPS   // dönme biter: düz halka
     const val DECIDE_V = SPR1 + 0.15f               // karar anı: kilit açıldıysa ✓, açılmadıysa gri titreme
