@@ -595,6 +595,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 draft.pillCallStyle) { draft = draft.copy(pillCallStyle = it) }
             SwitchRow("Müzik hapı", "KÜÇÜLTÜLMÜŞ adada: solda albüm kapağı, ortada şarkı adı, renkli dalga ve ilerleme çubuğu, sağda önceki / duraklat / sonraki düğmeleri. Genişletilmiş panel değişmez",
                 draft.pillMusicStyle) { draft = draft.copy(pillMusicStyle = it) }
+            SwitchRow("Adanın boyutuna uydur", "Açıkken ada büyümez: hap tasarımları (arama ve müzik) ayarladığın küçültülmüş ada boyutuna sığacak şekilde ölçeklenir. Kapalıyken ada hap boyutuna (müzikte ~344×100 dp) büyür. Kapalı ada küçükse (varsayılan 120×32) yazılar küçük kalır; okunaklı olması için adanın genişlik / yüksekliğini artır",
+                draft.pillFitIsland) { draft = draft.copy(pillFitIsland = it) }
             if (draft.pillMusicStyle) {
                 SectionDivider()
                 SwitchRow("Albüm kapağına göre renk", "Dalga renkleri çalan şarkının kapağından türetilir; şarkı değişince renk de değişir",

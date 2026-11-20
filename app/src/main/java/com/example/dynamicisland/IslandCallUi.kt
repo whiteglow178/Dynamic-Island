@@ -33,6 +33,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.flow.first
@@ -353,5 +354,22 @@ internal fun CallPillContent(
         Box(Modifier.size(btn + 4.dp), contentAlignment = Alignment.Center) {
             CallButton(DeclineColor, btn, onDecline) { sz -> PhoneIcon(135f, Modifier.size(sz)) }
         }
+    }
+}
+
+
+/**
+ * Hap tasarımını verilen kutuya ([w] x [h], kapalı adanın gerçek boyutu) sığdırır: içerik tasarım yüksekliğinde ([designH]) çizilir,
+ * ardından düzgün ölçeklenerek küçülür. Kutu tasarımdan dar / alçaksa yazılar küçülür; çok dar kutuda ([minW]) içerik daha
+ * geniş bir sanal alana yayılır ki düğmeler üst üste binmesin. Ada büyümez; boyut ayarlardaki küçültülmüş ada boyutundan gelir.
+ */
+@Composable
+internal fun PillScaled(w: Dp, h: Dp, designH: Dp, minW: Dp, content: @Composable () -> Unit) {
+    val scale = minOf(h.value / designH.value, w.value / minW.value).coerceAtLeast(0.05f)
+    Box(Modifier.requiredSize(w, h).clipToBounds(), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.requiredSize((w.value / scale).dp, (h.value / scale).dp)
+                .graphicsLayer { scaleX = scale; scaleY = scale },
+        ) { content() }
     }
 }

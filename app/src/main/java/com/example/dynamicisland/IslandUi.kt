@@ -130,10 +130,12 @@ const val CALL_COMPACT_W_DP = 160f
 const val PILL_CALL_H_DP = 68f
 const val PILL_MUSIC_H_DP = 100f
 const val PILL_MAX_W_DP = 344f
+const val PILL_CALL_MIN_W_DP = 240f     // tasarımın okunaklı kalması için en dar tasarım genişliği (ölçekleme hesabı)
+const val PILL_MUSIC_MIN_W_DP = 300f
 
 /** Hap tasarımı açıksa ve içerik arama / müzikse kapalı adanın (genişlik, yükseklik) değeri; yoksa null. Üç nokta modunda uygulanmaz. */
 fun pillCompactSizeDp(cfg: IslandSettings, content: IslandContent): Pair<Float, Float>? = when {
-    cfg.dotMode -> null
+    cfg.dotMode || cfg.pillFitIsland -> null     // "adanın boyutuna uydur": ada büyümez
     content is IslandContent.Call && cfg.pillCallStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_CALL_H_DP
     content is IslandContent.Media && cfg.pillMusicStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_MUSIC_H_DP
     else -> null
@@ -141,7 +143,7 @@ fun pillCompactSizeDp(cfg: IslandSettings, content: IslandContent): Pair<Float, 
 
 /** Servis penceresi için aynı hesap ([kind]: 2 = müzik, 5 / 6 = gelen / aktif arama). */
 fun pillCompactSizeForKind(cfg: IslandSettings, kind: Int): Pair<Float, Float>? = when {
-    cfg.dotMode -> null
+    cfg.dotMode || cfg.pillFitIsland -> null
     (kind == 5 || kind == 6) && cfg.pillCallStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_CALL_H_DP
     kind == 2 && cfg.pillMusicStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_MUSIC_H_DP
     else -> null
@@ -952,7 +954,11 @@ fun IslandPill(
             Box(
                 Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
-            ) { CallPillContent(content, rb, onAnswer, onDecline, onSpeaker) }
+            ) {
+                PillScaled(geo.cw, geo.ch, PILL_CALL_H_DP.dp, PILL_CALL_MIN_W_DP.dp) {
+                    CallPillContent(content, rb, onAnswer, onDecline, onSpeaker)
+                }
+            }
         }
 
         if (content is IslandContent.Call && !content.isIncoming && !cfg.pillCallStyle && compactVisible && !cfg.dotMode) {
@@ -1050,7 +1056,11 @@ fun IslandPill(
             Box(
                 Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) * swallowAlpha.value },
-            ) { MusicPillPanel(content, cfg, onCommand, customArt, onOpenMusic, artFlip, artSpin, artVideo) }
+            ) {
+                PillScaled(geo.cw, geo.ch, PILL_MUSIC_H_DP.dp, PILL_MUSIC_MIN_W_DP.dp) {
+                    MusicPillPanel(content, cfg, onCommand, customArt, onOpenMusic, artFlip, artSpin, artVideo)
+                }
+            }
         }
         if (content is IslandContent.Media && !cfg.pillMusicStyle && compactVisible && !swallow && !cfg.dotMode) {
             // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz

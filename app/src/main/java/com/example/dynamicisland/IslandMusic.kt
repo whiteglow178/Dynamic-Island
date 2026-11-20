@@ -591,7 +591,7 @@ fun MusicPillPanel(
                 Text(if (dur > 0) fmt(dur) else "", color = gray, fontSize = 10.5.sp, fontWeight = FontWeight.Medium)
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.offset(y = 13.dp), verticalAlignment = Alignment.CenterVertically) {   // düğmeler biraz aşağıda: dalga / ilerleme satırıyla hizalı
             PillCtl(Ctl.Prev, 20.dp) { onCommand(MediaCommand.Previous) }
             PillCtl(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp) { onCommand(MediaCommand.PlayPause) }
             PillCtl(Ctl.Next, 20.dp) { onCommand(MediaCommand.Next) }
