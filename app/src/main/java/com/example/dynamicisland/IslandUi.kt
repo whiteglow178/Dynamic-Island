@@ -276,7 +276,7 @@ internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float =
     is IslandContent.Favorites -> cfg.favoritesHeightDp(c.apps.size)
     IslandContent.Translate -> cfg.translateHeightDp(TranslateSession.bodyDp.value)
     is IslandContent.Call -> if (c.isIncoming) 74f else 88f
-    is IslandContent.Status -> if (c.isPill()) chargePillHeightDp(cfg) else cfg.expandedHeightDp
+    is IslandContent.Status -> if (c.isPill()) (if (c.kind == StatusKind.Ringer) ringerPillHeightDp(cfg) else chargePillHeightDp(cfg)) else cfg.expandedHeightDp
     is IslandContent.ScreenRec -> REC_PILL_H_DP
     is IslandContent.Shazam -> SHAZAM_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
@@ -435,7 +435,10 @@ fun IslandRoot(
             if (content is IslandContent.Call) geo = geo.copy(cw = if (cfg.dotMode) cw else maxOf(cw, CALL_COMPACT_W_DP.dp), eh = if (content.isIncoming) 74.dp else 88.dp)
             pillCompactSizeDp(cfg, content)?.let { (pw, ph) -> geo = geo.copy(cw = pw.dp, ch = ph.dp) }
             if (content is IslandContent.Status && content.isPill()) {
-                geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
+                if (content.kind == StatusKind.Ringer) {
+                    val swDp = LocalConfiguration.current.screenWidthDp.toFloat()
+                    geo = geo.copy(ew = ringerPillWidthDp(cfg, content.silent || content.vibrate, swDp).dp, eh = ringerPillHeightDp(cfg).dp)
+                } else geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
             // Ekran kaydı: geri sayım / işleniyor aşamasında kapalı ada biraz genişler (sağda rakam / halka için)
             val recWide = !cfg.dotMode && content is IslandContent.ScreenRec &&
@@ -907,7 +910,7 @@ fun IslandPill(
                     is IslandContent.Status ->
                         when (content.kind) {
                             StatusKind.Charging -> ChargeContent(content, rb)
-                            StatusKind.Ringer -> RingerContent(content, rb)
+                            StatusKind.Ringer -> RingerContent(content, rb, !cfg.ringerExpand)
                             StatusKind.Volume -> VolumeContent(content, rb)
                             else -> StatusContent(content, rb)
                         }
@@ -1222,4 +1225,15 @@ fun recExpandedWidthDp(cfg: IslandSettings, screenWDp: Float): Float =
     if (cfg.screenRecWide) (screenWDp - 2f * REC_WIDE_MARGIN_DP).coerceAtLeast(REC_PILL_W_DP)
     else maxOf(REC_PILL_W_DP, cfg.compactWidthDp)
 fun chargePillHeightDp(cfg: IslandSettings): Float = cfg.compactHeightDp + 4f
+
+/**
+ * Zil / sessiz hapı (iOS ekran kaydından ölçüldü): açık hal ekran genişliğinin ~%64'ü (Zil) / ~%70'i (Sessiz, Titreşim),
+ * yüksekliği kapalı adanın ~1,43 katı. Genişleme kapalıysa ada boyutunu değiştirmez.
+ */
+const val RINGER_H_SCALE = 1.43f
+fun ringerPillWidthDp(cfg: IslandSettings, longText: Boolean, screenWDp: Float): Float =
+    if (!cfg.ringerExpand) cfg.compactWidthDp
+    else (screenWDp * (if (longText) 0.70f else 0.64f)).coerceIn(cfg.compactWidthDp + 60f, (screenWDp - 16f).coerceAtLeast(cfg.compactWidthDp))
+fun ringerPillHeightDp(cfg: IslandSettings): Float =
+    if (cfg.ringerExpand) cfg.compactHeightDp * RINGER_H_SCALE else cfg.compactHeightDp
 

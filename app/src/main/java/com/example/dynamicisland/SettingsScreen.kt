@@ -228,6 +228,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Görünürlük", "Ada ne zaman görünsün") {
             SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
             SwitchRow("Zil / sessiz göstergesi", "Telefonu sessize, titreşime ya da sesliye alınca ada kısa süre Zil, Sessiz ya da Titreşim yazısıyla açılır", draft.ringerIndicator) { draft = draft.copy(ringerIndicator = it) }
+            SwitchRow("Zil göstergesi genişlesin", "Açıkken ada, ekran kaydındaki gibi yana doğru genişleyip solda zil simgesi, sağda Zil / Sessiz / Titreşim yazısı gösterir. Kapalıyken ada boyutunu değiştirmez, yalnızca solda simge görünür", draft.ringerExpand) { draft = draft.copy(ringerExpand = it) }
             SwitchRow("Medya sesi göstergesi", "Ses tuşlarıyla (ya da kenar ses tuşlarıyla) medya sesini artırınca / azaltınca ada kısa süre hoparlör simgesi, seviye çubuğu ve yüzdeyle açılır", draft.volumeIndicator) { draft = draft.copy(volumeIndicator = it) }
             SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
         }

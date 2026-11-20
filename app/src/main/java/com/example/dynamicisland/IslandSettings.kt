@@ -242,6 +242,7 @@ data class IslandSettings(
     val dotOffsetYDp: Float = 0f,            // (+ aşağı)
     val volumeIndicator: Boolean = true,           // medya sesi artınca / azalınca ada hap şeklinde seviyeyi gösterir
     val ringerIndicator: Boolean = true,           // zil / sessiz / titreşim modu değişince ada haber verir
+    val ringerExpand: Boolean = true,              // true: ada ekran kaydındaki gibi yana genişler; false: boyutu değişmez, yalnızca solda simge
     val privacyIndicator: Boolean = false,         // nokta modu: kamera / mikrofon kullanılırken yeşil / turuncu nokta olayı
     val hideInApps: Boolean = false,         // seçili uygulamalar ön plandayken ada gizlensin
     val hiddenAppPkgs: String = "",          // gizlenecek uygulamaların paket adları (virgülle ayrılmış)
@@ -421,7 +422,7 @@ class SettingsRepository(context: Context) {
         val SFX_ON = booleanPreferencesKey("sfx_on"); val SFX_TAP = stringPreferencesKey("sfx_tap"); val SFX_CHG = stringPreferencesKey("sfx_chg"); val SFX_UNP = stringPreferencesKey("sfx_unp")
         val SFX_NTF = stringPreferencesKey("sfx_ntf"); val SFX_SIL = stringPreferencesKey("sfx_sil"); val SFX_CALL = stringPreferencesKey("sfx_call")
         val MU_EXP_S = floatPreferencesKey("mu_exp_s"); val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
-        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
+        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val RINGER_EXP = booleanPreferencesKey("ringer_exp"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
         val STACK_EXP = booleanPreferencesKey("stack_exp")
         val IP_ON = booleanPreferencesKey("ip_on"); val IP_CIRCLE = booleanPreferencesKey("ip_circle"); val IP_EV = booleanPreferencesKey("ip_ev")
         val IP_SIDE = intPreferencesKey("ip_side"); val IP_PW = floatPreferencesKey("ip_pw"); val IP_PH = floatPreferencesKey("ip_ph")
@@ -597,6 +598,7 @@ class SettingsRepository(context: Context) {
             dotMergeKeep = p[K.DOT_MERGE_KEEP] ?: d.dotMergeKeep,
             privacyIndicator = p[K.PRIV_IND] ?: d.privacyIndicator,
             ringerIndicator = p[K.RINGER_IND] ?: d.ringerIndicator,
+            ringerExpand = p[K.RINGER_EXP] ?: d.ringerExpand,
             volumeIndicator = p[K.VOL_IND] ?: d.volumeIndicator,
             hideInApps = p[K.HIDE_APPS] ?: d.hideInApps,
             hiddenAppPkgs = p[K.HIDE_PKGS] ?: d.hiddenAppPkgs,
@@ -691,7 +693,7 @@ class SettingsRepository(context: Context) {
             it[K.SFX_TAP] = s.sfxTap.encode(); it[K.SFX_CHG] = s.sfxCharge.encode(); it[K.SFX_UNP] = s.sfxUnplug.encode()
             it[K.SFX_NTF] = s.sfxNotif.encode(); it[K.SFX_SIL] = s.sfxSilent.encode(); it[K.SFX_CALL] = s.sfxCall.encode()
             it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
-            it[K.RINGER_IND] = s.ringerIndicator; it[K.VOL_IND] = s.volumeIndicator
+            it[K.RINGER_IND] = s.ringerIndicator; it[K.RINGER_EXP] = s.ringerExpand; it[K.VOL_IND] = s.volumeIndicator
             it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
             it[K.STACK_EXP] = s.stackExpand

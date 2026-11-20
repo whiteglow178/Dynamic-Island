@@ -232,20 +232,28 @@ internal fun StatusContent(c: IslandContent.Status, rb: RainbowStyle?) {
 // ---------------------------------------------------------------- Zil modu: Zil / Sessiz / Titreşim (iOS tarzı hap)
 /** Solda animasyonlu simge, sağda yazı. Ortada kamera deliği için boşluk kalır. */
 @Composable
-internal fun RingerContent(c: IslandContent.Status, rb: RainbowStyle?) {
+internal fun RingerContent(c: IslandContent.Status, rb: RainbowStyle?, compact: Boolean = false) {
     val color = when {
         c.silent -> Pal.c("status_ringer_silent")      // sessiz: kırmızı
         c.vibrate -> Pal.c("status_ringer_vibrate")     // titreşim: turuncu
         else -> Pal.c("status_ringer_normal")                // zil: beyaz
     }
+    if (compact) {
+        // Genişleme kapalı: ada boyutunu değiştirmez, yalnızca solda animasyonlu simge
+        Row(Modifier.fillMaxSize().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            RingerGlyph(c, color, Modifier.size(15.dp))
+        }
+        return
+    }
+    // Ekran kaydındaki gibi: solda simge, sağda yazı; iki yanda ~20 dp boşluk
     Row(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RingerGlyph(c, color, Modifier.size(18.dp))
+        RingerGlyph(c, color, Modifier.size(20.dp))
         Spacer(Modifier.weight(1f))
         Text(
-            c.title, color = color, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, maxLines = 1,
+            c.title, color = color, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1,
             modifier = if (c.silent || c.vibrate) Modifier else Modifier.rainbowFill(rb),
         )
     }

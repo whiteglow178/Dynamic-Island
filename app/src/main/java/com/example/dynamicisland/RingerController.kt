@@ -51,6 +51,6 @@ class RingerController(private val host: IslandHost) {
             AudioManager.RINGER_MODE_VIBRATE -> IslandContent.Status(StatusKind.Ringer, title = "Titreşim", vibrate = true)
             else -> IslandContent.Status(StatusKind.Ringer, title = "Zil")
         }
-        host.showTemporarily(c, 2_400L)
+        host.showTemporarily(c, 2_000L)
     }
 }

@@ -196,7 +196,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Favorites -> 4
         IslandContent.Translate -> 12
         is IslandContent.Call -> if (c.isIncoming) 5 else 6
-        is IslandContent.Status -> if (c.isPill()) 8 else 7
+        is IslandContent.Status -> if (c.kind == StatusKind.Ringer) 13 else if (c.isPill()) 8 else 7
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
         is IslandContent.Shazam -> 11
     }
@@ -1698,6 +1698,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             when {
                 assistant -> s.assistantWidthDp
                 k.kind == 8 -> maxOf(CHARGE_PILL_W_DP, s.compactWidthDp)     // şarj: kompakt pill
+                k.kind == 13 -> ringerPillWidthDp(s, true, wm.currentWindowMetrics.bounds.width() / density)   // zil / sessiz (en geniş hal)
                 k.kind == 9 || k.kind == 10 -> recExpandedWidthDp(s, wm.currentWindowMetrics.bounds.width() / density)   // ekran kaydı
                 else -> s.expandedWidthDp
             }
@@ -1709,6 +1710,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 5 -> 74f          // gelen arama
                 k.kind == 6 -> 88f          // aktif arama
                 k.kind == 8 -> chargePillHeightDp(s)   // şarj
+                k.kind == 13 -> ringerPillHeightDp(s)  // zil / sessiz
                 k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
                 k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
