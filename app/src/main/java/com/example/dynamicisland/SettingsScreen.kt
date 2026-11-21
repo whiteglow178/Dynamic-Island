@@ -227,7 +227,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Yatay mod", "Telefonu yan çevirince ada kamera kenarında dikey bir hap olur. Gelen bildirim, şarj, arama gibi olaylar adanın yanında, simgesi düz duran küçük baloncuk olarak animasyonla ayrılır. Bildirimde uygulamanın simgesi görünür", draft.landscapeMode) { draft = draft.copy(landscapeMode = it) }
             if (draft.landscapeMode) {
                 SwitchRow("Baloncuklar adanın altında", "Açıkken baloncuklar adanın altına, kapalıyken üstüne dizilir", draft.landscapeBubbleBelow) { draft = draft.copy(landscapeBubbleBelow = it) }
-                SwitchRow("Olaylar adada da görünsün", "Açıkken olay (bildirim, şarj, müzik...) adanın içinde de gösterilir. Adada zaten bir olay varsa gelen yeni olaylar baloncuk olur; aynı anda en çok 2 baloncuk çıkar. Kapalıyken olaylar yalnızca baloncukta görünür", draft.landscapeEventsInIsland) { draft = draft.copy(landscapeEventsInIsland = it) }
+                SwitchRow("Olaylar adada da görünsün", "Açıkken olay (bildirim, şarj, müzik...) adanın içinde de gösterilir. Adada zaten bir olay varsa gelen yeni olaylar baloncuk olur; aynı anda en çok 2 baloncuk çıkar. Kapalıyken olaylar yalnızca baloncukta görünür. Adanın içinde çizilen özellikler (adada bildirim yazısı, kapalı adada şarkı sözü, arama / müzik hapı, iPhone modu dairesi) açıksa bu ayar kendiliğinden açık sayılır", draft.landscapeEventsInIsland) { draft = draft.copy(landscapeEventsInIsland = it) }
             }
         }
         sec("Görünürlük", "Ada ne zaman görünsün") {

@@ -230,7 +230,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
                 val st = settings.value
                 // iOS tarzı banner açıksa bildirim adada değil cam banner olarak gösterilir; pencere eklenemezse adaya düşer
-                if (!(st.notifBanner && !landscape.active && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
+                if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
             is IslandEvent.ShazamListening -> shazam.onListening()
@@ -722,6 +722,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override fun showTemporarily(c: IslandContent, holdMs: Long) = this@IslandOverlayService.showTemporarily(c, holdMs)
         override fun rest() = this@IslandOverlayService.rest()
         override fun setIslandHidden(hidden: Boolean) {
+            runCatching { landscape.setHidden(hidden) }      // yatay moddaki ada da aynı gizleme kuralına uyar
             composeView?.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
             if (hidden) setTouchable(false)
             else this@IslandOverlayService.scope.launch { syncWindow(this@IslandOverlayService.winKey(ui.value)) }
@@ -781,7 +782,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 onAnswer = call::onAnswer, onDecline = call::onDecline, onSpeaker = call::onSpeaker,
                 onRecStop = rec::onStop, onShazamStop = shazam::onStop,
             ),
-        ) { on -> setMainIslandHidden(on) }
+            onActive = { on -> setMainIslandHidden(on) },
+            onZoneChanged = { syncSideMusic(); call.syncSideButtons() },      // dönüş / ada bölgesi değişti: kenar çubukları yeniden kurulur
+        )
     }
 
     /** Yatay mod: boştayken dokununca yalnızca favori paneli açılır (çeviri paneli yatay modda yok); dolu adada normal işlem. */

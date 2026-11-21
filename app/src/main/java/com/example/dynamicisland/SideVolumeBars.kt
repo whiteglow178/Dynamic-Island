@@ -122,16 +122,18 @@ class SideVolumeOverlay(
     }
 
     private val entries = mutableListOf<Entry>()
+    private var shownStamp = 0
     private var shown: SideVolumePrefs? = null
 
     fun show(p: SideVolumePrefs) {
-        if (shown == p && entries.isNotEmpty()) return        // zaten aynı ayarlarla görünüyor
+        if (shown == p && shownStamp == LandscapeZone.stamp && entries.isNotEmpty()) return        // zaten aynı ayarlarla ve aynı dönüşte görünüyor
         hide()
         val lefts = when (p.side) { 0 -> listOf(true); 1 -> listOf(false); else -> listOf(true, false) }
         for (left in lefts) {
             runCatching { build(p, left) }.onSuccess { entries += it }
         }
         shown = p
+        shownStamp = LandscapeZone.stamp
     }
 
     fun hide() {
@@ -153,8 +155,10 @@ class SideVolumeOverlay(
         fun dp(v: Float) = (v * density).roundToInt()
         val screenH = wm.currentWindowMetrics.bounds.height()
         val w = dp(p.thicknessDp)
-        val h = dp(p.lengthDp).coerceIn(dp(p.thicknessDp * 2f), screenH)
-        val y = (screenH * p.centerFrac - h / 2f).roundToInt().coerceIn(0, (screenH - h).coerceAtLeast(0))
+        val h0 = dp(p.lengthDp).coerceIn(dp(p.thicknessDp * 2f), screenH)
+        val y0 = (screenH * p.centerFrac - h0 / 2f).roundToInt().coerceIn(0, (screenH - h0).coerceAtLeast(0))
+        // Yatay modda kamera kenarındaki çubuk adanın bölgesine binmesin (gerekirse kısalır)
+        val (y, h) = LandscapeZone.fit(left, y0, h0, screenH, dp(8f), shrink = true)
 
         val view = ComposeView(ctx).apply {
             setViewTreeLifecycleOwner(lifecycleOwner)

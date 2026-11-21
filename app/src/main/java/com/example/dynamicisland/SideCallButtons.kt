@@ -100,16 +100,18 @@ class SideCallOverlay(
     }
 
     private val entries = mutableListOf<Entry>()
+    private var shownStamp = 0
     private var shown: SideCallPrefs? = null
 
     fun show(p: SideCallPrefs, onAnswer: () -> Unit, onDecline: () -> Unit) {
-        if (shown == p && entries.isNotEmpty()) return        // zaten aynı ayarlarla görünüyor
+        if (shown == p && shownStamp == LandscapeZone.stamp && entries.isNotEmpty()) return        // zaten aynı ayarlarla ve aynı dönüşte görünüyor
         hide()
         val lefts = when (p.side) { 0 -> listOf(true); 1 -> listOf(false); else -> listOf(true, false) }
         for (left in lefts) {
             runCatching { build(p, left, onAnswer, onDecline) }.onSuccess { entries += it }
         }
         shown = p
+        shownStamp = LandscapeZone.stamp
     }
 
     fun hide() {
@@ -131,7 +133,8 @@ class SideCallOverlay(
         fun dp(v: Float) = (v * density).roundToInt()
         val w = dp(SIDE_W_DP); val h = dp(SIDE_H_DP)
         val screenH = wm.currentWindowMetrics.bounds.height()
-        val y = (screenH * SIDE_Y_FRACTION).toInt() - h / 2
+        // Yatay modda kamera kenarındaki tuşlar adanın bölgesine binmesin
+        val y = LandscapeZone.fit(left, (screenH * SIDE_Y_FRACTION).toInt() - h / 2, h, screenH, dp(8f), shrink = false).first
 
         val view = ComposeView(ctx).apply {
             setViewTreeLifecycleOwner(lifecycleOwner)

@@ -263,7 +263,11 @@ class NotifBannerOverlay(
         fun dp(v: Float) = (v * density).roundToInt()
         val metrics = wm.currentWindowMetrics
         val marginPx = dp(BANNER_MARGIN_DP)
-        val wPx = metrics.bounds.width() - 2 * marginPx
+        val screenW = metrics.bounds.width()
+        // Yatay mod: banner yine ÜSTTEN gelir; ekranın tamamına yayılmaz (en çok 480 dp) ve ortalanır
+        val landscape = screenW > metrics.bounds.height()
+        val wPx = if (landscape) minOf(screenW - 2 * marginPx, dp(480f)) else screenW - 2 * marginPx
+        val xPx = if (landscape) (screenW - wPx) / 2 else marginPx
         val inset = metrics.windowInsets.getInsets(WindowInsets.Type.statusBars()).top
         val topPx = (if (inset > 0) inset else dp(24f)) + dp(6f)
         val widthDp = wPx / density
@@ -298,7 +302,7 @@ class NotifBannerOverlay(
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = marginPx; y = topPx
+            x = xPx; y = topPx
             fitInsetsTypes = 0
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
