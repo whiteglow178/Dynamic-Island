@@ -76,7 +76,7 @@ class PlayOverlay(
     private var lp: WindowManager.LayoutParams? = null
     private var tries = 0
 
-    fun wanted(s: IslandSettings) = s.playPet || s.playMagnet || s.playRipple || s.playPuff
+    fun wanted(s: IslandSettings) = s.playPet || s.playMagnet || s.playRipple || s.playPuff || s.playEater || s.playDaylight
 
     fun attach() {
         if (view != null || !wanted(settings.value)) return
@@ -154,6 +154,8 @@ private fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow
     val anchor = a ?: return
     if (!anchor.shown) return
     Box(Modifier.fillMaxSize()) {
+        if (s.playDaylight) DaylightFx(anchor, s.playDaylightAmt)
+        if (s.playEater) EaterFx(anchor)
         if (s.playRipple) RippleFx(anchor)
         if (s.playMagnet) MagnetFx(anchor)
         if (s.playPuff) PuffDustFx(anchor)
@@ -456,6 +458,109 @@ private fun PetFx(a: PlayAnchor) {
                 drawLine(zc, Offset(zx + zs, zy), Offset(zx, zy + zs), zw, StrokeCap.Round)
                 drawLine(zc, Offset(zx, zy + zs), Offset(zx + zs, zy + zs), zw, StrokeCap.Round)
             }
+        }
+    }
+}
+
+// ================================================================ Bildirim yiyen ada
+
+private class Morsel(val start: Long, val fromLeft: Boolean, val yFrac: Float, val hue: Int)
+
+@Composable
+private fun EaterFx(a: PlayAnchor) {
+    val bites = remember { mutableStateListOf<Morsel>() }
+    var now by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        PlayFx.events.collect {
+            if (it == PlayEvent.Notif && bites.size < 3) {
+                bites.add(Morsel(SystemClock.uptimeMillis(), Random.nextBoolean(), 0.28f + Random.nextFloat() * 0.2f, Random.nextInt(BITE_COLORS.size)))
+            }
+        }
+    }
+    val busy = bites.isNotEmpty()
+    LaunchedEffect(busy) {
+        while (bites.isNotEmpty()) {
+            withFrameNanos { now = SystemClock.uptimeMillis() }
+            val done = bites.filter { now - it.start >= EAT_MS }
+            if (done.isNotEmpty()) {
+                bites.removeAll(done)
+                done.forEach { _ -> PlayFx.emit(PlayEvent.Eaten) }      // ada yutkunur
+            }
+        }
+    }
+    if (!busy) return
+    Canvas(Modifier.fillMaxSize()) {
+        val d = density
+        val target = Offset(a.liveCx(), a.liveCy())
+        for (m in bites) {
+            val t = ((now - m.start) / EAT_MS.toFloat()).coerceIn(0f, 1f)
+            val e = t * t * t                                     // emilir gibi: yavaş başlar, adaya yaklaştıkça hızlanır
+            val r0 = 11f * d
+            val start = Offset(if (m.fromLeft) -r0 * 2f else a.screenW + r0 * 2f, a.top + a.screenH * m.yFrac * a.dir())
+            // Kavisli yol: önce yukarı süzülür, sonra adaya çekilir
+            val ctrl = Offset((start.x + target.x) / 2f, start.y - a.dir() * a.screenH * 0.12f)
+            val u = 1f - e
+            val p = Offset(
+                u * u * start.x + 2f * u * e * ctrl.x + e * e * target.x,
+                u * u * start.y + 2f * u * e * ctrl.y + e * e * target.y,
+            )
+            val r = r0 * (1f - 0.45f * e)
+            val col = BITE_COLORS[m.hue]
+            // Adaya yaklaştıkça adaya doğru uzayan sıvı köprü (ada pencerenin üstünde olduğu için köprünün ucu adanın altına girer)
+            val dist = (p - target).getDistance()
+            val reach = a.h * 2.2f
+            if (dist < reach) drawLine(a.color, target, p, r * 1.5f * (1f - dist / reach), StrokeCap.Round)
+            drawCircle(Brush.radialGradient(listOf(Color.White, col), center = Offset(p.x - r * 0.35f, p.y - r * 0.35f), radius = r * 1.6f), r, p)
+            drawCircle(Color.White.copy(alpha = 0.8f), r * 0.22f, Offset(p.x - r * 0.38f, p.y - r * 0.38f))
+        }
+    }
+}
+private const val EAT_MS = 750
+private val BITE_COLORS = listOf(Color(0xFF64D2FF), Color(0xFF30D158), Color(0xFFFF9F0A), Color(0xFFFF375F), Color(0xFFBF5AF2))
+
+// ================================================================ Gün ışığı rengi
+
+/** Günün saatine göre hale rengi: gece lacivert, şafak turuncu, gün beyaz, gün batımı pembe-mor. */
+private val DAY_KEYS = listOf(
+    0f to Color(0xFF3A5BFF), 5f to Color(0xFF3A5BFF), 6.5f to Color(0xFFFF8A3D), 8.5f to Color(0xFFFFE2A8),
+    12f to Color(0xFFDDF2FF), 16.5f to Color(0xFFFFB347), 18.5f to Color(0xFFFF5FA2), 20f to Color(0xFF8E5CFF),
+    21.5f to Color(0xFF3A5BFF), 24f to Color(0xFF3A5BFF),
+)
+
+private fun daylightColor(hour: Float): Color {
+    for (i in 0 until DAY_KEYS.size - 1) {
+        val (h0, c0) = DAY_KEYS[i]; val (h1, c1) = DAY_KEYS[i + 1]
+        if (hour <= h1) return androidx.compose.ui.graphics.lerp(c0, c1, ((hour - h0) / (h1 - h0)).coerceIn(0f, 1f))
+    }
+    return DAY_KEYS.last().second
+}
+
+@Composable
+private fun DaylightFx(a: PlayAnchor, amount: Float) {
+    var minute by remember { mutableLongStateOf(System.currentTimeMillis() / 60_000L) }
+    LaunchedEffect(Unit) { while (true) { delay(60_000L); minute = System.currentTimeMillis() / 60_000L } }
+    if (!a.compactVisible) return
+    Canvas(Modifier.fillMaxSize()) {
+        if (minute < 0L) return@Canvas
+        val cal = java.util.Calendar.getInstance()
+        val hour = cal.get(java.util.Calendar.HOUR_OF_DAY) + cal.get(java.util.Calendar.MINUTE) / 60f
+        val col = daylightColor(hour)
+        val night = hour < 5.5f || hour > 21f
+        val amt = amount.coerceIn(0f, 1f) * (if (night) 0.6f else 1f)
+        val d = density
+        val cx = a.liveCx(); val cy = a.liveCy()
+        // Yumuşak hale: dışa doğru sönen halkalar (ada üstte olduğu için iç kısım görünmez)
+        val rings = 8
+        for (i in 1..rings) {
+            val grow = i * 2.6f * d
+            val w = a.w + grow * 2f; val h = a.h + grow * 2f
+            val k = 1f - i / (rings + 1f)
+            drawRoundRect(
+                col.copy(alpha = amt * 0.55f * k * k),
+                Offset(cx - w / 2f, cy - h / 2f), Size(w, h),
+                androidx.compose.ui.geometry.CornerRadius(h / 2f),
+                style = Stroke(3f * d),
+            )
         }
     }
 }

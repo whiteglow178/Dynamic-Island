@@ -40,6 +40,11 @@ import kotlin.math.sqrt
  *  6 Ada yüzü       : boştaki adada göz kırpan, bakınan, uyuyan gözler               -> PlayIsland.kt
  *  8 Dalga          : bildirim gelince / adaya dokununca adadan halka halka dalga yayılır -> PlayOverlay.kt
  * 10 Cep hissi      : ekran açılınca ada yukarıdan düşüp yerine oturur, uzun süre boştaysa kamera deliğine girer -> PlayIsland.kt
+ *  Pil sıvısı       : boştaki ada pil seviyesi kadar dolu cam kap; eğince sıvı çalkalanır  -> PlayIsland.kt
+ *  Bildirim yiyen   : bildirim baloncuğu uçup adaya girer, ada yutar ve "doyar"         -> PlayOverlay.kt + PlayIsland.kt
+ *  Çekiştirme       : adayı aşağı çekip bırakınca lastik gibi geri fırlar               -> PlayIsland.kt
+ *  Gün ışığı        : adanın çevresindeki hale günün saatine göre renk değiştirir      -> PlayOverlay.kt
+ *  Gizli oyun       : boştaki adaya hızlıca 5 kez dokununca "Ada Pong" açılır          -> IslandGame.kt
  *
  * Ada penceresi ile tam ekran efekt penceresi aynı (ana) iş parçacığında çalışır; ortak durum burada tutulur.
  */
@@ -52,6 +57,7 @@ sealed interface PlayEvent {
     data object Puff : PlayEvent          // adaya dokunuldu: savrulma
     data object ScreenOn : PlayEvent      // ekran açıldı (cep hissi, yüz uyanır)
     data object Notif : PlayEvent         // bildirim geldi (evcil kafasını çıkarır, yüz sevinir)
+    data object Eaten : PlayEvent         // bildirim baloncuğu adaya girdi (ada yutar)
 }
 
 object PlayFx {
@@ -73,6 +79,10 @@ object PlayFx {
     var charging by mutableStateOf(false)
     var batteryLow by mutableStateOf(false)
     var musicPlaying by mutableStateOf(false)
+    var batteryPct by mutableFloatStateOf(1f)          // 0..1
+    var fullness by mutableFloatStateOf(0f)            // yenen bildirim sayısı (0..4): ada "doyar"
+    var liquidAngle by mutableFloatStateOf(0f)         // pil sıvısının yüzey açısı (radyan)
+    var liquidV = 0f
     var lastActivityMs = System.currentTimeMillis()   // son dokunma / bildirim: evcil sıkılır mı
 
     val events = MutableSharedFlow<PlayEvent>(extraBufferCapacity = 16)
@@ -149,7 +159,7 @@ class PlayController(
         devCbAt = SystemClock.uptimeMillis()
         runCatching { am?.registerAudioDeviceCallback(cb, main) }.onSuccess { devCb = cb }
         // Sensör yalnızca fizik ya da yüz açıkken
-        scope.launch { settings.map { it.playPhysics || it.playFace }.distinctUntilChanged().collect { syncSensor() } }
+        scope.launch { settings.map { it.playPhysics || it.playFace || it.playLiquid }.distinctUntilChanged().collect { syncSensor() } }
     }
 
     private fun readBattery(i: Intent) {
@@ -157,12 +167,13 @@ class PlayController(
         val lvl = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val sc = i.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
         PlayFx.charging = st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL
+        if (lvl >= 0) PlayFx.batteryPct = (lvl.toFloat() / sc).coerceIn(0f, 1f)
         PlayFx.batteryLow = lvl in 0..(sc * 15 / 100) && !PlayFx.charging
     }
 
     private fun syncSensor() {
         val s = settings.value
-        val want = screenOn && (s.playPhysics || s.playFace)
+        val want = screenOn && (s.playPhysics || s.playFace || s.playLiquid)
         if (want == sensorOn) return
         if (want) {
             val m = sm ?: return

@@ -2,6 +2,8 @@ package com.example.dynamicisland
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -12,6 +14,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +27,14 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
@@ -33,7 +45,12 @@ import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.exp
+import kotlin.math.sin
+import kotlin.math.tan
 import kotlin.math.min
 import kotlin.math.sign
 import kotlin.random.Random
@@ -78,7 +95,8 @@ fun PlayIslandHost(
             val target = if (c.playPhysics) (-PlayFx.gx / 9.81f).coerceIn(-1f, 1f) * range * 1.6f else 0f
             val moving = abs(target.coerceIn(-range, range) - x) > 0.4f || abs(v) > 2f ||
                 abs(PlayFx.jelly) > 0.002f || abs(PlayFx.jellyV) > 0.02f || PlayFx.shake > 0f ||
-                (c.playPuff && PlayFx.puff > 0.02f)
+                (c.playPuff && PlayFx.puff > 0.02f) ||
+                (c.playLiquid && (abs(liquidTarget() - PlayFx.liquidAngle) > 0.004f || abs(PlayFx.liquidV) > 0.01f))
             if (!moving) {
                 if (PlayFx.slideX != x) PlayFx.slideX = x
                 last = 0L
@@ -122,6 +140,15 @@ fun PlayIslandHost(
                 j += PlayFx.jellyV * dt
                 if (abs(j) < 0.0015f && abs(PlayFx.jellyV) < 0.015f) { j = 0f; PlayFx.jellyV = 0f }
                 PlayFx.jelly = j.coerceIn(-0.6f, 0.6f)
+                // Pil sıvısı: yüzey dünyaya göre düz kalmaya çalışır, az sönümlü yay olduğu için çalkalanır;
+                // ada sallanınca / jöle titreyince de dalgalanır
+                if (c.playLiquid) {
+                    val la = 38f * (liquidTarget() - PlayFx.liquidAngle) - 2.4f * PlayFx.liquidV - PlayFx.jellyV * 0.6f
+                    PlayFx.liquidV += la * dt
+                    var ang = PlayFx.liquidAngle + PlayFx.liquidV * dt
+                    if (abs(ang - liquidTarget()) < 0.002f && abs(PlayFx.liquidV) < 0.008f) { ang = liquidTarget(); PlayFx.liquidV = 0f }
+                    PlayFx.liquidAngle = ang.coerceIn(-0.7f, 0.7f)
+                }
             }
         }
     }
@@ -140,6 +167,29 @@ fun PlayIslandHost(
             }
         }
     }
+
+    // ---------------------------------------------------------------- Bildirim yiyen ada
+    LaunchedEffect(Unit) {
+        PlayFx.events.collect { e ->
+            if (e == PlayEvent.Eaten && cfg.playEater) {
+                PlayFx.kick(-3.2f)                                          // yutkunma: önce uzar, sonra yayvanlaşır
+                if (cfg.playEaterFull) PlayFx.fullness = (PlayFx.fullness + 1f).coerceAtMost(4f)
+            }
+        }
+    }
+    // Tokluk 20 dakikada geçer (dokununca hemen geçer: servis sıfırlar)
+    LaunchedEffect(PlayFx.fullness) { if (PlayFx.fullness > 0f) { delay(20 * 60_000L); PlayFx.fullness = 0f } }
+    val full by animateFloatAsState(if (s.playEater && s.playEaterFull) PlayFx.fullness else 0f, spring(dampingRatio = 0.45f, stiffness = 300f), label = "full")
+
+    // ---------------------------------------------------------------- Çekiştirme
+    val scope = rememberCoroutineScope()
+    var drag by remember { mutableFloatStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    val pullBack = remember { Animatable(0f) }
+    val maxPull = ((s.windowPadDp() - 2f) * d).coerceAtLeast(0f)
+    val pullOn = s.playPull && compact
+    // Ada çekilirken açılırsa (örn. aşağı kaydırma müziği açtı) hareket yarıda kalır: gerilimi bırak
+    LaunchedEffect(pullOn) { if (!pullOn && (dragging || pullBack.value != 0f)) { dragging = false; drag = 0f; pullBack.snapTo(0f) } }
 
     // ---------------------------------------------------------------- Cep hissi
     val drop = remember { Animatable(0f) }
@@ -176,7 +226,18 @@ fun PlayIslandHost(
     // ---------------------------------------------------------------- Ada yüzü
     val face = rememberFaceState(s.playFace, compactIdle)
 
-    val anyTransform = s.playPhysics || s.playPocket || s.playPuff || s.playMagnet
+    // ---------------------------------------------------------------- Pil sıvısı
+    val liquidOn = s.playLiquid && compactIdle
+    val liquidBubbles = remember { Animatable(0f) }
+    LaunchedEffect(liquidOn, PlayFx.charging) {
+        // Şarj olurken kabarcıklar yükselir (yalnızca bu sırada kare ister)
+        while (liquidOn && PlayFx.charging) {
+            liquidBubbles.snapTo(0f)
+            liquidBubbles.animateTo(1f, tween(2_400, easing = LinearEasing))
+        }
+    }
+
+    val anyTransform = s.playPhysics || s.playPocket || s.playPuff || s.playMagnet || s.playEater || s.playPull
     Box(
         Modifier
             .fillMaxSize()
@@ -187,15 +248,51 @@ fun PlayIslandHost(
                 val p = PlayFx.pocket
                 val sinkX = if (cwPx > 0f) (chPx * 0.6f / cwPx).coerceIn(0.05f, 1f) else 1f
                 translationX = PlayFx.slideX
-                translationY = PlayFx.dropY
-                scaleX = (1f + 0.16f * j + 0.10f * b) * lerpF(1f, sinkX, p)
-                scaleY = (1f - 0.13f * j - 0.16f * b) * lerpF(1f, 0.6f, p)
+                // Çekiştirme: üst kenar sabit, ada aşağı uzar (ters adada yukarı)
+                val pl = if (dragging) drag else pullBack.value
+                val pk = if (chPx > 0f) pl / chPx else 0f
+                val dirY = if (cfg.invertedIsland) -1f else 1f
+                translationY = PlayFx.dropY + dirY * pl / 2f
+                scaleX = (1f + 0.16f * j + 0.10f * b + 0.02f * full - 0.12f * pk.coerceIn(0f, 1f)) * lerpF(1f, sinkX, p)
+                scaleY = (1f - 0.13f * j - 0.16f * b + 0.04f * full + pk) * lerpF(1f, 0.6f, p)
                 // Dönüşüm merkezi: kapalı adanın ortası (ters adada alttan)
                 val pivotY = if (cfg.invertedIsland) size.height - padPx - chPx / 2f else padPx + chPx / 2f
                 transformOrigin = TransformOrigin(0.5f, if (size.height > 0f) (pivotY / size.height).coerceIn(0f, 1f) else 0.5f)
             }
+            .pointerInput(pullOn, maxPull) {
+                if (!pullOn || maxPull <= 0f) return@pointerInput
+                // Dokunuşlar yalnızca izlenir, tüketilmez: adanın kendi dokunma / kaydırma işleri aynen çalışır
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val sign = if (cfg.invertedIsland) -1f else 1f
+                    var cur = 0f
+                    while (true) {
+                        val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!ch.pressed) break
+                        val dy = (ch.position.y - down.position.y) * sign
+                        // Lastik direnci: çektikçe zorlaşır, pencere payını aşmaz
+                        cur = if (dy > 0f) maxPull * (1f - exp(-dy / (maxPull * 1.6f))) else (dy * 0.15f).coerceAtLeast(-chPx * 0.12f)
+                        if (abs(cur) > 0.5f) { drag = cur; dragging = true }
+                    }
+                    if (dragging) {
+                        val from = cur
+                        scope.launch {
+                            pullBack.snapTo(from)
+                            dragging = false
+                            drag = 0f
+                            PlayFx.kick(-(from / maxPull).coerceIn(0f, 1f) * 4f)   // geri fırlarken jöle gibi sarsılır
+                            pullBack.animateTo(0f, spring(dampingRatio = 0.28f, stiffness = 620f))
+                        }
+                    }
+                }
+            }
             .drawWithContent {
                 drawContent()
+                if (liquidOn) {
+                    val cy = if (cfg.invertedIsland) size.height - padPx - chPx / 2f else padPx + chPx / 2f
+                    drawLiquid(Offset(size.width / 2f, cy), cwPx, chPx, liquidBubbles.value)
+                }
                 if (face.visible) {
                     val cy = if (cfg.invertedIsland) size.height - padPx - chPx / 2f else padPx + chPx / 2f
                     drawFace(face, Offset(size.width / 2f, cy), cwPx, chPx)
@@ -335,5 +432,50 @@ private fun DrawScope.drawFace(f: FaceState, c: Offset, cw: Float, ch: Float) {
         drawLine(zc, Offset(zx, zy), Offset(zx + zs, zy), zw, StrokeCap.Round)
         drawLine(zc, Offset(zx + zs, zy), Offset(zx, zy + zs), zw, StrokeCap.Round)
         drawLine(zc, Offset(zx, zy + zs), Offset(zx + zs, zy + zs), zw, StrokeCap.Round)
+    }
+}
+
+// ================================================================ Pil sıvısı
+
+/** Sıvı yüzeyinin dünyaya göre düz kalması için ekrandaki hedef açısı (radyan). Sağ taraf aşağıdaysa sıvı sağda toplanır. */
+private fun liquidTarget(): Float = atan2(-PlayFx.gx, PlayFx.gy.coerceAtLeast(1f)).coerceIn(-0.6f, 0.6f)
+
+private fun DrawScope.drawLiquid(c: Offset, cw: Float, ch: Float, bubbleT: Float) {
+    val pct = PlayFx.batteryPct.coerceIn(0f, 1f)
+    val col = when {
+        PlayFx.charging -> Color(0xFF30D158)
+        pct < 0.2f -> Color(0xFFFF453A)
+        pct < 0.5f -> Color(0xFFFFD60A)
+        else -> Color(0xFF30D158)
+    }
+    val l = c.x - cw / 2f; val r = c.x + cw / 2f
+    val t = c.y - ch / 2f; val b = c.y + ch / 2f
+    val pill = Path().apply { addRoundRect(RoundRect(l, t, r, b, CornerRadius(ch / 2f))) }
+    // Yüzey: pil seviyesi kadar yüksekte, eğime göre yatık, çalkalanırken hafif dalgalı
+    val level = b - ch * (0.08f + 0.84f * pct)
+    val slope = tan(PlayFx.liquidAngle)
+    val wave = (abs(PlayFx.liquidV) * ch * 0.18f).coerceAtMost(ch * 0.12f)
+    val surf = Path()
+    val body = Path()
+    val steps = 24
+    for (i in 0..steps) {
+        val x = l + (r - l) * i / steps
+        val y = level - slope * (x - c.x) + wave * sin(i / steps.toFloat() * 2f * PI.toFloat() * 1.5f)
+        if (i == 0) { surf.moveTo(x, y); body.moveTo(x, y) } else { surf.lineTo(x, y); body.lineTo(x, y) }
+    }
+    body.lineTo(r, b + ch); body.lineTo(l, b + ch); body.close()
+    clipPath(pill) {
+        drawPath(body, Brush.verticalGradient(listOf(col.copy(alpha = 0.92f), col.copy(alpha = 0.55f)), startY = level - ch * 0.3f, endY = b))
+        // Şarjda yükselen kabarcıklar
+        if (PlayFx.charging) {
+            for (k in 0 until 5) {
+                val ph = (bubbleT + k / 5f) % 1f
+                val bx = l + cw * (0.15f + 0.7f * ((k * 0.37f) % 1f)) + sin(ph * 9f + k) * ch * 0.05f
+                val by = b - ph * (b - level)
+                drawCircle(Color.White.copy(alpha = 0.55f * (1f - ph)), ch * (0.035f + 0.02f * (k % 2)), Offset(bx, by))
+            }
+        }
+        // Yüzeydeki ışık çizgisi
+        drawPath(surf, Color.White.copy(alpha = 0.55f), style = Stroke(ch * 0.04f, cap = StrokeCap.Round))
     }
 }

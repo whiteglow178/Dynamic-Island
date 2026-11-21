@@ -681,6 +681,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun onPillTap() {
         playSfx(SoundEvent.Tap)
         PlayFx.lastActivityMs = System.currentTimeMillis()      // evcil: dokunulunca sıkılmaz
+        PlayFx.fullness = 0f                                    // bildirim yiyen ada: dokununca "tokluk" geçer
+        if (secretGameTap()) return
         if (settings.value.playRipple && settings.value.playRippleTap) PlayFx.emit(PlayEvent.Ripple)
         if (settings.value.playPuff) PlayFx.emit(PlayEvent.Puff)
         if (!landscape.active && openStack()) return          // birden fazla olay varsa hepsi alt alta açılır (yatay modda baloncuklar var)
@@ -854,6 +856,21 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val play by lazy { PlayOverlay(this, this, this, wm, settings, playAnchor) }
     private val playCtl by lazy { PlayController(this, settings, scope) }
     private var playOn = false
+    private val gameTaps = ArrayDeque<Long>()
+
+    /** Gizli oyun: boştaki adaya 1,8 sn içinde 5 kez dokununca "Ada Pong" açılır. */
+    private fun secretGameTap(): Boolean {
+        val s = settings.value
+        if (!s.playGame || ui.value.content !is IslandContent.Idle) { gameTaps.clear(); return false }
+        val now = android.os.SystemClock.uptimeMillis()
+        gameTaps.addLast(now)
+        while (gameTaps.isNotEmpty() && now - gameTaps.first() > 1_800L) gameTaps.removeFirst()
+        if (gameTaps.size < 5) return false
+        gameTaps.clear()
+        PlayFx.kick(5f)
+        IslandGameActivity.open(this)
+        return true
+    }
     private var decorOn = false
 
     /** Süslerin dayanacağı kapalı adanın ekrandaki yeri ve süslerin görünüp görünmeyeceği. */
@@ -1886,7 +1903,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val blurOk = pad == 0 && sideExtra == 0   // pay / yan baloncuk varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady()))) && !appHide.hidden)
+        // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
+        val playTouch = k.kind == 0 && s.showIdle && (s.playPull || s.playGame)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady())) || playTouch) && !appHide.hidden)
         when {
             k.stackH > 0 -> {
                 // Yığın görünümü: pencere kartların toplam boyutunda

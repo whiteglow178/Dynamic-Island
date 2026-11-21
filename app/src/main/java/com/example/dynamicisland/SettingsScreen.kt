@@ -720,6 +720,33 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SwitchRow("Dokununca da dalga", "Adaya dokununca da dalga yayılır", draft.playRippleTap) { draft = draft.copy(playRippleTap = it) }
             }
         }
+        sec("Pil sıvısı", "Boştaki ada pil kadar dolu bir cam kap") {
+            SwitchRow("Pil sıvısı", "Boştaki adanın içi pil seviyesi kadar sıvıyla dolar (yeşil / sarı / kırmızı). Telefonu eğince sıvı çalkalanıp yana toplanır, şarjdayken kabarcıklar yükselir. \"Boştayken de göster\" açık olmalı",
+                draft.playLiquid) { draft = draft.copy(playLiquid = it) }
+        }
+        sec("Bildirim yiyen ada", "Bildirim baloncuğu uçup adaya girer") {
+            SwitchRow("Bildirim yiyen ada", "Bildirim gelince ekranın kenarından renkli bir baloncuk süzülüp adaya çekilir, ada onu yutkunarak yer",
+                draft.playEater) { draft = draft.copy(playEater = it) }
+            if (draft.playEater) {
+                SwitchRow("Yedikçe doysun", "Her yediği bildirimle ada biraz şişer (en fazla 4). Adaya dokununca ya da 20 dakika sonra eski haline döner", draft.playEaterFull) { draft = draft.copy(playEaterFull = it) }
+            }
+        }
+        sec("Çekiştirme", "Adayı çekip bırak, lastik gibi fırlasın") {
+            SwitchRow("Çekiştirme", "Adayı parmağınla aşağı çekince lastik gibi uzar, bırakınca geri fırlayıp sallanır. Boştaki ada da dokunuş alır: adanın hemen çevresine dokunmak durum çubuğuna geçmez",
+                draft.playPull) { draft = draft.copy(playPull = it) }
+        }
+        sec("Gün ışığı rengi", "Adanın çevresindeki hale saate göre renk değiştirir") {
+            SwitchRow("Gün ışığı rengi", "Şafakta turuncu, gündüz beyaz, gün batımında pembe ve mor, gece lacivert bir hale adayı sarar. Renk dakika dakika yumuşakça geçer",
+                draft.playDaylight) { draft = draft.copy(playDaylight = it) }
+            if (draft.playDaylight) {
+                SliderRow("Parlaklık", draft.playDaylightAmt, 0.1f..1f, "%${(draft.playDaylightAmt * 100).toInt()}") { draft = draft.copy(playDaylightAmt = it) }
+            }
+        }
+        sec("Gizli oyun", "Ada Pong") {
+            SwitchRow("Gizli oyun", "Boştaki adaya hızlıca 5 kez dokununca \"Ada Pong\" açılır: ada raket olur, parmağınla sağa sola kaydırıp topu kaçırmamaya çalışırsın. Adaya tek dokunuşun başka bir işi varsa (favoriler, çeviri) bu kısayol çalışmaz",
+                draft.playGame) { draft = draft.copy(playGame = it) }
+            IslandActionButton("Oyunu şimdi aç", { IslandGameActivity.open(ctx) })
+        }
         sec("Cep hissi", "Ekran açılınca ada yerine düşer") {
             SwitchRow("Cep hissi", "Ekran açılınca ada kamera deliğinden düşüp yaylanarak yerine oturur. Uzun süre boş kalınca küçülüp kamera deliğine girer, bir olay gelince fırlayıp çıkar",
                 draft.playPocket) { draft = draft.copy(playPocket = it) }
