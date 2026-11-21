@@ -165,6 +165,7 @@ data class IslandSettings(
     val invertedIsland: Boolean = false,     // ters ada: ada ekranın ÜSTÜNDE değil ALTINDA durur; içerik düz kalır, panel yukarı doğru açılır
     val landscapeMode: Boolean = false,      // yatay mod: telefon yan çevrilince ada kenarda DİKEY hap olur; olaylar (bildirim, şarj...) simgesi düz duran yan baloncuk olarak animasyonla çıkar
     val landscapeBubbleBelow: Boolean = false, // yatay mod: baloncuklar adanın altında (false: üstünde) sıralansın
+    val landscapeEventsInIsland: Boolean = false, // yatay mod: olay adanın içinde de görünsün; ada doluysa gelen yeni olaylar baloncuk olur (en çok 2 baloncuk)
     val hideStatusBar: Boolean = false,      // şarj / zil modu gibi durum görünümleri açıkken durum çubuğunu gizle
     val notifLaunchAnim: Boolean = true,     // ... ve açılırken adadan siyah ekran animasyonu oynasın
     val favoriteLaunchAnim: Boolean = true,  // uygulamaya dokununca adadan siyah ekran çıkıp ekranı kaplasın
@@ -404,7 +405,7 @@ class SettingsRepository(context: Context) {
         val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_INLINE = booleanPreferencesKey("nt_inline"); val NT_BMENU = booleanPreferencesKey("nt_bmenu"); val NT_BMENU_TAP = booleanPreferencesKey("nt_bmenu_tap"); val NT_BICON = booleanPreferencesKey("nt_bicon"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val INV_ISLAND = booleanPreferencesKey("inv_island")
-        val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below")
+        val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below"); val LAND_IN_ISLAND = booleanPreferencesKey("land_in_island")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val REC_ON = booleanPreferencesKey("rec_on"); val REC_WIDE = booleanPreferencesKey("rec_wide_v2")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full"); val AS_STYLE = intPreferencesKey("as_style")
@@ -553,6 +554,7 @@ class SettingsRepository(context: Context) {
             invertedIsland = p[K.INV_ISLAND] ?: d.invertedIsland,
             landscapeMode = p[K.LAND_ON] ?: d.landscapeMode,
             landscapeBubbleBelow = p[K.LAND_BELOW] ?: d.landscapeBubbleBelow,
+            landscapeEventsInIsland = p[K.LAND_IN_ISLAND] ?: d.landscapeEventsInIsland,
             notifLaunchAnim = p[K.NT_ANIM] ?: d.notifLaunchAnim,
             musicExitAnim = p[K.MX_ANIM] ?: d.musicExitAnim,
             musicExitSpeed = p[K.MX_SPD] ?: d.musicExitSpeed,
@@ -685,7 +687,7 @@ class SettingsRepository(context: Context) {
             it[K.MX_CLASSIC] = s.musicExitClassic; it[K.MX_ATOMIC] = s.musicExitAtomic; it[K.MX_ATOMIC_FULL] = s.musicExitAtomicFull; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.INV_ISLAND] = s.invertedIsland
-            it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow
+            it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow; it[K.LAND_IN_ISLAND] = s.landscapeEventsInIsland
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.REC_ON] = s.screenRecEnabled; it[K.REC_WIDE] = s.screenRecWide
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp

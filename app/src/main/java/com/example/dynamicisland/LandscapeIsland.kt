@@ -14,6 +14,7 @@ import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -90,10 +91,13 @@ import kotlin.math.roundToInt
  *  - Dokunma, basılı tutma ve kaydırma servisteki normal ada işleyicilerine bağlanır:
  *      ekranın içine doğru kaydırma = aç, kenara doğru kaydırma = kapat,
  *      kenar boyunca (yukarı / aşağı) kaydırma = sonraki / önceki şarkı.
+ *  - "Olaylar adada da görünsün" ayarı açıkken ilk olay adanın İÇİNDE gösterilir; ada doluyken gelen yeni olaylar baloncuk olur
+ *    (en çok 2 baloncuk). Adadaki olay bitince sıradaki en eski baloncuk adaya geri çekilir.
  * Ayrı, küçük bir pencere kullanır; ana ada penceresine dokunmaz. Olay verisi servisin `ui` akışından gelir.
  */
 
 private const val LAND_MAX_BUBBLES = 3
+private const val LAND_MAX_BUBBLES_IN_ISLAND = 2     // "Olaylar adada da görünsün" açıkken: 1 olay adada + en çok 2 baloncuk
 private const val LAND_FAV_COLS = 2
 private const val LAND_FAV_CELL_DP = 76f
 
@@ -146,8 +150,10 @@ private fun landKey(c: IslandContent): String = when (c) {
 }
 
 /** En yeni olay başta: önce ortadaki içerik, sonra yan baloncuktakiler. */
-private fun landEvents(u: IslandUiState): List<IslandContent> =
-    (listOf(u.content) + u.side).filter(::landShows).distinctBy(::landKey).take(LAND_MAX_BUBBLES)
+private fun landEventsAll(u: IslandUiState): List<IslandContent> =
+    (listOf(u.content) + u.side).filter(::landShows).distinctBy(::landKey)
+
+private fun landEvents(u: IslandUiState): List<IslandContent> = landEventsAll(u).take(LAND_MAX_BUBBLES)
 
 /**
  * Açık panelin boyutu (dp) ya da panel yoksa null. Bildirim ve durum olayları (şarj, zil...) panel açmaz; yalnızca baloncuk olur.
@@ -449,7 +455,9 @@ private fun LandscapeWindowContent(
     val s by settings.collectAsState()
     val u by ui.collectAsState()
     val density = LocalDensity.current
-    val events = landEvents(u)
+    val inIsland = s.landscapeEventsInIsland
+    val all = landEventsAll(u)
+    val centerKey = landKey(u.content)
     val panelWanted = landPanelDp(u, s, 100_000f, 100_000f) != null
     val camLeft = g.camLeft
 
@@ -463,6 +471,17 @@ private fun LandscapeWindowContent(
     }
     val pv = pAnim.value
     val panelShowing = pv > 0.01f || panelWanted
+
+    // Adadaki olay: "Olaylar adada da görünsün" açıkken ada dolu kaldığı sürece aynı olayı tutar (yeni olay baloncuk olur);
+    // olay bitince sıradaki en eski olay adaya geçer.
+    val occ = remember { arrayOfNulls<String>(1) }
+    val occKey: String? = if (!inIsland) null else {
+        val prev = occ[0]
+        (all.firstOrNull { landKey(it) == prev } ?: all.lastOrNull())?.let(::landKey)
+    }
+    occ[0] = occKey
+    val occContent = if (occKey == null) null else all.firstOrNull { landKey(it) == occKey }
+    val events = if (inIsland) all.filter { landKey(it) != occKey }.take(LAND_MAX_BUBBLES_IN_ISLAND) else all.take(LAND_MAX_BUBBLES)
 
     // Gösterilen baloncuklar: yeni olay başa eklenir; biten olay animasyonla geri çekilip listeden kalkar
     val shown = remember { mutableStateListOf<LandEntry>() }
@@ -479,20 +498,37 @@ private fun LandscapeWindowContent(
 
     fun dpOf(px: Int): Dp = with(density) { px.toDp() }
     val thickDp = dpOf(g.thick)
-    val centerKey = landKey(u.content)
     val isMedia = u.content is IslandContent.Media
     val isNotif = u.content is IslandContent.Notif
 
     Box(Modifier.fillMaxSize()) {
         // Ada: kamera kenarında dikey hap (dokununca boştayken favori paneli, doluyken merkez olayın işlemi)
+        // Adadaki olay yan listedeyse (merkez değilse) dokunma o olayın baloncuk işlemine gider
+        val occSide = if (occKey != null && occKey != centerKey) u.side.indexOfFirst { landKey(it) == occKey } else -1
+        val islandGesture = if (occSide >= 0) {
+            Modifier.landGestures(camLeft, s, false, false, { actions.onSideTap(occSide) }, {}, {}, {}, {})
+        } else {
+            Modifier.landGestures(camLeft, s, isMedia, isNotif, actions.onTap, actions.onLongPress, actions.onSwipe, actions.onCommand, actions.onNotifSwipeSide)
+        }
         Box(
             Modifier
                 .offset { IntOffset(g.islandX, g.islandY) }
                 .size(thickDp, dpOf(g.islandLen))
                 .clip(RoundedCornerShape(50))
                 .background(Color(s.islandColorArgb))
-                .landGestures(camLeft, s, isMedia, isNotif, actions.onTap, actions.onLongPress, actions.onSwipe, actions.onCommand, actions.onNotifSwipeSide)
-        )
+                .then(islandGesture),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (occContent != null && !panelShowing) {
+                key(occKey) {
+                    val a = remember { Animatable(0f) }
+                    LaunchedEffect(Unit) { a.animateTo(1f, tween(220)) }
+                    Box(Modifier.graphicsLayer { alpha = a.value }, contentAlignment = Alignment.Center) {
+                        LandBubbleContent(occContent, g.thick)
+                    }
+                }
+            }
+        }
 
         if (!panelShowing) {
             shown.toList().forEachIndexed { index, e ->
