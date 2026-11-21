@@ -58,6 +58,13 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Gizli oyun: "Ada Pong" (Oyuncak ada > Gizli oyun) -->
+        <activity
+            android:name=".IslandGameActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="portrait" />
+
         <activity
             android:name=".CapturePermissionActivity"
             android:exported="false"
