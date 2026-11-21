@@ -65,6 +65,13 @@
             android:excludeFromRecents="true"
             android:screenOrientation="portrait" />
 
+        <!-- Karalama tahtası (Oyuncak ada > Karalama tahtası) -->
+        <activity
+            android:name=".IslandDoodleActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="portrait" />
+
         <activity
             android:name=".CapturePermissionActivity"
             android:exported="false"
