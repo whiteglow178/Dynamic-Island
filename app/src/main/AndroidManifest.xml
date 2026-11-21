@@ -21,7 +21,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
 android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Dynamic Island"
+        android:label="Omni Island"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
@@ -57,7 +57,7 @@ android:roundIcon="@mipmap/ic_launcher_round"
         <service
             android:name=".IslandAccessibilityService"
             android:exported="true"
-            android:label="Dynamic Island"
+            android:label="Omni Island"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -70,7 +70,7 @@ android:roundIcon="@mipmap/ic_launcher_round"
         <service
             android:name=".IslandNotificationListener"
             android:exported="true"
-            android:label="Dynamic Island"
+            android:label="Omni Island"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
