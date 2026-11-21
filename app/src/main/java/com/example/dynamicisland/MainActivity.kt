@@ -354,7 +354,7 @@ private fun openAutostartSettings(ctx: Context) {
     for (i in candidates) {
         val opened = runCatching { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
         if (opened) {
-            Toast.makeText(ctx, "Dynamic Island için otomatik başlatmaya / arka planda çalışmaya izin ver", Toast.LENGTH_LONG).show()
+            Toast.makeText(ctx, "Omni Island için otomatik başlatmaya / arka planda çalışmaya izin ver", Toast.LENGTH_LONG).show()
             return
         }
     }
@@ -695,7 +695,7 @@ private fun SetupScreen() {
                         scope.launch {
                             if (healAccessibility(ctx)) { delay(1200); connected = a11yConnected() }
                             else {
-                                Toast.makeText(ctx, "Dynamic Island'ı kapatıp tekrar aç", Toast.LENGTH_LONG).show()
+                                Toast.makeText(ctx, "Omni Island'ı kapatıp tekrar aç", Toast.LENGTH_LONG).show()
                                 ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                             }
                         }
@@ -728,7 +728,7 @@ private fun SetupScreen() {
                         scope.launch {
                             if (healAccessibility(ctx)) { delay(1200); connected = a11yConnected() }
                             else {
-                                Toast.makeText(ctx, "Dynamic Island'ı kapatıp tekrar aç", Toast.LENGTH_LONG).show()
+                                Toast.makeText(ctx, "Omni Island'ı kapatıp tekrar aç", Toast.LENGTH_LONG).show()
                                 waiting = "a11y"
                                 ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                             }

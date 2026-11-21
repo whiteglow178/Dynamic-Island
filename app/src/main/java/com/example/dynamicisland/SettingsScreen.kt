@@ -753,7 +753,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
         sec("Yedekleme", "Ayarlarını dosyaya kaydet ya da dosyadan geri yükle") {
-            IslandActionButton("Ayarları dışa aktar", { exportLauncher.launch("dynamic-island-ayarlar.json") })
+            IslandActionButton("Ayarları dışa aktar", { exportLauncher.launch("omni-island-ayarlar.json") })
             IslandActionButton("Yedekten geri yükle", { importLauncher.launch(arrayOf("*/*")) })
             Text("Galeriden seçilen fotoğraflar (özel arka plan / kapak) yedeğe girmez; yeni cihazda yeniden seçmen gerekir.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)

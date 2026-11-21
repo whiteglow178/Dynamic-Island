@@ -1815,10 +1815,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun startAsForeground() {
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("island", "Dynamic Island", NotificationManager.IMPORTANCE_MIN))
+        nm.createNotificationChannel(NotificationChannel("island", "Omni Island", NotificationManager.IMPORTANCE_MIN))
         val n = NotificationCompat.Builder(this, "island")
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("Dynamic Island çalışıyor")
+            .setContentTitle("Omni Island çalışıyor")
             .setOngoing(true).setPriority(NotificationCompat.PRIORITY_MIN).build()
         startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
     }
