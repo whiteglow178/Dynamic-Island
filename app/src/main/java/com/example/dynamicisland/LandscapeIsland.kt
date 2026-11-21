@@ -985,9 +985,10 @@ private fun LandBubble(e: LandEntry, index: Int, g: LandGeo, s: IslandSettings, 
     if (neckW > 0.5f) {
         val islandEdge = if (g.below) g.islandY + g.islandLen.toFloat() else g.islandY.toFloat()
         val bubbleEdge = if (g.below) y else y + g.bubbleLen
-        val top = min(islandEdge, bubbleEdge) - g.thick * 0.2f
-        val bot = max(islandEdge, bubbleEdge) + g.thick * 0.2f
-        Canvas(Modifier.fillMaxSize()) {
+        // Boyun yalnızca adanın DIŞINDA çizilir (adanın içindeki olay simgesinin üstünden geçmesin); baloncuğun içine biraz girer
+        val top = if (g.below) islandEdge - 1f else bubbleEdge - g.thick * 0.2f
+        val bot = if (g.below) bubbleEdge + g.thick * 0.2f else islandEdge + 1f
+        if (bot - top > 2f) Canvas(Modifier.fillMaxSize()) {
             drawRoundRect(
                 bodyTarget.copy(alpha = 1f), Offset(g.islandX + (g.thick - neckW) / 2f, top), Size(neckW, (bot - top).coerceAtLeast(0f)),
                 CornerRadius(neckW / 2f),
