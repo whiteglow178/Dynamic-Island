@@ -685,73 +685,73 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         pendingGroup = "Oyuncak ada"
         sec("Fiziksel ada", "Telefonu eğince ada sıvı gibi yana kayar") {
             SwitchRow("Fiziksel ada", "Telefonu sağa sola eğince ada o yöne kayar, kenara çarpınca hafifçe ezilip seker. Ekran kapalıyken sensör dinlenmez. Açıkken cam bulanıklığı kapanır (ada kayabilsin diye pencere büyür)",
-                draft.playPhysics) { draft = draft.copy(playPhysics = it) }
+                draft.playPhysics) { draft = draft.copy(play = draft.play.copy(playPhysics = it)) }
             if (draft.playPhysics) {
-                SliderRow("En fazla kayma", draft.playPhysicsRangeDp, 4f..30f, "${draft.playPhysicsRangeDp.toInt()} dp") { draft = draft.copy(playPhysicsRangeDp = it) }
-                SwitchRow("Sallayınca jöle gibi titresin", "Telefonu sallayınca ada jöle gibi sarsılır", draft.playJelly) { draft = draft.copy(playJelly = it) }
+                SliderRow("En fazla kayma", draft.playPhysicsRangeDp, 4f..30f, "${draft.playPhysicsRangeDp.toInt()} dp") { draft = draft.copy(play = draft.play.copy(playPhysicsRangeDp = it)) }
+                SwitchRow("Sallayınca jöle gibi titresin", "Telefonu sallayınca ada jöle gibi sarsılır", draft.playJelly) { draft = draft.copy(play = draft.play.copy(playJelly = it)) }
             }
         }
         sec("Ada evcili", "Adanın altından sarkan küçük yaratık") {
             SwitchRow("Ada evcili", "Adanın kenarına tutunup sarkar. Şarj olurken ve gece uyur, müzik çalarken dans eder, uzun süre dokunmazsan sıkılıp esner, bildirim gelince heyecanla aşağı sarkar, adaya dokununca savrulur. Ada açılınca adanın içine saklanır",
-                draft.playPet) { draft = draft.copy(playPet = it) }
+                draft.playPet) { draft = draft.copy(play = draft.play.copy(playPet = it)) }
         }
         sec("Mıknatıs", "Şarj ve kulaklık bağlanınca") {
             SwitchRow("Şarj kablosunu yakalasın", "Şarja takınca ada, kabloya doğru aşağı sıvı bir damla uzatıp geri çeker",
-                draft.playMagnet) { draft = draft.copy(playMagnet = it) }
+                draft.playMagnet) { draft = draft.copy(play = draft.play.copy(playMagnet = it)) }
             if (draft.playMagnet) {
-                SwitchRow("Kulaklığı çeksin", "Kulaklık bağlanınca iki yandan iki damla mıknatıs gibi hızlanarak gelip adaya yapışır", draft.playMagnetBuds) { draft = draft.copy(playMagnetBuds = it) }
+                SwitchRow("Kulaklığı çeksin", "Kulaklık bağlanınca iki yandan iki damla mıknatıs gibi hızlanarak gelip adaya yapışır", draft.playMagnetBuds) { draft = draft.copy(play = draft.play.copy(playMagnetBuds = it)) }
             }
         }
         sec("Dokununca savrulma", "Adaya dokununca rüzgâr yemiş gibi") {
             SwitchRow("Dokununca savrulma", "Adaya her dokunuşta ada rüzgâr yemiş gibi yassılaşıp titrer, kenarından toz uçuşur, evcil savrulur, gözler kısılır. Dokunmanın normal işi (müziği açmak vb.) aynen çalışır",
-                draft.playPuff) { draft = draft.copy(playPuff = it) }
+                draft.playPuff) { draft = draft.copy(play = draft.play.copy(playPuff = it)) }
             if (draft.playPuff) {
-                SliderRow("Şiddet", draft.playPuffStrength, 0f..1f, "%${(draft.playPuffStrength * 100).toInt()}") { draft = draft.copy(playPuffStrength = it) }
+                SliderRow("Şiddet", draft.playPuffStrength, 0f..1f, "%${(draft.playPuffStrength * 100).toInt()}") { draft = draft.copy(play = draft.play.copy(playPuffStrength = it)) }
             }
         }
         sec("Ada yüzü", "Boştaki adada gözler") {
             SwitchRow("Ada yüzü", "Boştaki adada iki göz: göz kırpar, etrafa bakınır, telefonu eğince o yöne bakar. Şarjda ve gece uyur, pil azken yorgun görünür, bildirimden sonra sevinir, sallayınca başı döner, dokununca gözlerini kısar. \"Boştayken de göster\" açık olmalı",
-                draft.playFace) { draft = draft.copy(playFace = it) }
+                draft.playFace) { draft = draft.copy(play = draft.play.copy(playFace = it)) }
         }
         sec("Dalga", "Adadan ekrana yayılan su halkaları") {
             SwitchRow("Bildirimde dalga", "Bildirim gelince adadan ekrana halka halka su dalgası yayılır",
-                draft.playRipple) { draft = draft.copy(playRipple = it) }
+                draft.playRipple) { draft = draft.copy(play = draft.play.copy(playRipple = it)) }
             if (draft.playRipple) {
-                SwitchRow("Dokununca da dalga", "Adaya dokununca da dalga yayılır", draft.playRippleTap) { draft = draft.copy(playRippleTap = it) }
+                SwitchRow("Dokununca da dalga", "Adaya dokununca da dalga yayılır", draft.playRippleTap) { draft = draft.copy(play = draft.play.copy(playRippleTap = it)) }
             }
         }
         sec("Pil sıvısı", "Boştaki ada pil kadar dolu bir cam kap") {
             SwitchRow("Pil sıvısı", "Boştaki adanın içi pil seviyesi kadar sıvıyla dolar (yeşil / sarı / kırmızı). Telefonu eğince sıvı çalkalanıp yana toplanır, şarjdayken kabarcıklar yükselir. \"Boştayken de göster\" açık olmalı",
-                draft.playLiquid) { draft = draft.copy(playLiquid = it) }
+                draft.playLiquid) { draft = draft.copy(play = draft.play.copy(playLiquid = it)) }
         }
         sec("Bildirim yiyen ada", "Bildirim baloncuğu uçup adaya girer") {
             SwitchRow("Bildirim yiyen ada", "Bildirim gelince ekranın kenarından renkli bir baloncuk süzülüp adaya çekilir, ada onu yutkunarak yer",
-                draft.playEater) { draft = draft.copy(playEater = it) }
+                draft.playEater) { draft = draft.copy(play = draft.play.copy(playEater = it)) }
             if (draft.playEater) {
-                SwitchRow("Yedikçe doysun", "Her yediği bildirimle ada biraz şişer (en fazla 4). Adaya dokununca ya da 20 dakika sonra eski haline döner", draft.playEaterFull) { draft = draft.copy(playEaterFull = it) }
+                SwitchRow("Yedikçe doysun", "Her yediği bildirimle ada biraz şişer (en fazla 4). Adaya dokununca ya da 20 dakika sonra eski haline döner", draft.playEaterFull) { draft = draft.copy(play = draft.play.copy(playEaterFull = it)) }
             }
         }
         sec("Çekiştirme", "Adayı çekip bırak, lastik gibi fırlasın") {
             SwitchRow("Çekiştirme", "Adayı parmağınla aşağı çekince lastik gibi uzar, bırakınca geri fırlayıp sallanır. Boştaki ada da dokunuş alır: adanın hemen çevresine dokunmak durum çubuğuna geçmez",
-                draft.playPull) { draft = draft.copy(playPull = it) }
+                draft.playPull) { draft = draft.copy(play = draft.play.copy(playPull = it)) }
         }
         sec("Gün ışığı rengi", "Adanın çevresindeki hale saate göre renk değiştirir") {
             SwitchRow("Gün ışığı rengi", "Şafakta turuncu, gündüz beyaz, gün batımında pembe ve mor, gece lacivert bir hale adayı sarar. Renk dakika dakika yumuşakça geçer",
-                draft.playDaylight) { draft = draft.copy(playDaylight = it) }
+                draft.playDaylight) { draft = draft.copy(play = draft.play.copy(playDaylight = it)) }
             if (draft.playDaylight) {
-                SliderRow("Parlaklık", draft.playDaylightAmt, 0.1f..1f, "%${(draft.playDaylightAmt * 100).toInt()}") { draft = draft.copy(playDaylightAmt = it) }
+                SliderRow("Parlaklık", draft.playDaylightAmt, 0.1f..1f, "%${(draft.playDaylightAmt * 100).toInt()}") { draft = draft.copy(play = draft.play.copy(playDaylightAmt = it)) }
             }
         }
         sec("Gizli oyun", "Ada Pong") {
             SwitchRow("Gizli oyun", "Boştaki adaya hızlıca 5 kez dokununca \"Ada Pong\" açılır: ada raket olur, parmağınla sağa sola kaydırıp topu kaçırmamaya çalışırsın. Adaya tek dokunuşun başka bir işi varsa (favoriler, çeviri) bu kısayol çalışmaz",
-                draft.playGame) { draft = draft.copy(playGame = it) }
+                draft.playGame) { draft = draft.copy(play = draft.play.copy(playGame = it)) }
             IslandActionButton("Oyunu şimdi aç", { IslandGameActivity.open(ctx) })
         }
         sec("Cep hissi", "Ekran açılınca ada yerine düşer") {
             SwitchRow("Cep hissi", "Ekran açılınca ada kamera deliğinden düşüp yaylanarak yerine oturur. Uzun süre boş kalınca küçülüp kamera deliğine girer, bir olay gelince fırlayıp çıkar",
-                draft.playPocket) { draft = draft.copy(playPocket = it) }
+                draft.playPocket) { draft = draft.copy(play = draft.play.copy(playPocket = it)) }
             if (draft.playPocket) {
-                SliderRow("Deliğe girme süresi", draft.playPocketIdleSec, 4f..60f, "${draft.playPocketIdleSec.toInt()} sn") { draft = draft.copy(playPocketIdleSec = it) }
+                SliderRow("Deliğe girme süresi", draft.playPocketIdleSec, 4f..60f, "${draft.playPocketIdleSec.toInt()} sn") { draft = draft.copy(play = draft.play.copy(playPocketIdleSec = it)) }
             }
         }
 

@@ -184,27 +184,8 @@ data class IslandSettings(
     val musicExitSpeed: Float = 1f,           // müzikten çıkış animasyonu hızı (1 = normal)
     val musicExitStretch: Boolean = false,    // yeni yutma: ada aşağı doğru uzun bir kapsüle uzanıp yumuşakça eski haline döner
     val musicFluidAnim: Boolean = false,      // Akıcı yutma: pencere bulanıklaşarak adaya küçülür, ada şişip yutar; müzik açılışı da aynı tarzda
-    // ---- Oyuncak ada (bkz. PlayFx.kt) — her biri ayrı ayar
-    val playPhysics: Boolean = false,         // telefonu eğince ada yana kayar
-    val playPhysicsRangeDp: Float = 14f,      // en fazla kayma (dp)
-    val playJelly: Boolean = true,            // sallayınca / kenara çarpınca jöle gibi titrer
-    val playPet: Boolean = false,             // adanın altından sarkan ruh halli evcil
-    val playMagnet: Boolean = false,          // şarja takınca ada kabloya doğru damla uzatır
-    val playMagnetBuds: Boolean = true,       // kulaklık bağlanınca iki yandan damla çeker
-    val playPuff: Boolean = false,            // adaya dokununca ada rüzgâr yemiş gibi savrulur, toz uçuşur
-    val playPuffStrength: Float = 0.7f,       // savrulma şiddeti 0..1
-    val playFace: Boolean = false,            // boştaki adada gözler
-    val playRipple: Boolean = false,          // bildirimde adadan dalga yayılır
-    val playRippleTap: Boolean = true,        // adaya dokununca da dalga
-    val playPocket: Boolean = false,          // ekran açılınca ada düşüp oturur, boşta kamera deliğine girer
-    val playPocketIdleSec: Float = 12f,       // kamera deliğine girmeden önce boşta bekleme (sn)
-    val playLiquid: Boolean = false,          // boştaki ada pil seviyesi kadar dolu sıvı kap
-    val playEater: Boolean = false,           // bildirim baloncuğu uçup adaya girer, ada yutar
-    val playEaterFull: Boolean = true,        // yedikçe ada hafifçe şişer (dokununca geçer)
-    val playPull: Boolean = false,            // adayı aşağı çekip bırakınca lastik gibi geri fırlar
-    val playDaylight: Boolean = false,        // adanın çevresinde günün saatine göre renk değiştiren hale
-    val playDaylightAmt: Float = 0.6f,        // hale parlaklığı 0..1
-    val playGame: Boolean = false,            // boştaki adaya hızlıca 5 kez dokununca gizli oyun
+    // Oyuncak ada ayarları ayrı sınıfta (bkz. PlaySettings): bu sınıf JVM'in 255 parametre sınırına yaklaştı
+    val play: PlaySettings = PlaySettings(),
     // Müzik uygulamasını açma + hareketler
     val musicOpenAnim: Boolean = true,        // adadan müzik uygulamasını açarken açılış animasyonu
     val launchClassic: Boolean = false,       // bildirim + müzik uygulaması açılışı: klasik büyüyen ekran
@@ -413,6 +394,56 @@ data class IslandSettings(
 
 private val Context.islandStore by preferencesDataStore(name = "island_settings")
 
+/**
+ * Oyuncak ada ayarları (bkz. PlayFx.kt). IslandSettings içinde tek alan olarak durur; ana sınıf çok büyüdüğü için
+ * (JVM bir fonksiyonda en fazla 255 parametreye izin verir, varsayılan değerli kopya fonksiyonu bunu aşınca uygulama
+ * açılırken çöker) ayrı tutulur. Okurken s.playPhysics gibi doğrudan erişilir (aşağıdaki uzantılar).
+ */
+@androidx.compose.runtime.Immutable
+data class PlaySettings(
+    val playPhysics: Boolean = false,         // telefonu eğince ada yana kayar
+    val playPhysicsRangeDp: Float = 14f,      // en fazla kayma (dp)
+    val playJelly: Boolean = true,            // sallayınca / kenara çarpınca jöle gibi titrer
+    val playPet: Boolean = false,             // adanın altından sarkan ruh halli evcil
+    val playMagnet: Boolean = false,          // şarja takınca ada kabloya doğru damla uzatır
+    val playMagnetBuds: Boolean = true,       // kulaklık bağlanınca iki yandan damla çeker
+    val playPuff: Boolean = false,            // adaya dokununca ada rüzgâr yemiş gibi savrulur, toz uçuşur
+    val playPuffStrength: Float = 0.7f,       // savrulma şiddeti 0..1
+    val playFace: Boolean = false,            // boştaki adada gözler
+    val playRipple: Boolean = false,          // bildirimde adadan dalga yayılır
+    val playRippleTap: Boolean = true,        // adaya dokununca da dalga
+    val playPocket: Boolean = false,          // ekran açılınca ada düşüp oturur, boşta kamera deliğine girer
+    val playPocketIdleSec: Float = 12f,       // kamera deliğine girmeden önce boşta bekleme (sn)
+    val playLiquid: Boolean = false,          // boştaki ada pil seviyesi kadar dolu sıvı kap
+    val playEater: Boolean = false,           // bildirim baloncuğu uçup adaya girer, ada yutar
+    val playEaterFull: Boolean = true,        // yedikçe ada hafifçe şişer (dokununca geçer)
+    val playPull: Boolean = false,            // adayı aşağı çekip bırakınca lastik gibi geri fırlar
+    val playDaylight: Boolean = false,        // adanın çevresinde günün saatine göre renk değiştiren hale
+    val playDaylightAmt: Float = 0.6f,        // hale parlaklığı 0..1
+    val playGame: Boolean = false,            // boştaki adaya hızlıca 5 kez dokununca gizli oyun
+)
+
+val IslandSettings.playPhysics get() = play.playPhysics
+val IslandSettings.playPhysicsRangeDp get() = play.playPhysicsRangeDp
+val IslandSettings.playJelly get() = play.playJelly
+val IslandSettings.playPet get() = play.playPet
+val IslandSettings.playMagnet get() = play.playMagnet
+val IslandSettings.playMagnetBuds get() = play.playMagnetBuds
+val IslandSettings.playPuff get() = play.playPuff
+val IslandSettings.playPuffStrength get() = play.playPuffStrength
+val IslandSettings.playFace get() = play.playFace
+val IslandSettings.playRipple get() = play.playRipple
+val IslandSettings.playRippleTap get() = play.playRippleTap
+val IslandSettings.playPocket get() = play.playPocket
+val IslandSettings.playPocketIdleSec get() = play.playPocketIdleSec
+val IslandSettings.playLiquid get() = play.playLiquid
+val IslandSettings.playEater get() = play.playEater
+val IslandSettings.playEaterFull get() = play.playEaterFull
+val IslandSettings.playPull get() = play.playPull
+val IslandSettings.playDaylight get() = play.playDaylight
+val IslandSettings.playDaylightAmt get() = play.playDaylightAmt
+val IslandSettings.playGame get() = play.playGame
+
 class SettingsRepository(context: Context) {
     private val store = context.applicationContext.islandStore
     private object K {
@@ -618,14 +649,16 @@ class SettingsRepository(context: Context) {
             musicExitSwallow = p[K.MX_SW] ?: d.musicExitSwallow,
             musicExitStretch = p[K.MX_STR] ?: d.musicExitStretch,
             musicFluidAnim = p[K.MX_FLUID] ?: d.musicFluidAnim,
-            playPhysics = p[K.PL_PHY] ?: d.playPhysics, playPhysicsRangeDp = p[K.PL_PHY_R] ?: d.playPhysicsRangeDp, playJelly = p[K.PL_JELLY] ?: d.playJelly,
-            playPet = p[K.PL_PET] ?: d.playPet, playMagnet = p[K.PL_MAG] ?: d.playMagnet, playMagnetBuds = p[K.PL_MAG_B] ?: d.playMagnetBuds,
-            playPuff = p[K.PL_PUFF] ?: d.playPuff, playPuffStrength = p[K.PL_PUFF_S] ?: d.playPuffStrength, playFace = p[K.PL_FACE] ?: d.playFace,
-            playRipple = p[K.PL_RIP] ?: d.playRipple, playRippleTap = p[K.PL_RIP_T] ?: d.playRippleTap,
-            playPocket = p[K.PL_POC] ?: d.playPocket, playPocketIdleSec = p[K.PL_POC_S] ?: d.playPocketIdleSec,
-            playLiquid = p[K.PL_LIQ] ?: d.playLiquid, playEater = p[K.PL_EAT] ?: d.playEater, playEaterFull = p[K.PL_EAT_F] ?: d.playEaterFull,
-            playPull = p[K.PL_PULL] ?: d.playPull, playDaylight = p[K.PL_DAY] ?: d.playDaylight, playDaylightAmt = p[K.PL_DAY_A] ?: d.playDaylightAmt,
-            playGame = p[K.PL_GAME] ?: d.playGame,
+            play = PlaySettings(
+                playPhysics = p[K.PL_PHY] ?: d.playPhysics, playPhysicsRangeDp = p[K.PL_PHY_R] ?: d.playPhysicsRangeDp, playJelly = p[K.PL_JELLY] ?: d.playJelly,
+                playPet = p[K.PL_PET] ?: d.playPet, playMagnet = p[K.PL_MAG] ?: d.playMagnet, playMagnetBuds = p[K.PL_MAG_B] ?: d.playMagnetBuds,
+                playPuff = p[K.PL_PUFF] ?: d.playPuff, playPuffStrength = p[K.PL_PUFF_S] ?: d.playPuffStrength, playFace = p[K.PL_FACE] ?: d.playFace,
+                playRipple = p[K.PL_RIP] ?: d.playRipple, playRippleTap = p[K.PL_RIP_T] ?: d.playRippleTap,
+                playPocket = p[K.PL_POC] ?: d.playPocket, playPocketIdleSec = p[K.PL_POC_S] ?: d.playPocketIdleSec,
+                playLiquid = p[K.PL_LIQ] ?: d.playLiquid, playEater = p[K.PL_EAT] ?: d.playEater, playEaterFull = p[K.PL_EAT_F] ?: d.playEaterFull,
+                playPull = p[K.PL_PULL] ?: d.playPull, playDaylight = p[K.PL_DAY] ?: d.playDaylight, playDaylightAmt = p[K.PL_DAY_A] ?: d.playDaylightAmt,
+                playGame = p[K.PL_GAME] ?: d.playGame,
+            ),
             launchSpeed = p[K.LA_SPD] ?: d.launchSpeed,
             musicOpenAnim = p[K.MO_ANIM] ?: d.musicOpenAnim,
             launchClassic = p[K.LA_CL] ?: d.launchClassic, launchAtomic = p[K.LA_AT] ?: d.launchAtomic,
