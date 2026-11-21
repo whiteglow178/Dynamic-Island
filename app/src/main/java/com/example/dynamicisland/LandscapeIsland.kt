@@ -517,13 +517,15 @@ private fun LandscapeWindowContent(
                 .clip(RoundedCornerShape(50))
                 .background(Color(s.islandColorArgb))
                 .then(islandGesture),
-            contentAlignment = Alignment.Center,
+            // Simge adanın ortasında değil ucunda durur (normal adadaki gibi kenarda): baloncukların dizildiği uçta
+            contentAlignment = if (g.below) Alignment.BottomCenter else Alignment.TopCenter,
         ) {
             if (occContent != null && !panelShowing) {
                 key(occKey) {
                     val a = remember { Animatable(0f) }
                     LaunchedEffect(Unit) { a.animateTo(1f, tween(220)) }
-                    Box(Modifier.graphicsLayer { alpha = a.value }, contentAlignment = Alignment.Center) {
+                    val slotH = if (occContent is IslandContent.Status && occContent.kind == StatusKind.Charging) g.bubbleLen else g.thick
+                    Box(Modifier.size(thickDp, dpOf(slotH)).graphicsLayer { alpha = a.value }, contentAlignment = Alignment.Center) {
                         LandBubbleContent(occContent, g.thick)
                     }
                 }
