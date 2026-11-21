@@ -257,28 +257,76 @@ private fun DrawScope.drawSpectrum(p: Float, r: Float, pad: Float, left: Color, 
     }
 }
 
-/** Kenar boyunca titreyen alevler: açık çekirdek, parlak gövde, koyuya sönen uç. */
+/**
+ * Gerçekçi alev: kenar boyunca sık dizilmiş, sivri uçlu dil biçiminde alevler. Her dil üç katmandır
+ * (dış: koyu uç rengi, orta: gövde, iç: sıcak çekirdek); tabandan uca doğru parlaktan şeffafa söner.
+ * Alevler rüzgârla yana eğilir, boyları düzensiz titrer, aralarında yukarı süzülen kıvılcımlar uçuşur.
+ */
 private fun DrawScope.drawFire(p: Float, r: Float, reach: Float, fp: FirePal) {
-    val n = 46
+    val n = 64
     val tau = 2f * PI.toFloat()
+    val sw0 = size.width; val sh0 = size.height
+    val per = 2 * (sw0 - 2 * r).coerceAtLeast(0f) + 2 * (sh0 - 2 * r).coerceAtLeast(0f) + tau * r
+    val wBase = (per / n) * 2.1f
+    val tick = (p * 60f).toInt()
+    // Tabanda yumuşak sıcak ışıma
     for (i in 0 until n) {
         val s = i / n.toFloat()
         val (pt, nrm) = perimeterPoint(s, r)
-        // Her alev kendi hızında titrer (birkaç sinüsün toplamı: düzensiz ama döngüsel)
-        val f = 0.55f + 0.25f * sin(tau * (p * 3f + i * 0.37f)) + 0.2f * sin(tau * (p * 5f + i * 0.71f))
-        val len = reach * f.coerceIn(0.2f, 1f)
-        val c = Offset(pt.x + nrm.x * len * 0.45f, pt.y + nrm.y * len * 0.45f)
-        drawCircle(
-            Brush.radialGradient(
-                0f to fp.core.copy(alpha = 0.95f),
-                0.35f to fp.body.copy(alpha = 0.75f),
-                0.75f to fp.tip.copy(alpha = 0.25f),
-                1f to Color.Transparent,
-                center = c, radius = len * 0.7f,
-            ),
-            radius = len * 0.7f, center = c,
-        )
+        val tang = Offset(-nrm.y, nrm.x)
+        // Boy: yavaş dalga + hızlı titreme + alev başına rastgelelik (hepsi döngüsel)
+        val slow = 0.5f + 0.5f * sin(tau * (p * 2f + i * 0.173f))
+        val fast = 0.5f + 0.5f * sin(tau * (p * 7f + i * 0.619f))
+        val rnd = 0.55f + 0.45f * hash01(i, 3)
+        val flick = 0.78f + 0.22f * hash01(i, tick)
+        val hgt = reach * (0.28f + 0.72f * (0.55f * slow + 0.25f * fast + 0.2f * rnd)) * flick
+        val w = wBase * (0.8f + 0.5f * hash01(i, 11))
+        // Eğilme: komşu alevlerle birlikte bir yöne akan dalga (rüzgâr)
+        val lean = sin(tau * (p * 1.5f - s * 6f)) * w * 0.9f + (hash01(i, tick / 2) - 0.5f) * w * 0.35f
+        flameTongue(pt, nrm, tang, w, hgt * 1.0f, lean, 0.9f,
+            listOf(fp.body.copy(alpha = 0.85f), fp.tip.copy(alpha = 0.55f), fp.tip.copy(alpha = 0f)))
+        flameTongue(pt, nrm, tang, w * 0.72f, hgt * 0.74f, lean * 0.8f, 0.85f,
+            listOf(lerp(fp.core, fp.body, 0.35f).copy(alpha = 0.95f), fp.body.copy(alpha = 0.7f), fp.tip.copy(alpha = 0f)))
+        flameTongue(pt, nrm, tang, w * 0.42f, hgt * 0.45f, lean * 0.55f, 0.8f,
+            listOf(Color.White.copy(alpha = 0.95f), fp.core.copy(alpha = 0.8f), fp.body.copy(alpha = 0f)))
     }
+    // Kıvılcımlar: yukarı süzülüp sönen küçük parlak noktalar
+    val sparks = 22
+    for (k in 0 until sparks) {
+        val life = ((p * (1.1f + 0.9f * hash01(k, 5)) + hash01(k, 9)) % 1f)
+        val (pt, nrm) = perimeterPoint(hash01(k, 1), r)
+        val tang = Offset(-nrm.y, nrm.x)
+        val d = reach * (0.35f + 1.1f * life)
+        val sway = sin(tau * (life * 2f + hash01(k, 2))) * reach * 0.18f
+        val c = Offset(pt.x + nrm.x * d + tang.x * sway, pt.y + nrm.y * d + tang.y * sway)
+        val a = (1f - life) * (1f - life)
+        val rad = (0.7f + 1.1f * hash01(k, 4)).dp.toPx() * (1f - 0.6f * life)
+        drawCircle(lerp(fp.core, fp.body, life).copy(alpha = a), rad, c)
+    }
+}
+
+/** Tek bir alev dili: tabanı [w] geniş, ucu [h] yüksekte ve [lean] kadar yana eğik, kenarları S biçiminde. */
+private fun DrawScope.flameTongue(
+    base: Offset, nrm: Offset, tang: Offset, w: Float, h: Float, lean: Float, alpha: Float, stops: List<Color>,
+) {
+    if (h < 1f) return
+    val bl = Offset(base.x - tang.x * w / 2f, base.y - tang.y * w / 2f)
+    val br = Offset(base.x + tang.x * w / 2f, base.y + tang.y * w / 2f)
+    val tip = Offset(base.x + nrm.x * h + tang.x * lean, base.y + nrm.y * h + tang.y * lean)
+    // Kenarlar: önce dışa şişer, uca doğru incelip sivrilir
+    val cl = Offset(base.x + nrm.x * h * 0.45f - tang.x * w * 0.62f + tang.x * lean * 0.35f,
+                    base.y + nrm.y * h * 0.45f - tang.y * w * 0.62f + tang.y * lean * 0.35f)
+    val cr = Offset(base.x + nrm.x * h * 0.45f + tang.x * w * 0.62f + tang.x * lean * 0.35f,
+                    base.y + nrm.y * h * 0.45f + tang.y * w * 0.62f + tang.y * lean * 0.35f)
+    val path = Path().apply {
+        moveTo(bl.x, bl.y)
+        cubicTo(cl.x, cl.y, base.x + nrm.x * h * 0.8f + tang.x * lean * 0.8f - tang.x * w * 0.12f,
+                base.y + nrm.y * h * 0.8f + tang.y * lean * 0.8f - tang.y * w * 0.12f, tip.x, tip.y)
+        cubicTo(base.x + nrm.x * h * 0.8f + tang.x * lean * 0.8f + tang.x * w * 0.12f,
+                base.y + nrm.y * h * 0.8f + tang.y * lean * 0.8f + tang.y * w * 0.12f, cr.x, cr.y, br.x, br.y)
+        close()
+    }
+    drawPath(path, Brush.linearGradient(stops, start = base, end = tip), alpha = alpha)
 }
 
 // ================================================================ Adanın içinde dolaşan karakter

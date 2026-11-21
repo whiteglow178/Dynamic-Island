@@ -880,9 +880,26 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             // ---- Ayar arama: başlık / açıklama / grup adına göre sayfa bulur, dokununca o sayfaya gider
             var query by remember { mutableStateOf("") }
             var goTo by remember { mutableIntStateOf(-1) }
-            SearchField(query, { query = it })
-            if (query.isBlank()) SnapSettingsPager(pages, pager, Modifier.weight(1f))
-            else SearchResults(pages, query, Modifier.weight(1f)) { idx -> goTo = idx; query = "" }
+            // Sağ üstteki üç çizgi: tüm ayar sayfalarını alt alta listeler
+            var menuOpen by remember { mutableStateOf(false) }
+            val cs0 = MaterialTheme.colorScheme
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                SearchField(query, { query = it; if (it.isNotEmpty()) menuOpen = false }, Modifier.weight(1f))
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                        .background(if (menuOpen) cs0.primary else cs0.surfaceVariant)
+                        .clickable(role = Role.Button) { menuOpen = !menuOpen; query = "" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val bar = if (menuOpen) cs0.onPrimary else cs0.onSurfaceVariant
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        repeat(3) { Box(Modifier.width(18.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(bar)) }
+                    }
+                }
+            }
+            if (query.isNotBlank()) SearchResults(pages, query, Modifier.weight(1f)) { idx -> goTo = idx; query = "" }
+            else if (menuOpen) SearchResults(pages, "", Modifier.weight(1f)) { idx -> goTo = idx; menuOpen = false }
+            else SnapSettingsPager(pages, pager, Modifier.weight(1f))
             LaunchedEffect(goTo, query) {
                 if (goTo >= 0 && query.isBlank()) { pager.scrollToPage(goTo); goTo = -1 }
             }
