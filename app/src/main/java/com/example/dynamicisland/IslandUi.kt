@@ -986,7 +986,45 @@ fun IslandPill(
             }
         }
 
-        if (content is IslandContent.Notif && compactVisible && !cfg.dotMode) {
+        if (content is IslandContent.Notif && compactVisible && !cfg.dotMode && cfg.notifInline) {
+            // "Adayı genişletme": bildirim kapalı adanın içinde. Solda uygulama simgesi, yanında gönderen (kalın) + bildirim yazısı.
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                val sz = (geo.ch - 10.dp).coerceAtLeast(14.dp)
+                val titleSp = (geo.ch.value * 0.31f).coerceIn(7f, 12f)
+                val textSp = (titleSp - 1f).coerceAtLeast(6.5f)
+                val ic = content.icon
+                Row(
+                    Modifier.fillMaxSize().padding(start = 7.dp, end = 12.dp)
+                        .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    if (ic != null) {
+                        Image(bitmap = ic, contentDescription = null, contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(sz).clip(RoundedCornerShape(sz * 0.26f)))
+                    } else {
+                        Box(Modifier.size(sz).background(accent, RoundedCornerShape(sz * 0.26f)), contentAlignment = Alignment.Center) {
+                            Text(content.title.trim().take(1).uppercase().ifEmpty { "•" }, color = Pal.c("island_letter"),
+                                fontWeight = FontWeight.Bold, fontSize = (titleSp + 1f).sp)
+                        }
+                    }
+                    val hasTitle = content.title.isNotBlank()
+                    val hasText = content.text.isNotBlank()
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                        if (hasTitle) {
+                            Text(content.title, color = Pal.c("island_text"), fontWeight = FontWeight.Bold, fontSize = titleSp.sp,
+                                lineHeight = (titleSp + 1.5f).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.rainbowFill(rb))
+                        }
+                        if (hasText) {
+                            Text(content.text.replace('\n', ' '), color = Pal.c("island_text_dim"), fontSize = textSp.sp,
+                                lineHeight = (textSp + 1.5f).sp, maxLines = if (hasTitle) 1 else 2, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.rainbowFill(rb))
+                        }
+                    }
+                }
+            }
+        } else if (content is IslandContent.Notif && compactVisible && !cfg.dotMode) {
             // Küçültülmüş bildirim: solda uygulamanın simgesi (küçülürken görünür)
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val sz = (geo.ch - 12.dp).coerceAtLeast(14.dp)

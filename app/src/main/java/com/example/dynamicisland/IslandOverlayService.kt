@@ -818,7 +818,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             android.provider.Settings.canDrawOverlays(this)
         if (showVol) sideVolume.show(v) else sideVolume.hide()
     }
-    private val notifBanner by lazy { NotifBannerOverlay(this, this, this, wm, scope) { n -> openNotification(n) } }
+    private val notifBanner by lazy { NotifBannerOverlay(this, this, this, wm, scope, { settings.value }) { n -> openNotification(n) } }
     private val call: CallController by lazy { CallController(host, sideCall) }
 
     /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */

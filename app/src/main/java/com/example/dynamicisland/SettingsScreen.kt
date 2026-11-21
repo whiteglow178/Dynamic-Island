@@ -306,7 +306,24 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
             SubHeader("Bildirim türü")
             SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, sol üstte saatin altından küçük bir hap olarak çıkıp büyüyerek ekranın üstünde tam genişlikte cam banner olur. Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
-                draft.notifBanner) { draft = draft.copy(notifBanner = it) }
+                draft.notifBanner) { draft = draft.copy(notifBanner = it, notifInline = if (it) false else draft.notifInline) }
+            SwitchRow("Adayı genişletme (yazı adanın içinde)", "Bildirim gelince ada büyümez. Gönderen, bildirim yazısı ve uygulamanın simgesi küçük adanın içine sığdırılarak gösterilir. Süre: Genişletilmiş + Küçültülmüş kalma süresi toplamı. Nokta modunda etkisizdir. İstersen Ada genişliğini artırarak yazıya daha çok yer açabilirsin.",
+                draft.notifInline) { draft = draft.copy(notifInline = it, notifBanner = if (it) false else draft.notifBanner) }
+            if (draft.notifBanner) {
+                SubHeader("Cam banner: menü ve simge")
+                SwitchRow("Bildirim menüsü", "Banner'a basınca Cevapla, Kopyala ve İlet seçenekleri çıkar. Kopyalama için herhangi bir izin gerekmez.",
+                    draft.bannerMenuEnabled) { draft = draft.copy(bannerMenuEnabled = it) }
+                if (draft.bannerMenuEnabled) {
+                    RadioRow("Basılı tutunca", "Banner'a basılı tutunca menü çıkar, kısa dokunuş uygulamayı açar", !draft.bannerMenuTap) {
+                        draft = draft.copy(bannerMenuTap = false)
+                    }
+                    RadioRow("Dokununca", "Banner'a kısa dokununca menü çıkar; uygulamayı açmak için simgeye dokun", draft.bannerMenuTap) {
+                        draft = draft.copy(bannerMenuTap = true)
+                    }
+                }
+                SwitchRow("Simgeye dokununca uygulamayı aç", "Kapalıysa banner'daki simgeye (gönderen fotoğrafı / uygulama simgesi) dokunmak uygulamayı açmaz",
+                    draft.bannerIconOpens) { draft = draft.copy(bannerIconOpens = it) }
+            }
             SectionDivider()
             Text("Aynı hareket hem açmaya / küçültmeye hem silmeye atanırsa, en son açtığın seçenek kalır; çakışan diğeri otomatik kapanır.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)

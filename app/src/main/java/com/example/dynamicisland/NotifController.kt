@@ -20,6 +20,15 @@ class NotifController(private val host: IslandHost) {
         host.cancelCollapse()
         job?.cancel()
         bg = if (s.dotMode) n else null
+        if (s.notifInline && !s.dotMode) {
+            // Ada genişlemez: bildirim kapalı adanın içinde (simge + gönderen + yazı) toplam süre boyunca görünür
+            host.update { IslandUiState(n, expanded = false) }
+            job = host.scope.launch {
+                delay(((s.notifExpandedSec + s.notifCompactSec) * 1000f).toLong())
+                finish()
+            }
+            return
+        }
         host.update { IslandUiState(n, expanded = true) }
         job = host.scope.launch {
             delay((s.notifExpandedSec * 1000f).toLong())

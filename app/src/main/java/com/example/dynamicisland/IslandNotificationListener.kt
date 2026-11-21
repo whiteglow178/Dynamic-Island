@@ -53,6 +53,34 @@ class IslandNotificationListener : NotificationListenerService() {
             runCatching { instance?.cancelNotification(key) }
         }
 
+        /** Bildirimin satır içi cevap (RemoteInput) eylemi: mesajlaşma uygulamalarının "Yanıtla" düğmesi. Yoksa null. */
+        private fun replyActionOf(key: String): Pair<android.app.Notification.Action, android.app.RemoteInput>? {
+            if (key.isBlank()) return null
+            val sbn = instance?.activeNotifications?.firstOrNull { it.key == key } ?: return null
+            for (act in sbn.notification.actions.orEmpty()) {
+                if (act.actionIntent == null) continue
+                val ri = act.remoteInputs?.firstOrNull { it.allowFreeFormInput } ?: continue
+                return act to ri
+            }
+            return null
+        }
+
+        /** Bu bildirime adadan / bannerdan cevap yazılabilir mi? */
+        fun canReply(key: String): Boolean = runCatching { replyActionOf(key) != null }.getOrDefault(false)
+
+        /** Bildirimin cevap eylemini [text] ile tetikler (uygulama açılmaz). Başarılıysa true. */
+        fun sendReply(key: String, text: String): Boolean {
+            val i = instance ?: return false
+            return runCatching {
+                val (act, ri) = replyActionOf(key) ?: return false
+                val fill = android.content.Intent()
+                val bundle = android.os.Bundle().apply { putCharSequence(ri.resultKey, text) }
+                android.app.RemoteInput.addResultsToIntent(arrayOf(ri), fill, bundle)
+                act.actionIntent.send(i, 0, fill)
+                true
+            }.getOrDefault(false)
+        }
+
         /** Shazam'ın "dinleniyor" bildirimini kapatır: varsa iptal / durdur eylemini tetikler, yoksa bildirimi siler. */
         fun stopShazamListening() {
             val i = instance ?: return
