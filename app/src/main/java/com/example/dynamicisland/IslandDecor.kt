@@ -1,0 +1,605 @@
+package com.example.dynamicisland
+
+import android.content.Context
+import android.graphics.PixelFormat
+import android.view.Gravity
+import android.view.WindowManager
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
+
+/*
+ * ADA SÜSLERİ
+ *  - Renkli çerçeve: renk geçişi / gökkuşağı (kenar boyunca akar), ateş (titreyen alevler), neon (tek renk, nabız).
+ *    Adanın kendi şekline çizilir; ada açılınca da büyüyen şekli izler. -> Modifier.islandNeon
+ *  - Adanın üstünde oturan karakter (uzanan kedi, kedi / ayı kulakları) ve adadan sarkan süsler (salıncakta civciv,
+ *    yıldızlar, yılbaşı süsleri, kalpler) ve adadan akan mürekkep damlası. Adanın ALTINDA duran, dokunuş almayan
+ *    tam ekran bir pencerede çizilir (ada üstte kalır). -> DecorOverlay
+ *  - Boştaki adanın içinde dolaşan küçük karakter (tavşan, civciv, kedi yavrusu) ve parıltılar. -> IslandPet
+ * Tüm karakterler bu uygulamaya özgü, basit şekillerle çizilir.
+ */
+
+// ================================================================ Renkli çerçeve (neon / ateş)
+
+private val RainbowPalette = listOf(
+    Color(0xFFFF3B30), Color(0xFFFF9500), Color(0xFFFFCC00), Color(0xFF34C759),
+    Color(0xFF00C7FF), Color(0xFF5856D6), Color(0xFFFF2D9A),
+)
+
+/** Döngüsel palette [t] (0..1) konumundaki renk. */
+private fun cyclic(pal: List<Color>, t: Float): Color {
+    if (pal.size == 1) return pal[0]
+    val x = ((t % 1f) + 1f) % 1f * pal.size
+    val i = x.toInt() % pal.size
+    return lerp(pal[i], pal[(i + 1) % pal.size], x - x.toInt())
+}
+
+/** Kenar boyunca dönen (akan) açısal renk geçişi. */
+private fun flowBrush(pal: List<Color>, phase: Float, center: Offset): Brush =
+    Brush.sweepGradient(List(25) { i -> cyclic(pal, i / 24f - phase) }, center)
+
+/**
+ * Adanın kenarına renkli çerçeve + dışa vuran ışık. islandSurface'tan ÖNCE (kırpmanın dışında) uygulanmalı.
+ * Çizgi içeriğin üstüne, ışık içeriğin altına çizilir.
+ */
+@Composable
+internal fun Modifier.islandNeon(cfg: IslandSettings): Modifier {
+    val style = cfg.neonStyle
+    if (style == 0) return this
+    val tr = rememberInfiniteTransition(label = "neon")
+    val dur = (4200f / cfg.neonSpeed.coerceIn(0.2f, 4f)).roundToInt()
+    val phase = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(dur, easing = LinearEasing)), label = "neonPhase")
+    val c1 = Color(cfg.neonColor1Argb)
+    val c2 = Color(cfg.neonColor2Argb)
+    val pal = when (style) {
+        1 -> listOf(c1, c2)
+        2 -> RainbowPalette
+        4 -> listOf(c1)
+        else -> listOf(Color(0xFFFF6A00), Color(0xFFFFC400), Color(0xFFFF2A00))
+    }
+    val wDp = cfg.neonWidthDp
+    val glow = cfg.neonGlow.coerceIn(0f, 1.5f)
+    return this.drawWithContent {
+        val p = phase.value
+        val r = min(36.dp.toPx(), size.height / 2f)
+        val sw = wDp.dp.toPx()
+        val pad = NEON_PAD_DP.dp.toPx()
+        val pulse = if (style == 4) 0.6f + 0.4f * (0.5f + 0.5f * sin(p * 2f * PI.toFloat() * 2f)) else 1f
+        val brush: Brush = if (style == 4) Brush.linearGradient(listOf(c1, c1)) else flowBrush(pal, p, center)
+
+        if (style == 3) {
+            drawFire(p, r, pad * glow.coerceAtLeast(0.3f))
+        } else if (glow > 0f) {
+            // Dışa vuran yumuşak ışık: kademeli, giderek sönen halkalar
+            val rings = 7
+            val step = pad * 0.85f / rings
+            for (i in 1..rings) {
+                val inflate = (i - 0.5f) * step
+                val fall = 1f - (i - 1f) / rings
+                drawRoundRect(
+                    brush = brush, topLeft = Offset(-inflate, -inflate),
+                    size = Size(size.width + 2 * inflate, size.height + 2 * inflate),
+                    cornerRadius = CornerRadius(r + inflate),
+                    alpha = (glow * 0.5f * fall * fall * pulse).coerceIn(0f, 1f),
+                    style = Stroke(step),
+                )
+            }
+        }
+        drawContent()
+        val edge: Brush = if (style == 3) flowBrush(pal, p * 3f, center) else brush
+        drawRoundRect(
+            brush = edge, topLeft = Offset(sw / 2f, sw / 2f),
+            size = Size(size.width - sw, size.height - sw),
+            cornerRadius = CornerRadius(max(r - sw / 2f, 0f)),
+            alpha = pulse, style = Stroke(sw),
+        )
+    }
+}
+
+/** Yuvarlatılmış dikdörtgenin çevresinde [s] (0..1) noktasındaki konum ve dışa bakan normal. */
+private fun DrawScope.perimeterPoint(s: Float, r: Float): Pair<Offset, Offset> {
+    val w = size.width; val h = size.height
+    val sx = max(w - 2 * r, 0f); val sy = max(h - 2 * r, 0f)
+    val arc = (PI / 2).toFloat() * r
+    val total = 2 * sx + 2 * sy + 4 * arc
+    var d = (((s % 1f) + 1f) % 1f) * total
+    fun corner(cx: Float, cy: Float, a0: Float, t: Float): Pair<Offset, Offset> {
+        val a = a0 + t * (PI / 2).toFloat()
+        val n = Offset(cos(a), sin(a))
+        return Offset(cx + n.x * r, cy + n.y * r) to n
+    }
+    if (d < sx) return Offset(r + d, 0f) to Offset(0f, -1f); d -= sx
+    if (d < arc) return corner(w - r, r, -(PI / 2).toFloat(), d / arc); d -= arc
+    if (d < sy) return Offset(w, r + d) to Offset(1f, 0f); d -= sy
+    if (d < arc) return corner(w - r, h - r, 0f, d / arc); d -= arc
+    if (d < sx) return Offset(w - r - d, h) to Offset(0f, 1f); d -= sx
+    if (d < arc) return corner(r, h - r, (PI / 2).toFloat(), d / arc); d -= arc
+    if (d < sy) return Offset(0f, h - r - d) to Offset(-1f, 0f); d -= sy
+    return corner(r, r, PI.toFloat(), (d / arc).coerceIn(0f, 1f))
+}
+
+/** Kenar boyunca titreyen alevler: sarı çekirdek, turuncu gövde, kırmızıya sönen uç. */
+private fun DrawScope.drawFire(p: Float, r: Float, reach: Float) {
+    val n = 46
+    val tau = 2f * PI.toFloat()
+    for (i in 0 until n) {
+        val s = i / n.toFloat()
+        val (pt, nrm) = perimeterPoint(s, r)
+        // Her alev kendi hızında titrer (birkaç sinüsün toplamı: düzensiz ama döngüsel)
+        val f = 0.55f + 0.25f * sin(tau * (p * 3f + i * 0.37f)) + 0.2f * sin(tau * (p * 5f + i * 0.71f))
+        val len = reach * f.coerceIn(0.2f, 1f)
+        val c = Offset(pt.x + nrm.x * len * 0.45f, pt.y + nrm.y * len * 0.45f)
+        drawCircle(
+            Brush.radialGradient(
+                0f to Color(0xFFFFE07A).copy(alpha = 0.95f),
+                0.35f to Color(0xFFFF8A00).copy(alpha = 0.75f),
+                0.75f to Color(0xFFFF2A00).copy(alpha = 0.25f),
+                1f to Color.Transparent,
+                center = c, radius = len * 0.7f,
+            ),
+            radius = len * 0.7f, center = c,
+        )
+    }
+}
+
+// ================================================================ Adanın içinde dolaşan karakter
+
+/** Boştaki adanın sol yarısında (kamera deliğine girmeden) yürüyüp zıplayan küçük karakter + parıltılar. */
+@Composable
+internal fun IslandPet(kind: Int, modifier: Modifier, startPadFrac: Float = 0f) {
+    if (kind == 0) return
+    val tr = rememberInfiniteTransition(label = "pet")
+    val walk = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(7000, easing = LinearEasing)), label = "petWalk")
+    val hop = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(520, easing = LinearEasing)), label = "petHop")
+    val tw = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "petTw")
+    Canvas(modifier) {
+        val h = size.height
+        val sz = h * 0.62f
+        val left = size.width * startPadFrac + h * 0.55f
+        val right = size.width * 0.42f - h * 0.2f
+        val w = walk.value
+        val t = if (w < 0.5f) w * 2f else 2f - w * 2f            // gidip gelir
+        val facing = if (w < 0.5f) 1f else -1f
+        val x = left + (right - left).coerceAtLeast(0f) * t
+        val y = h / 2f + sz * 0.08f - abs(sin(hop.value * PI.toFloat())) * h * 0.09f
+        // Parıltılar: karakterin çevresinde sırayla yanıp söner
+        val star = listOf(Offset(-0.9f, -0.55f), Offset(0.85f, -0.65f), Offset(0.95f, 0.35f), Offset(-0.75f, 0.5f))
+        star.forEachIndexed { i, o ->
+            val a = (0.5f + 0.5f * sin(2f * PI.toFloat() * (tw.value + i * 0.27f))).coerceIn(0f, 1f)
+            sparkle(Offset(x + o.x * sz, y + o.y * sz * 0.8f), sz * 0.13f, Color(0xFFFFD45A).copy(alpha = a))
+        }
+        translate(x, y) { scale(facing, 1f, Offset.Zero) { drawPet(kind, sz) } }
+    }
+}
+
+private fun DrawScope.sparkle(c: Offset, r: Float, color: Color) {
+    if (color.alpha < 0.03f) return
+    val p = Path().apply {
+        moveTo(c.x, c.y - r)
+        quadraticTo(c.x, c.y, c.x + r, c.y)
+        quadraticTo(c.x, c.y, c.x, c.y + r)
+        quadraticTo(c.x, c.y, c.x - r, c.y)
+        quadraticTo(c.x, c.y, c.x, c.y - r)
+        close()
+    }
+    drawPath(p, color)
+}
+
+/** Karakter (merkez 0,0; sağa bakar). [s]: boy. */
+private fun DrawScope.drawPet(kind: Int, s: Float) {
+    val eye = Color(0xFF1B1B1B)
+    when (kind) {
+        1 -> { // Tavşan
+            val white = Color(0xFFFFFFFF); val pink = Color(0xFFFFA8C5)
+            drawOval(white, Offset(-s * 0.32f, -s * 0.95f), Size(s * 0.2f, s * 0.6f))
+            drawOval(white, Offset(-s * 0.05f, -s * 1.0f), Size(s * 0.2f, s * 0.62f))
+            drawOval(pink, Offset(-s * 0.27f, -s * 0.85f), Size(s * 0.09f, s * 0.4f))
+            drawOval(pink, Offset(0f, -s * 0.9f), Size(s * 0.09f, s * 0.42f))
+            drawOval(white, Offset(-s * 0.42f, -s * 0.1f), Size(s * 0.8f, s * 0.55f))
+            drawCircle(white, s * 0.3f, Offset(s * 0.02f, -s * 0.28f))
+            drawCircle(eye, s * 0.045f, Offset(s * 0.13f, -s * 0.3f))
+            drawCircle(pink.copy(alpha = 0.8f), s * 0.05f, Offset(s * 0.2f, -s * 0.2f))
+            drawCircle(white, s * 0.1f, Offset(-s * 0.45f, s * 0.12f))
+        }
+        2 -> { // Civciv
+            val yel = Color(0xFFFFD43B)
+            drawCircle(yel, s * 0.36f, Offset(-s * 0.05f, s * 0.05f))
+            drawCircle(yel, s * 0.25f, Offset(s * 0.12f, -s * 0.3f))
+            drawOval(Color(0xFFF2B600), Offset(-s * 0.3f, -s * 0.02f), Size(s * 0.3f, s * 0.2f))
+            val beak = Path().apply {
+                moveTo(s * 0.33f, -s * 0.33f); lineTo(s * 0.5f, -s * 0.27f); lineTo(s * 0.33f, -s * 0.21f); close()
+            }
+            drawPath(beak, Color(0xFFFF8A00))
+            drawCircle(eye, s * 0.045f, Offset(s * 0.2f, -s * 0.36f))
+            drawLine(Color(0xFFFF8A00), Offset(-s * 0.1f, s * 0.38f), Offset(-s * 0.12f, s * 0.48f), s * 0.05f, StrokeCap.Round)
+            drawLine(Color(0xFFFF8A00), Offset(s * 0.05f, s * 0.38f), Offset(s * 0.07f, s * 0.48f), s * 0.05f, StrokeCap.Round)
+        }
+        else -> { // Kedi yavrusu
+            val gray = Color(0xFFB9BCC4); val pink = Color(0xFFFFB3C7)
+            drawOval(gray, Offset(-s * 0.45f, -s * 0.12f), Size(s * 0.78f, s * 0.5f))
+            drawLine(gray, Offset(-s * 0.42f, s * 0.05f), Offset(-s * 0.62f, -s * 0.3f), s * 0.1f, StrokeCap.Round)
+            drawCircle(gray, s * 0.29f, Offset(s * 0.12f, -s * 0.27f))
+            val earL = Path().apply { moveTo(-s * 0.08f, -s * 0.4f); lineTo(-s * 0.02f, -s * 0.7f); lineTo(s * 0.12f, -s * 0.5f); close() }
+            val earR = Path().apply { moveTo(s * 0.16f, -s * 0.52f); lineTo(s * 0.34f, -s * 0.7f); lineTo(s * 0.38f, -s * 0.38f); close() }
+            drawPath(earL, gray); drawPath(earR, gray)
+            drawCircle(eye, s * 0.042f, Offset(s * 0.06f, -s * 0.3f))
+            drawCircle(eye, s * 0.042f, Offset(s * 0.24f, -s * 0.3f))
+            drawCircle(pink, s * 0.03f, Offset(s * 0.16f, -s * 0.2f))
+        }
+    }
+}
+
+// ================================================================ Adanın çevresindeki süsler (ayrı pencere)
+
+/** Adanın ekrandaki yeri (px) ve süslerin görünüp görünmeyeceği. */
+data class DecorAnchor(
+    val cx: Float, val top: Float, val w: Float, val h: Float,
+    val inverted: Boolean, val visible: Boolean, val screenH: Float,
+)
+
+/** Adanın ALTINDA duran, dokunuş almayan tam ekran pencere: üstteki karakter, sarkan süsler, mürekkep damlası. */
+class DecorOverlay(
+    private val ctx: Context,
+    private val lifecycleOwner: LifecycleOwner,
+    private val savedOwner: SavedStateRegistryOwner,
+    private val wm: WindowManager,
+    private val settings: StateFlow<IslandSettings>,
+    private val anchor: StateFlow<DecorAnchor?>,
+) {
+    private var view: ComposeView? = null
+    private var host: WindowManager? = null
+    private var lp: WindowManager.LayoutParams? = null
+    private var tries = 0
+
+    /** Herhangi bir süs açık mı? Kapalıysa pencere hiç eklenmez. */
+    fun wanted(s: IslandSettings) = s.decorTop != 0 || s.decorHang != 0 || s.dripEnabled
+
+    fun sync() {
+        val on = wanted(settings.value)
+        if (on && view == null) attach() else if (!on && view != null) detach()
+    }
+
+    fun attach() {
+        if (view != null || !wanted(settings.value)) return
+        val v = ComposeView(ctx).apply {
+            setViewTreeLifecycleOwner(lifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(savedOwner)
+            setContent { DecorLayer(settings, anchor) }
+        }
+        fun params(type: Int) = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+        var added = false
+        IslandAccessibilityService.instance?.let { a11y ->
+            runCatching {
+                val h2 = a11y.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val p2 = params(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+                h2.addView(v, p2); host = h2; lp = p2; added = true
+            }
+        }
+        if (!added) {
+            val p3 = params(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            added = runCatching { wm.addView(v, p3); host = wm; lp = p3 }.isSuccess
+        }
+        if (!added) { v.disposeComposition(); return }
+        view = v
+        tries = 0
+        v.postDelayed(calibrate, 300)
+    }
+
+    /** Pencere ekranın en üstünden başlamıyorsa farkı kadar yukarı çeker (çizim ekran koordinatıyla yapılır). */
+    private val calibrate = object : Runnable {
+        override fun run() {
+            val v = view ?: return
+            val params = lp ?: return
+            val h = host ?: return
+            if (!v.isAttachedToWindow) return
+            val loc = IntArray(2)
+            v.getLocationOnScreen(loc)
+            val dy = loc[1]
+            if (abs(dy) <= 1 || tries >= 3) return
+            tries++
+            params.y -= dy
+            params.height = h.currentWindowMetrics.bounds.height() + abs(params.y)
+            runCatching { h.updateViewLayout(v, params) }
+            v.postDelayed(this, 250)
+        }
+    }
+
+    fun detach() {
+        val v = view ?: return
+        v.removeCallbacks(calibrate)
+        runCatching { (host ?: wm).removeView(v) }
+        v.disposeComposition()
+        v.setViewTreeLifecycleOwner(null)
+        v.setViewTreeSavedStateRegistryOwner(null)
+        view = null; host = null; lp = null
+    }
+}
+
+@Composable
+private fun DecorLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow<DecorAnchor?>) {
+    val s by settings.collectAsState()
+    val cur by anchorFlow.collectAsState()
+    // Görünmez olunca son konumda solarak kaybolsun
+    val last = remember { arrayOfNulls<DecorAnchor>(1) }
+    if (cur != null) last[0] = cur
+    val a = last[0] ?: return
+    val vis by animateFloatAsState(if (cur?.visible == true) 1f else 0f, tween(if (cur?.visible == true) 380 else 180), label = "decorVis")
+    if (vis <= 0.001f) return
+    val body = Color(s.islandColorArgb).copy(alpha = 1f)
+    Box(Modifier.fillMaxSize()) {
+        if (s.decorTop != 0) TopDecor(s.decorTop, a, vis)
+        if (s.decorHang != 0) HangDecor(s.decorHang, a, vis)
+        if (s.dripEnabled) Drip(a, body, s.dripEverySec, cur?.visible == true)
+    }
+}
+
+/** Adanın üstüne oturan karakter. Pencere adanın altında olduğu için adanın içine taşan kısım görünmez. */
+@Composable
+private fun TopDecor(kind: Int, a: DecorAnchor, vis: Float) {
+    val tr = rememberInfiniteTransition(label = "top")
+    val t = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(4000, easing = LinearEasing)), label = "topT")
+    Canvas(Modifier.fillMaxSize()) {
+        val h = a.h
+        val top = a.top
+        val left = a.cx - a.w / 2f
+        val right = a.cx + a.w / 2f
+        val tau = 2f * PI.toFloat()
+        when (kind) {
+            1 -> { // Uzanan kara kedi: gövde adanın üst kenarında, kafa sağda, kuyruk sallanır, gözler kırpışır
+                val black = Color(0xFF141414).copy(alpha = vis)
+                val bx = a.cx + a.w * 0.08f
+                val bodyW = h * 1.5f; val bodyH = h * 0.55f
+                val by = top - bodyH * 0.6f
+                // kuyruk
+                val sway = sin(tau * t.value) * h * 0.25f
+                val tail = Path().apply {
+                    moveTo(bx - bodyW / 2f + h * 0.1f, by + bodyH * 0.5f)
+                    cubicTo(bx - bodyW / 2f - h * 0.4f, by + bodyH * 0.3f, bx - bodyW / 2f - h * 0.5f, by - h * 0.4f + sway,
+                        bx - bodyW / 2f - h * 0.2f, by - h * 0.55f + sway)
+                }
+                drawPath(tail, black, style = Stroke(h * 0.13f, cap = StrokeCap.Round))
+                drawOval(black, Offset(bx - bodyW / 2f, by), Size(bodyW, bodyH))
+                // kafa
+                val hx = bx + bodyW / 2f - h * 0.05f
+                val hy = by + bodyH * 0.25f
+                val hr = h * 0.36f
+                drawCircle(black, hr, Offset(hx, hy))
+                val earL = Path().apply { moveTo(hx - hr * 0.85f, hy - hr * 0.3f); lineTo(hx - hr * 0.6f, hy - hr * 1.35f); lineTo(hx - hr * 0.05f, hy - hr * 0.8f); close() }
+                val earR = Path().apply { moveTo(hx + hr * 0.05f, hy - hr * 0.8f); lineTo(hx + hr * 0.6f, hy - hr * 1.35f); lineTo(hx + hr * 0.85f, hy - hr * 0.3f); close() }
+                drawPath(earL, black); drawPath(earR, black)
+                val blink = if ((t.value * 4f) % 1f > 0.93f) 0.15f else 1f
+                for (dx in listOf(-0.38f, 0.38f)) {
+                    val e = Offset(hx + dx * hr, hy - hr * 0.05f)
+                    drawOval(Color.White.copy(alpha = vis), Offset(e.x - hr * 0.22f, e.y - hr * 0.26f * blink), Size(hr * 0.44f, hr * 0.52f * blink))
+                    drawCircle(Color(0xFF111111).copy(alpha = vis), hr * 0.12f * blink.coerceAtLeast(0.3f), Offset(e.x + hr * 0.04f, e.y))
+                }
+                // ön patiler adanın kenarından sarkar
+                drawOval(black, Offset(hx - hr * 0.6f, top - h * 0.1f), Size(h * 0.22f, h * 0.3f))
+                drawOval(black, Offset(hx + hr * 0.1f, top - h * 0.1f), Size(h * 0.22f, h * 0.3f))
+            }
+            else -> { // Kulaklar: adanın iki üst köşesinde, ada renginde
+                val body = Color(0xFF000000).copy(alpha = vis)
+                val inner = Color(0xFFFFA8C5).copy(alpha = vis)
+                val wiggle = sin(tau * t.value * 2f) * 0.06f
+                for (side in listOf(-1f, 1f)) {
+                    val ex = if (side < 0) left + h * 0.55f else right - h * 0.55f
+                    if (kind == 2) {
+                        rotate(side * (8f + wiggle * 60f), Offset(ex, top + h * 0.15f)) {
+                            val ear = Path().apply { moveTo(ex - h * 0.32f, top + h * 0.2f); lineTo(ex + side * h * 0.05f, top - h * 0.5f); lineTo(ex + h * 0.32f, top + h * 0.2f); close() }
+                            val ein = Path().apply { moveTo(ex - h * 0.17f, top + h * 0.1f); lineTo(ex + side * h * 0.04f, top - h * 0.3f); lineTo(ex + h * 0.17f, top + h * 0.1f); close() }
+                            drawPath(ear, body); drawPath(ein, inner)
+                        }
+                    } else {
+                        drawCircle(body, h * 0.3f, Offset(ex, top - h * 0.02f))
+                        drawCircle(inner, h * 0.15f, Offset(ex, top - h * 0.02f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Adadan iplerle sarkan, hafifçe sallanan süsler. Ters adada yukarı doğru uzanır. */
+@Composable
+private fun HangDecor(kind: Int, a: DecorAnchor, vis: Float) {
+    val tr = rememberInfiniteTransition(label = "hang")
+    val t = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "hangT")
+    Canvas(Modifier.fillMaxSize()) {
+        val h = a.h
+        val dir = if (a.inverted) -1f else 1f
+        val edge = if (a.inverted) a.top else a.top + h
+        val tau = 2f * PI.toFloat()
+        val rope = Color(0xFF2B2B2B).copy(alpha = vis)
+        when (kind) {
+            1 -> { // Salıncakta civciv
+                val ang = sin(tau * t.value) * 16f
+                val pivot = Offset(a.cx, edge)
+                val len = h * 2.1f * dir
+                rotate(ang, pivot) {
+                    val sx = h * 0.45f
+                    drawLine(rope, Offset(a.cx - sx, edge), Offset(a.cx - sx, edge + len), h * 0.05f)
+                    drawLine(rope, Offset(a.cx + sx, edge), Offset(a.cx + sx, edge + len), h * 0.05f)
+                    drawRoundRect(Color(0xFF8B5A2B).copy(alpha = vis), Offset(a.cx - sx - h * 0.1f, edge + len - h * 0.05f),
+                        Size(sx * 2 + h * 0.2f, h * 0.14f), CornerRadius(h * 0.07f))
+                    translate(a.cx, edge + len - h * 0.38f) { drawPetAlpha(2, h * 0.95f, vis) }
+                }
+            }
+            else -> { // Yıldızlar / yılbaşı topları / kalpler: üç ip, farklı uzunlukta
+                val xs = listOf(-0.7f, 0f, 0.7f)
+                val ls = listOf(1.3f, 2.1f, 1.6f)
+                xs.forEachIndexed { i, fx ->
+                    val pivot = Offset(a.cx + fx * h, edge)
+                    val ang = sin(tau * (t.value + i * 0.23f)) * 10f
+                    val end = Offset(pivot.x, edge + ls[i] * h * dir)
+                    rotate(ang, pivot) {
+                        drawLine(rope, pivot, end, h * 0.04f)
+                        when (kind) {
+                            2 -> star(end, h * 0.3f, Color(0xFFFFC83D).copy(alpha = vis))
+                            3 -> {
+                                val col = listOf(Color(0xFFE53935), Color(0xFF2E7D32), Color(0xFFFFB300))[i].copy(alpha = vis)
+                                drawRect(Color(0xFFBDBDBD).copy(alpha = vis), Offset(end.x - h * 0.08f, end.y - h * 0.04f), Size(h * 0.16f, h * 0.1f))
+                                drawCircle(col, h * 0.24f, Offset(end.x, end.y + h * 0.28f * dir))
+                                drawCircle(Color.White.copy(alpha = 0.5f * vis), h * 0.06f, Offset(end.x - h * 0.08f, end.y + h * 0.2f * dir))
+                            }
+                            else -> heart(Offset(end.x, end.y + h * 0.18f * dir), h * 0.34f, Color(0xFFFF4F8B).copy(alpha = vis))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawPetAlpha(kind: Int, s: Float, alpha: Float) {
+    if (alpha >= 0.99f) drawPet(kind, s) else {
+        // Basit çözüm: solarken küçülerek kaybolur (Canvas katman alfa'sı yerine)
+        scale(alpha.coerceIn(0.01f, 1f), alpha.coerceIn(0.01f, 1f), Offset.Zero) { drawPet(kind, s) }
+    }
+}
+
+private fun DrawScope.star(c: Offset, r: Float, color: Color) {
+    val p = Path()
+    for (i in 0 until 10) {
+        val a = -PI.toFloat() / 2f + i * PI.toFloat() / 5f
+        val rr = if (i % 2 == 0) r else r * 0.45f
+        val pt = Offset(c.x + cos(a) * rr, c.y + r * 0.9f + sin(a) * rr)
+        if (i == 0) p.moveTo(pt.x, pt.y) else p.lineTo(pt.x, pt.y)
+    }
+    p.close()
+    drawPath(p, color)
+}
+
+private fun DrawScope.heart(c: Offset, s: Float, color: Color) {
+    val p = Path().apply {
+        moveTo(c.x, c.y + s * 0.35f)
+        cubicTo(c.x - s * 0.9f, c.y - s * 0.2f, c.x - s * 0.35f, c.y - s * 0.75f, c.x, c.y - s * 0.3f)
+        cubicTo(c.x + s * 0.35f, c.y - s * 0.75f, c.x + s * 0.9f, c.y - s * 0.2f, c.x, c.y + s * 0.35f)
+        close()
+    }
+    drawPath(p, color)
+}
+
+// ---------------------------------------------------------------- Mürekkep damlası
+
+private class DripSpec(val x: Float, val width: Float, val len: Float, val delay: Float, val long: Boolean)
+
+/**
+ * Adanın alt kenarından koyu sıvı damlaları sarkar: kısa olanlar biraz uzayıp geri çekilir, uzun olan ekranın altına
+ * kadar akıp ince bir iz bırakır; sonra iz incelip kaybolur. [everySec] aralıkla tekrarlar.
+ */
+@Composable
+private fun Drip(a: DecorAnchor, color: Color, everySec: Float, active: Boolean) {
+    val prog = remember { Animatable(0f) }
+    var drips by remember { mutableStateOf<List<DripSpec>>(emptyList()) }
+    val dirUp = a.inverted
+    LaunchedEffect(active, a.w, a.h, everySec) {
+        if (!active) { prog.snapTo(0f); drips = emptyList(); return@LaunchedEffect }
+        val rnd = kotlin.random.Random(System.nanoTime())
+        while (true) {
+            val r = a.h / 2f
+            val n = 3 + rnd.nextInt(3)
+            val span = (a.w - 2 * r).coerceAtLeast(a.h)
+            val room = if (dirUp) a.top else a.screenH - (a.top + a.h)
+            val longIdx = rnd.nextInt(n)
+            drips = List(n) { i ->
+                val long = i == longIdx
+                DripSpec(
+                    x = a.cx - span / 2f + span * (i + 0.2f + rnd.nextFloat() * 0.6f) / n,
+                    width = a.h * (0.16f + rnd.nextFloat() * 0.14f) * (if (long) 1.15f else 1f),
+                    len = if (long) room else a.h * (0.5f + rnd.nextFloat() * 1.6f),
+                    delay = rnd.nextFloat() * 0.18f,
+                    long = long,
+                )
+            }
+            prog.snapTo(0f)
+            prog.animateTo(1f, tween(4200, easing = LinearEasing))
+            drips = emptyList()
+            delay((everySec.coerceIn(2f, 60f) * 1000f).toLong())
+        }
+    }
+    if (drips.isEmpty()) return
+    Canvas(Modifier.fillMaxSize()) {
+        val p = prog.value
+        val edge = if (dirUp) a.top else a.top + a.h
+        val sgn = if (dirUp) -1f else 1f
+        for (d in drips) {
+            val local = ((p - d.delay) / (1f - d.delay)).coerceIn(0f, 1f)
+            if (local <= 0f) continue
+            // 0..0.65: önce yavaş sarkar sonra hızlanır (koyu sıvı), 0.65..1: kısa damla geri çekilir, uzun damlanın izi incelip söner
+            val grow = (local / 0.65f).coerceIn(0f, 1f)
+            val ease = grow * grow * grow
+            val fade = ((local - 0.65f) / 0.35f).coerceIn(0f, 1f)
+            val len = if (d.long) d.len * ease else d.len * ease * (1f - fade)
+            val w = if (d.long) d.width * (1f - 0.75f * fade) else d.width
+            val alpha = if (d.long) 1f - fade * fade else 1f
+            val col = color.copy(alpha = color.alpha * alpha)
+            // Adaya bağlandığı yer: yumuşak bir kabarıklık (sıvının adadan kopmadığı görünsün)
+            drawOval(col, Offset(d.x - w * 1.3f, edge - w * 0.6f), Size(w * 2.6f, w * 1.3f))
+            if (len > 0.5f) {
+                val y0 = edge
+                val y1 = edge + sgn * len
+                drawRect(col, Offset(d.x - w / 2f, min(y0, y1)), Size(w, abs(y1 - y0)))
+                // ucunda damla
+                val bulb = w * (0.85f + 0.25f * (1f - fade))
+                if (!(d.long && fade > 0.4f)) drawCircle(col, bulb, Offset(d.x, y1))
+            }
+        }
+    }
+}

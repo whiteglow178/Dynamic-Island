@@ -612,6 +612,61 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
 
+        // ---- Ada süsleri -> IslandDecor.kt
+        pendingGroup = "Ada süsleri"
+        sec("Renkli çerçeve", "Adanın kenarında parlayan, akan renkler") {
+            DecorChoices(listOf(
+                "Renk geçişi" to "Seçtiğin iki renk adanın kenarında dönerek akar",
+                "Gökkuşağı" to "Tüm renkler kenar boyunca akar",
+                "Ateş" to "Adanın çevresinde titreyen turuncu alevler",
+                "Neon" to "Tek renk, yavaşça nabız gibi parlar",
+            ), draft.neonStyle) { draft = draft.copy(neonStyle = it) }
+            if (draft.neonStyle != 0) {
+                SliderRow("Çizgi kalınlığı", draft.neonWidthDp, 1f..6f, "${"%.1f".format(draft.neonWidthDp)} dp") { draft = draft.copy(neonWidthDp = it) }
+                SliderRow("Işık şiddeti", draft.neonGlow, 0f..1.5f, "${(draft.neonGlow * 100).toInt()}%") { draft = draft.copy(neonGlow = it) }
+                SliderRow("Hız", draft.neonSpeed, 0.25f..3f, "%.1fx".format(draft.neonSpeed)) { draft = draft.copy(neonSpeed = it) }
+                if (draft.neonStyle == 1 || draft.neonStyle == 4) {
+                    SubHeader(if (draft.neonStyle == 1) "Birinci renk" else "Renk")
+                    key(version) { ColorPicker(draft.neonColor1Argb) { draft = draft.copy(neonColor1Argb = it) } }
+                }
+                if (draft.neonStyle == 1) {
+                    SubHeader("İkinci renk")
+                    key(version) { ColorPicker(draft.neonColor2Argb) { draft = draft.copy(neonColor2Argb = it) } }
+                }
+            }
+        }
+        sec("Adanın üstünde", "Adaya oturan küçük karakter") {
+            DecorChoices(listOf(
+                "Uzanan kedi" to "Kara bir kedi adanın üstüne uzanır; kuyruğunu sallar, göz kırpar",
+                "Kedi kulakları" to "Adanın iki köşesinden kulaklar çıkar",
+                "Ayı kulakları" to "Adanın iki köşesinde yuvarlak kulaklar",
+            ), draft.decorTop) { draft = draft.copy(decorTop = it) }
+        }
+        sec("Adadan sarkan süs", "İplerle adanın altına asılır, hafifçe sallanır") {
+            DecorChoices(listOf(
+                "Salıncakta civciv" to "Adaya bağlı salıncakta sallanan civciv",
+                "Yıldızlar" to null,
+                "Yılbaşı süsleri" to null,
+                "Kalpler" to null,
+            ), draft.decorHang) { draft = draft.copy(decorHang = it) }
+        }
+        sec("Adanın içinde", "Boştaki adada dolaşan karakter") {
+            DecorChoices(listOf(
+                "Tavşan" to "Adanın içinde zıplayarak gidip gelir, çevresinde parıltılar",
+                "Civciv" to null,
+                "Kedi yavrusu" to null,
+            ), draft.islandPet) { draft = draft.copy(islandPet = it) }
+        }
+        sec("Mürekkep damlası", "Adadan ekrana doğru akan koyu sıvı") {
+            SwitchRow("Adadan damlasın", "Ada renginde damlalar sarkar; biri ekranın altına kadar akıp iz bırakır, sonra kaybolur", draft.dripEnabled) { draft = draft.copy(dripEnabled = it) }
+            if (draft.dripEnabled) {
+                SliderRow("Aralık", draft.dripEverySec, 2f..30f, "${draft.dripEverySec.toInt()} sn") { draft = draft.copy(dripEverySec = it) }
+            }
+        }
+        sec("Ekran kenarı ışığı", "Ekranın çevresinde sürekli akan renkler") {
+            SwitchRow("Her zaman açık", "Asistan animasyonundaki renkli kenar ışığı sürekli görünür", draft.edgeGlowAlways) { draft = draft.copy(edgeGlowAlways = it) }
+        }
+
         // ---- Hareket
         pendingGroup = "Hareket"
         sec("Açılış animasyonu stili", "Bildirime ya da müzik uygulamasına dokununca") {
@@ -1513,5 +1568,13 @@ private fun LockDotPreview(s: IslandSettings) {
         Box(
             Modifier.offset(x = (-(cw / 2f + s.lockDotGapDp + s.lockDotSizeDp / 2f)).dp, y = s.lockDotOffsetYDp.dp).size(total.dp),
         ) { LockDotView(s) }
+    }
+}
+
+/** Süs seçenekleri: biri açılınca diğerleri kapanır; açık olan kapatılırsa süs kapanır (0). Seçenekler 1'den başlar. */
+@Composable
+private fun DecorChoices(options: List<Pair<String, String?>>, selected: Int, onSelect: (Int) -> Unit) {
+    options.forEachIndexed { i, (title, desc) ->
+        SwitchRow(title, desc, selected == i + 1) { on -> onSelect(if (on) i + 1 else 0) }
     }
 }

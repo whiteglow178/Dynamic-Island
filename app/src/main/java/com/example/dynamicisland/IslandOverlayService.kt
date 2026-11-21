@@ -137,6 +137,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         runCatching { statusCover.attach() }      // ada penceresinden ÖNCE eklenir: ada her zaman üstte kalır
         runCatching { edgeGlow.attach() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
+        runCatching { decor.attach() }            // ada süsleri (kedi, salıncak, damla) adanın ALTINDA kalır
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
         IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() }; runCatching { landscape.rehost() } }
@@ -181,6 +182,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             combine(ui, settings, TranslateSession.bodyDp) { u, s, _ -> winKey(u, s) }
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
+        }
+        // ---- Ada süsleri -> IslandDecor.kt
+        scope.launch { combine(ui, settings) { _, _ -> Unit }.collect { refreshDecor() } }
+        scope.launch {
+            // Süs açılıp kapanınca pencereler yeniden sıralanır (süs penceresi adanın altında kalmalı)
+            settings.map { decor.wanted(it) }.distinctUntilChanged().collect { on ->
+                if (on != decorOn) { decorOn = on; runCatching { reattach() } }
+            }
+        }
+        scope.launch {
+            settings.map { it.edgeGlowAlways }.distinctUntilChanged().collect { edgeGlow.setActive(assistantActive || it) }
         }
     }
 
@@ -493,7 +505,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (active && !settings.value.assistantEnabled) return
         if (active && call.active) return          // arama sürerken asistan animasyonu araya girmesin
         assistantActive = active
-        edgeGlow.setActive(active)                      // ekran kenarı parlaması: açılırken sağdan sola yayılır, kapanınca söner
+        edgeGlow.setActive(active || settings.value.edgeGlowAlways)   // ekran kenarı parlaması: açılırken sağdan sola yayılır, kapanınca söner
         collapseJob?.cancel()
         if (active) {
             update { IslandUiState(IslandContent.Assistant, expanded = true) }
@@ -722,7 +734,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override fun showTemporarily(c: IslandContent, holdMs: Long) = this@IslandOverlayService.showTemporarily(c, holdMs)
         override fun rest() = this@IslandOverlayService.rest()
         override fun setIslandHidden(hidden: Boolean) {
-            runCatching { landscape.setHidden(hidden) }      // yatay moddaki ada da aynı gizleme kuralına uyar
+            runCatching { landscape.setHidden(hidden) }
+            this@IslandOverlayService.scope.launch { refreshDecor() }      // gizleme bayrağı ayarlandıktan sonra      // yatay moddaki ada da aynı gizleme kuralına uyar
             composeView?.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
             if (hidden) setTouchable(false)
             else this@IslandOverlayService.scope.launch { syncWindow(this@IslandOverlayService.winKey(ui.value)) }
@@ -808,6 +821,37 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
     private fun applyMainHidden() {
         runCatching { dialog?.window?.decorView?.visibility = if (mainHidden) View.INVISIBLE else View.VISIBLE }
+        refreshDecor()
+    }
+
+    // ---- Ada süsleri: adanın üstünde karakter, sarkan süsler, mürekkep damlası -> IslandDecor.kt
+    private val decorAnchor = MutableStateFlow<DecorAnchor?>(null)
+    private val decor by lazy { DecorOverlay(this, this, this, wm, settings, decorAnchor) }
+    private var decorOn = false
+
+    /** Süslerin dayanacağı kapalı adanın ekrandaki yeri ve süslerin görünüp görünmeyeceği. */
+    private fun refreshDecor() {
+        val s = settings.value
+        if (!decor.wanted(s)) { decorAnchor.value = null; return }
+        val u = ui.value
+        val c = u.content
+        val pill = pillCompactSizeDp(s, c)
+        val wDp = when {
+            pill != null -> pill.first
+            c is IslandContent.Call && !c.isIncoming -> maxOf(CALL_COMPACT_W_DP, s.compactWidthDp)
+            else -> compactWidthFor(s, u.compactLyrics && c is IslandContent.Media)
+        }
+        val hPx = dp(pill?.second ?: s.compactHeightDp)
+        val sw = wm.currentWindowMetrics.bounds.width()
+        val visible = !u.expanded && !u.swallow && u.stack.isEmpty() && !mainHidden && !appHide.hidden &&
+            c !is IslandContent.Assistant && (s.showIdle || c !is IslandContent.Idle) && !s.dotMode
+        decorAnchor.value = DecorAnchor(
+            cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+            top = islandTopPx(s, hPx).toFloat(),
+            w = dp(wDp).toFloat(), h = hPx.toFloat(),
+            inverted = s.invertedIsland, visible = visible,
+            screenH = screenHPx().toFloat(),
+        )
     }
 
     // ---- Fener (flaş) göstergesi -> TorchOverlay.kt
@@ -1435,11 +1479,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { detachOverlay() }
         runCatching { statusCover.detach() }
         runCatching { edgeGlow.detach() }
+        runCatching { decor.detach() }
         // Erişilebilirlik bağlantısı değişince dış söz penceresinin türü de değişir: yeniden kur.
         // Önce durum çubuğu örtüsü, sonra söz penceresi, en son ada eklenir; böylece ada her zaman üstte kalır ve sözler adanın "içinden" çıkar.
         runCatching { detachOutside() }
         runCatching { statusCover.attach() }
         runCatching { edgeGlow.attach() }
+        runCatching { decor.attach() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
         composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
@@ -2031,6 +2077,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         exitWatchdog?.cancel()
         runCatching { statusCover.detach() }
         runCatching { edgeGlow.detach() }
+        runCatching { decor.detach() }
         detachOutside()
         collapseJob?.cancel()
         scope.cancel()

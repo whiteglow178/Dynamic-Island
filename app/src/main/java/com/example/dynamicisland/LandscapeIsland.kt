@@ -711,6 +711,7 @@ private fun LandscapeWindowContent(
                 .offset { IntOffset(ix.roundToInt(), iy.roundToInt()) }
                 .size(dpOf(iw.roundToInt()), dpOf(ih.roundToInt()))
                 .islandGlow(s.glowEnabled, islandGlowColor, s.glowIntensity)
+                .islandNeon(s)
                 .islandSurface(s, islandBody, islandShape, -1f, islandBorderTint)
                 .then(islandGesture),
         ) {

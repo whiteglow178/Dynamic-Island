@@ -749,7 +749,7 @@ fun IslandPill(
     val commandNow by rememberUpdatedState(onCommand)
     // Asistan modunda: kendi şekli; cam ve sıvı cam ayarları uygulanır. Çerçeve / dış parıltı kapalı (şekle uymaz).
     val assistant = content is IslandContent.Assistant
-    val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false) else cfg
+    val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false, neonStyle = 0) else cfg
     assistantGlassShape = assistant && cfg.assistantStyle == 1 && !cfg.assistantFullWidth   // oval stil: köşe yarıçapı tam yuvarlak
     val cornerT = if (assistant) progress.mean else -1f
     val cfgNow by rememberUpdatedState(cfg)
@@ -805,6 +805,7 @@ fun IslandPill(
             }
             .onGloballyPositioned { fx.origin = it }
             .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
+            .islandNeon(cfg)              // renkli çerçeve (neon / gökkuşağı / ateş) -> IslandDecor.kt
             .islandSurface(cfg, body, shape, cornerT, if (cfg.borderArtColor && artColor != null) brightTone(artColor) else null)
             .pointerInput(Unit) {
                 // Dokunma + basılı tutma. Ada küçük olduğu için hızlı dokunuşta parmak kenardan kayıp çıkabiliyordu
@@ -1085,6 +1086,16 @@ fun IslandPill(
                             .width(22.dp).height((geo.ch - 16.dp).coerceAtLeast(10.dp)).then(fade),
                     )
                 }
+            }
+        }
+
+        if (content is IslandContent.Idle && compactVisible && !cfg.dotMode && cfg.islandPet != 0) {
+            // Boştaki ada: içinde dolaşan küçük karakter -> IslandDecor.kt
+            Box(
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                    .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
+            ) {
+                IslandPet(cfg.islandPet, Modifier.fillMaxSize())
             }
         }
 

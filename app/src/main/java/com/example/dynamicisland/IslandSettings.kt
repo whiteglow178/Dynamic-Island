@@ -16,7 +16,8 @@ import kotlinx.coroutines.flow.map
 import kotlin.math.ceil
 
 const val GLOW_PAD_DP = 14f     // parıltı için pencere kenar boşluğu
-const val BOUNCE_PAD_DP = 16f   // "Zıplamalı" animasyonun taşma payı
+const val BOUNCE_PAD_DP = 16f
+const val NEON_PAD_DP = 18f     // renkli çerçevenin (neon / ateş) dışa taşan ışığı için pay   // "Zıplamalı" animasyonun taşma payı
 const val FAV_COLUMNS = 4       // favori panelinde bir satırdaki uygulama sayısı
 const val FAV_ROW_DP = 78f      // favori panelinde bir satırın yüksekliği
 const val MAX_FAV = 8           // en fazla seçilebilecek favori uygulama
@@ -281,7 +282,21 @@ data class IslandSettings(
 
     // ---------------------------------------------------------- Renk düzenleyici
     val colorEditorEnabled: Boolean = false, // açıkken aşağıdaki özel renkler uygulanır; kapalıyken varsayılan renkler
-    val colorOverrides: String = "",         // "anahtar:AARRGGBB,..." biçiminde değiştirilmiş renkler (bkz. ColorEditor.kt)
+    val colorOverrides: String = "",
+
+    // ---------------------------------------------------------- Ada süsleri
+    val neonStyle: Int = 0,                  // renkli çerçeve: 0 kapalı, 1 renk geçişi, 2 gökkuşağı, 3 ateş, 4 neon (tek renk, nabız)
+    val neonColor1Argb: Int = 0xFFFF3DCB.toInt(),
+    val neonColor2Argb: Int = 0xFF3DFFC2.toInt(),
+    val neonWidthDp: Float = 2.5f,           // çizgi kalınlığı
+    val neonGlow: Float = 0.8f,              // dışa vuran ışığın şiddeti
+    val neonSpeed: Float = 1f,               // renk akışı / alev hızı
+    val decorTop: Int = 0,                   // adanın üstünde: 0 yok, 1 uzanan kedi, 2 kedi kulakları, 3 ayı kulakları
+    val decorHang: Int = 0,                  // adadan sarkan: 0 yok, 1 salıncakta civciv, 2 yıldızlar, 3 yılbaşı süsleri, 4 kalpler
+    val islandPet: Int = 0,                  // boştaki adanın içinde dolaşan: 0 yok, 1 tavşan, 2 civciv, 3 kedi yavrusu
+    val dripEnabled: Boolean = false,        // adadan ekranın altına doğru mürekkep damlası akar
+    val dripEverySec: Float = 8f,            // damlama aralığı (sn)
+    val edgeGlowAlways: Boolean = false,     // ekran kenarında sürekli akan gökkuşağı ışık         // "anahtar:AARRGGBB,..." biçiminde değiştirilmiş renkler (bkz. ColorEditor.kt)
 ) {
     /**
      * Servisin / arayüzün kullandığı etkin ayarlar. Üç nokta modunda kapalı ada, ortadaki noktanın çapında bir daire olur;
@@ -318,6 +333,7 @@ data class IslandSettings(
     fun windowPadDp(): Float = maxOf(
         if (glowEnabled) GLOW_PAD_DP else 0f,
         if (animEnabled && animStyle == 3) BOUNCE_PAD_DP else 0f,
+        if (neonStyle != 0) NEON_PAD_DP else 0f,
     )
 
     /** Adanın gizleneceği uygulamaların paket adları. */
@@ -406,6 +422,10 @@ class SettingsRepository(context: Context) {
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val INV_ISLAND = booleanPreferencesKey("inv_island")
         val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below"); val LAND_IN_ISLAND = booleanPreferencesKey("land_in_island")
+        val NEON_ST = intPreferencesKey("neon_st"); val NEON_C1 = intPreferencesKey("neon_c1"); val NEON_C2 = intPreferencesKey("neon_c2")
+        val NEON_W = floatPreferencesKey("neon_w"); val NEON_G = floatPreferencesKey("neon_g"); val NEON_SP = floatPreferencesKey("neon_sp")
+        val DEC_TOP = intPreferencesKey("dec_top"); val DEC_HANG = intPreferencesKey("dec_hang"); val PET = intPreferencesKey("isl_pet")
+        val DRIP = booleanPreferencesKey("drip"); val DRIP_S = floatPreferencesKey("drip_s"); val EDGE_ALW = booleanPreferencesKey("edge_alw")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val REC_ON = booleanPreferencesKey("rec_on"); val REC_WIDE = booleanPreferencesKey("rec_wide_v2")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full"); val AS_STYLE = intPreferencesKey("as_style")
@@ -555,6 +575,12 @@ class SettingsRepository(context: Context) {
             landscapeMode = p[K.LAND_ON] ?: d.landscapeMode,
             landscapeBubbleBelow = p[K.LAND_BELOW] ?: d.landscapeBubbleBelow,
             landscapeEventsInIsland = p[K.LAND_IN_ISLAND] ?: d.landscapeEventsInIsland,
+            neonStyle = p[K.NEON_ST] ?: d.neonStyle, neonColor1Argb = p[K.NEON_C1] ?: d.neonColor1Argb,
+            neonColor2Argb = p[K.NEON_C2] ?: d.neonColor2Argb, neonWidthDp = p[K.NEON_W] ?: d.neonWidthDp,
+            neonGlow = p[K.NEON_G] ?: d.neonGlow, neonSpeed = p[K.NEON_SP] ?: d.neonSpeed,
+            decorTop = p[K.DEC_TOP] ?: d.decorTop, decorHang = p[K.DEC_HANG] ?: d.decorHang, islandPet = p[K.PET] ?: d.islandPet,
+            dripEnabled = p[K.DRIP] ?: d.dripEnabled, dripEverySec = p[K.DRIP_S] ?: d.dripEverySec,
+            edgeGlowAlways = p[K.EDGE_ALW] ?: d.edgeGlowAlways,
             notifLaunchAnim = p[K.NT_ANIM] ?: d.notifLaunchAnim,
             musicExitAnim = p[K.MX_ANIM] ?: d.musicExitAnim,
             musicExitSpeed = p[K.MX_SPD] ?: d.musicExitSpeed,
@@ -688,6 +714,10 @@ class SettingsRepository(context: Context) {
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.INV_ISLAND] = s.invertedIsland
             it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow; it[K.LAND_IN_ISLAND] = s.landscapeEventsInIsland
+            it[K.NEON_ST] = s.neonStyle; it[K.NEON_C1] = s.neonColor1Argb; it[K.NEON_C2] = s.neonColor2Argb
+            it[K.NEON_W] = s.neonWidthDp; it[K.NEON_G] = s.neonGlow; it[K.NEON_SP] = s.neonSpeed
+            it[K.DEC_TOP] = s.decorTop; it[K.DEC_HANG] = s.decorHang; it[K.PET] = s.islandPet
+            it[K.DRIP] = s.dripEnabled; it[K.DRIP_S] = s.dripEverySec; it[K.EDGE_ALW] = s.edgeGlowAlways
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.REC_ON] = s.screenRecEnabled; it[K.REC_WIDE] = s.screenRecWide
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
