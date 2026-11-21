@@ -66,7 +66,7 @@ fun FavoritesPanel(c: IslandContent.Favorites, topInset: Dp, onLaunch: (String) 
 }
 
 @Composable
-private fun FavCell(app: FavApp, modifier: Modifier, onLaunch: (String) -> Unit) {
+internal fun FavCell(app: FavApp, modifier: Modifier, onLaunch: (String) -> Unit) {
     Column(
         modifier.clip(RoundedCornerShape(14.dp)).clickable { onLaunch(app.pkg) }.padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

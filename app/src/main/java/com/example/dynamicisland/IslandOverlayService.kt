@@ -649,7 +649,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun onPillTap() {
         playSfx(SoundEvent.Tap)
-        if (openStack()) return          // birden fazla olay varsa hepsi alt alta açılır
+        if (!landscape.active && openStack()) return          // birden fazla olay varsa hepsi alt alta açılır (yatay modda baloncuklar var)
         val cur = ui.value
         when (cur.content) {
             is IslandContent.Media -> {
@@ -772,7 +772,30 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---- Yatay mod: telefon yan çevrilince dikey ada + simgesi düz yan baloncuklar -> LandscapeIsland.kt
     private val landscape by lazy {
-        LandscapeController(this, this, this, wm, settings, ui, scope) { on -> setMainIslandHidden(on) }
+        LandscapeController(
+            this, this, this, wm, settings, ui, lyrics, scope,
+            LandActions(
+                onTap = ::onLandTap, onLongPress = ::onLandLong, onSwipe = ::onPillSwipe,
+                onCommand = ::onCommand, onOutput = ::openOutputPanel, onLaunch = ::launchFavorite,
+                onOpenMusic = ::openMusicApp, onSideTap = ::onSideTap, onNotifSwipeSide = ::onNotifSwipeSide,
+                onAnswer = call::onAnswer, onDecline = call::onDecline, onSpeaker = call::onSpeaker,
+                onRecStop = rec::onStop, onShazamStop = shazam::onStop,
+            ),
+        ) { on -> setMainIslandHidden(on) }
+    }
+
+    /** Yatay mod: boştayken dokununca yalnızca favori paneli açılır (çeviri paneli yatay modda yok); dolu adada normal işlem. */
+    private fun onLandTap() {
+        if (ui.value.content is IslandContent.Idle) {
+            val s = settings.value
+            if (s.favoritesReady() && s.favoritesTrigger == 0) { playSfx(SoundEvent.Tap); favorites.open() }
+        } else onPillTap()
+    }
+    private fun onLandLong() {
+        if (ui.value.content is IslandContent.Idle) {
+            val s = settings.value
+            if (s.favoritesReady() && s.favoritesTrigger == 1) favorites.open()
+        } else onPillLongPress()
     }
     private var mainHidden = false
     /** Yatay mod açıkken normal ada penceresi görünmez olur (çizilmez, dokunuş almaz); kapanınca geri gelir. */
@@ -1033,9 +1056,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun onPillSwipe(rawDir: Int) {
         val cur = ui.value
         val s = settings.value
-        val dir = if (s.invertedIsland) -rawDir else rawDir      // ters adada yön aynalanır: yukarı kaydırma açar, aşağı kaydırma kapatır
+        val dir = if (s.invertedIsland && !landscape.active) -rawDir else rawDir      // ters adada yön aynalanır: yukarı kaydırma açar, aşağı kaydırma kapatır
         if (cur.swallow) return
-        if (dir > 0 && openStack()) return
+        if (dir > 0 && !landscape.active && openStack()) return
         when (val c = cur.content) {
             // Yukarı kaydırma yalnızca yazı yokken kapatır (yazarken kazara kaydırınca yazdığın kaybolmasın)
             IslandContent.Translate -> { if (dir < 0 && cur.expanded && TranslateSession.state.value.input.isBlank()) closeTranslate() }
@@ -1150,7 +1173,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Ada önce açıktan kapalı hale geçer; animasyon (açıksa) bu geçişle birlikte başlar, ekran kapanınca [open] çalışır. */
     private fun launchWithAnim(animOn: Boolean, atomic: Boolean = false, speed: Float = 1f, open: () -> Unit) {
         collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
-        if (!animOn) { open(); return }
+        if (!animOn || landscape.active) { open(); return }
         if (launching) return
         launching = true
         // Atom ada: kart adanın kendisinden açıldığı için ada küçülmesini beklemeden başlar
