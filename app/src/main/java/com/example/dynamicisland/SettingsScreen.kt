@@ -695,6 +695,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
 
+        sec("Fener (flaş) göstergesi", "Fener açılınca adanın solunda simge çıkar; dokununca ışık kartı açılır") {
+            SwitchRow("Fener göstergesi", "Simgeye dokun: kart açılır. Yukarı/aşağı kaydır: parlaklık (telefon kademeli flaşı destekliyorsa gerçek flaş seviyesi de değişir). Sağa/sola kaydır: ışık huzmesi genişliği. Alttaki fener simgesine dokun: feneri kapatır",
+                draft.torchIndicator) { draft = draft.copy(torchIndicator = it) }
+        }
+
         sec("Kilit ekranı Face ID animasyonu", "Telefon kilitliyken ada kareye dönüşüp Face ID taraması ve ✓ onayı oynatır") {
             SwitchRow("Face ID animasyonu", "Ekran açılıp telefon kilitliyken bir kez oynar: ada kare olur, yüz atar, halka 3B döner, ✓ çizilir, ada hap şekline döner. Kilit açılırsa ✓ aşamasına hızlanır. Animasyon sırasında kilit noktası gizlenir",
                 draft.faceIdEnabled) { draft = draft.copy(faceIdEnabled = it) }

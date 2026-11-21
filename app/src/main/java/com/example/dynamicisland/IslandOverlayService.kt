@@ -139,13 +139,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { edgeGlow.attach() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
-        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() } }
+        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() } }
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
         runCatching { volume.start() }
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
+        runCatching { torch.start() }           // fener açılınca ada göstergesi + ışık kartı
         runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
@@ -290,6 +291,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         )
         syncRevert(ui.value)
         guardStuckFromSide()
+        // Fener simgesi yalnızca ada boş ve kapalıyken adanın içinde görünür
+        runCatching { ui.value.let { u -> torch.onIslandState(u.content is IslandContent.Idle && !u.expanded && !u.swallow && u.stack.isEmpty()) } }
         // Çeviri paneli başka bir içerikle değişti ya da kapandı: bekleyen çeviri iptal, yazı temizlenir
         if (translateOpen && ui.value.content !is IslandContent.Translate) { translateOpen = false; TranslateSession.close() }
     }
@@ -764,6 +767,21 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 inverted = s.invertedIsland,
             )
         }.also { c -> c.onCover = { on -> lockDot.suppress = on; lockDot.recheck() } }
+    }
+
+    // ---- Fener (flaş) göstergesi -> TorchOverlay.kt
+    private val torch by lazy {
+        TorchController(this, this, this, wm, settings, scope) { s ->
+            val sw = wm.currentWindowMetrics.bounds.width()
+            val h = dp(s.compactHeightDp).toFloat()
+            TorchAnchor(
+                cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+                top = islandCenterYPx(s) - h / 2f,
+                halfW = dp(compactWidthFor(s, false)) / 2f,
+                h = h,
+                inverted = s.invertedIsland,
+            )
+        }
     }
 
     // ---- Ses efektleri
@@ -1956,6 +1974,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { sfxTriggers.stop() }
         runCatching { lockDot.stop() }
         runCatching { faceId.stop() }
+        runCatching { torch.stop() }
         IslandSounds.stopAll()
         lyricsJob?.cancel()
         runCatching { fxWindow.detach() }
