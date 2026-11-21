@@ -19,6 +19,9 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,13 +30,16 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -43,6 +49,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -72,12 +79,13 @@ data class TorchAnchor(val cx: Float, val top: Float, val halfW: Float, val h: F
 
 private const val CARD_W_DP = 156f
 private const val CARD_H_DP = 212f
-private const val CARD_GAP_DP = 10f
 private const val CARD_IDLE_MS = 6_000L
 
 private val TorchLav = Color(0xFFCFCBFF)
 private val TorchBlue = Color(0xFF7C86FF)
 private val TorchBg = Color(0xFF09090B)
+private val TorchFringe = Color(0xFFFF9B62)   // huzmenin dış kenarındaki turuncu renk kayması
+private val TorchTeal = Color(0xFF8FB6FF)     // iç kenardaki mavimsi renk kayması
 
 // ---------------------------------------------------------------- Donanım
 private class TorchHw(ctx: Context) {
@@ -263,7 +271,8 @@ class TorchController(
             val w = (CARD_W_DP * d).roundToInt()
             val h = (CARD_H_DP * d).roundToInt()
             val x = (a.cx - w / 2f).roundToInt().coerceIn((8 * d).roundToInt(), (sw - w - 8 * d).roundToInt().coerceAtLeast((8 * d).roundToInt()))
-            val y = if (a.inverted) (a.top - CARD_GAP_DP * d - h).roundToInt() else (a.top + a.h + CARD_GAP_DP * d).roundToInt()
+            // Kart adanın kendisinden büyür: üst kenarı adanın üst kenarıyla aynı (ters adada alt kenarı)
+            val y = if (a.inverted) (a.top + a.h - h).roundToInt() else a.top.roundToInt()
             Box4(w, h, x, y)
         }
         val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -292,6 +301,9 @@ class TorchController(
                     level = level.floatValue,
                     spread = spread.floatValue,
                     supportsLevels = hw.supportsLevels,
+                    pillW = anchor(settings.value).halfW * 2f,
+                    pillH = anchor(settings.value).h,
+                    inverted = anchor(settings.value).inverted,
                     onOpenCard = { openCard() },
                     onLevel = { dv -> poke(); onLevelDelta(dv) },
                     onSpread = { dv -> poke(); onSpreadDelta(dv) },
@@ -344,6 +356,9 @@ private fun TorchRoot(
     level: Float,
     spread: Float,
     supportsLevels: Boolean,
+    pillW: Float,
+    pillH: Float,
+    inverted: Boolean,
     onOpenCard: () -> Unit,
     onLevel: (Float) -> Unit,
     onSpread: (Float) -> Unit,
@@ -352,7 +367,7 @@ private fun TorchRoot(
 ) {
     when (mode) {
         1 -> TorchBadge(onOpenCard)
-        2 -> TorchCard(level, spread, supportsLevels, onLevel, onSpread, onInteract, onOff)
+        2 -> TorchCard(level, spread, supportsLevels, pillW, pillH, inverted, onLevel, onSpread, onInteract, onOff)
         else -> Unit
     }
 }
@@ -385,14 +400,12 @@ private fun DrawScope.drawTorchGlyph(c: Offset, s: Float, color: Color, notch: C
     drawRoundRect(notch, Offset(c.x - 0.045f * s, c.y - 0.06f * s), Size(0.09f * s, 0.20f * s), CornerRadius(0.045f * s))
 }
 
-/** Parlaklık göstergesi güneşi: küçük daire + 8 ışın. */
+/** Parlaklık göstergesi güneşi: küçük halka + çevresinde 8 nokta (iOS'taki gibi). */
 private fun DrawScope.drawSun(c: Offset, r: Float, color: Color) {
-    drawCircle(color, r, c, style = Stroke(width = r * 0.35f))
+    drawCircle(color, r, c, style = Stroke(width = r * 0.30f))
     for (i in 0 until 8) {
         val a = i * (PI / 4.0)
-        val ca = cos(a).toFloat(); val sa = sin(a).toFloat()
-        drawLine(color, Offset(c.x + ca * r * 1.45f, c.y + sa * r * 1.45f), Offset(c.x + ca * r * 1.95f, c.y + sa * r * 1.95f),
-            strokeWidth = r * 0.32f, cap = StrokeCap.Round)
+        drawCircle(color, r * 0.20f, Offset(c.x + cos(a).toFloat() * r * 1.85f, c.y + sin(a).toFloat() * r * 1.85f))
     }
 }
 
@@ -401,117 +414,195 @@ private fun TorchCard(
     level: Float,
     spread: Float,
     supportsLevels: Boolean,
+    pillW: Float,
+    pillH: Float,
+    inverted: Boolean,
     onLevel: (Float) -> Unit,
     onSpread: (Float) -> Unit,
     onInteract: () -> Unit,
     onOff: () -> Unit,
 ) {
     val appear = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { appear.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, tween(420, easing = FastOutSlowInEasing)) }
     val levelNow by rememberUpdatedState(onLevel)
     val spreadNow by rememberUpdatedState(onSpread)
     val interactNow by rememberUpdatedState(onInteract)
     val offNow by rememberUpdatedState(onOff)
     val supportsNow by rememberUpdatedState(supportsLevels)
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                val a = appear.value
-                alpha = (a * 1.6f).coerceIn(0f, 1f)
-                scaleX = 0.35f + 0.65f * a; scaleY = 0.35f + 0.65f * a
-                transformOrigin = TransformOrigin(0.5f, 0f)
-            }
-            .clip(RoundedCornerShape(36.dp))
-            .background(TorchBg)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = { off ->
-                    interactNow()
-                    if (off.y > size.height * 0.62f) offNow()      // fener simgesine dokununca kapanır
-                })
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { interactNow() },
-                    onDrag = { change, drag ->
-                        change.consume()
-                        spreadNow(drag.x / (size.width * 0.9f))
-                        if (supportsNow) levelNow(-drag.y / (size.height * 0.75f))
-                    },
-                )
-            },
-    ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            val dpx = 1.dp.toPx()
-            val apex = Offset(w / 2f, h * 0.68f)
-            val half = lerpF(4f, 58f, spread)                   // huzmenin yarı açısı (derece)
-            val len = lerpF(0.30f * h, 0.60f * h, level)        // huzme uzunluğu
-            val k = 0.35f + 0.65f * level                       // parlaklık çarpanı
+    val d = LocalDensity.current.density
+    val a = appear.value
+    // Ada hapından tam karta: genişlik, yükseklik ve köşe yarıçapı birlikte büyür
+    val curW = lerpF(pillW / d, CARD_W_DP, a)
+    val curH = lerpF(pillH / d, CARD_H_DP, a)
+    val corner = lerpF(pillH / d / 2f, 44f, a)
+    val cardWpx = CARD_W_DP * d
+    val cardHpx = CARD_H_DP * d
+    val content = smooth(0.30f, 0.85f, a)
 
-            // En parlak + en geniş: büyük ışık topu
-            val gl = smooth(0.80f, 1f, level) * smooth(0.45f, 1f, spread)
-            if (gl > 0.01f) {
-                val r = lerpF(0.10f * w, 0.62f * w, gl)
-                val oc = Offset(w / 2f, h * 0.46f)
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        0f to Color.White.copy(alpha = 0.95f * gl), 0.35f to TorchLav.copy(alpha = 0.55f * gl),
-                        1f to Color.Transparent, center = oc, radius = r,
-                    ),
-                    radius = r, center = oc,
-                )
+    Box(Modifier.fillMaxSize(), contentAlignment = if (inverted) Alignment.BottomCenter else Alignment.TopCenter) {
+        Box(
+            Modifier
+                .size(curW.dp, curH.dp)
+                .clip(RoundedCornerShape(corner.dp))
+                .background(TorchBg)
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { off ->
+                        interactNow()
+                        if (off.y > cardHpx * 0.62f) offNow()      // fener simgesine dokununca kapanır
+                    })
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { interactNow() },
+                        onDrag = { change, drag ->
+                            change.consume()
+                            spreadNow(drag.x / (cardWpx * 0.9f))                      // sağa / sola: huzme genişliği
+                            if (supportsNow) levelNow(-drag.y / (cardHpx * 0.75f))    // yukarı / aşağı: parlaklık
+                        },
+                    )
+                },
+        ) {
+            Box(
+                Modifier
+                    .wrapContentSize(align = if (inverted) Alignment.BottomCenter else Alignment.TopCenter, unbounded = true)
+                    .requiredSize(CARD_W_DP.dp, CARD_H_DP.dp)
+                    .graphicsLayer { alpha = content },
+            ) {
+                TorchBeam(level, spread)
+                TorchOverlayArt(level, spread)
             }
-
-            // Işık huzmesi (fenerin ucundan yukarı açılan koni)
-            val cone = Path().apply {
-                moveTo(apex.x, apex.y)
-                arcTo(Rect(apex.x - len, apex.y - len, apex.x + len, apex.y + len), -90f - half, half * 2f, false)
-                close()
-            }
-            drawPath(
-                cone,
-                Brush.radialGradient(
-                    0f to Color.White.copy(alpha = 0.95f * k), 0.30f to TorchLav.copy(alpha = 0.70f * k),
-                    0.70f to TorchBlue.copy(alpha = 0.30f * k), 1f to Color.Transparent,
-                    center = apex, radius = len,
-                ),
-            )
-
-            // Noktalı dış yay (ölçek)
-            val rOuter = 0.58f * h
-            var a = -58f
-            while (a <= 58f) {
-                val rad = (a - 90f) * (PI / 180.0)
-                drawCircle(Color.White.copy(alpha = 0.28f), 0.9f * dpx,
-                    Offset(apex.x + rOuter * cos(rad).toFloat(), apex.y + rOuter * sin(rad).toFloat()))
-                a += 4f
-            }
-
-            // Parlaklığa göre büyüyen düz yay + ucunda güneş simgesi
-            val rIn = lerpF(0.12f * h, 0.58f * h, level)
-            val span = max(half, 8f)
-            drawArc(
-                color = Color.White.copy(alpha = 0.9f), startAngle = -90f - span, sweepAngle = span * 2f, useCenter = false,
-                topLeft = Offset(apex.x - rIn, apex.y - rIn), size = Size(rIn * 2f, rIn * 2f),
-                style = Stroke(width = 1.6f * dpx, cap = StrokeCap.Round),
-            )
-            val endRad = (-90f + span) * (PI / 180.0)
-            val ex = cos(endRad).toFloat(); val ey = sin(endRad).toFloat()
-            drawSun(Offset(apex.x + (rIn + 11f * dpx) * ex, apex.y + (rIn + 11f * dpx) * ey), 2.3f * dpx, Color.White.copy(alpha = 0.75f))
-
-            // Fener simgesi ve parıltısı
-            val gc = Offset(w / 2f, h * 0.83f)
-            drawCircle(
-                brush = Brush.radialGradient(0f to TorchLav.copy(alpha = 0.40f * k), 1f to Color.Transparent, center = Offset(gc.x, gc.y - 0.07f * w), radius = 0.36f * w),
-                radius = 0.36f * w, center = Offset(gc.x, gc.y - 0.07f * w),
-            )
-            val glyph = Color(
-                red = lerpF(0.56f, 0.93f, level), green = lerpF(0.54f, 0.91f, level), blue = lerpF(0.72f, 1f, level),
-            )
-            drawTorchGlyph(gc, 0.30f * w, glyph, TorchBg)
         }
+    }
+}
+
+private fun beamHalfAngle(spread: Float) = lerpF(3f, 50f, spread)
+
+/** Işık huzmesi: yumuşak kenarlı koni; kenarlarda hafif turuncu / mavi renk kayması (iOS'taki gibi). */
+@Composable
+private fun TorchBeam(level: Float, spread: Float) {
+    Canvas(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
+        val w = size.width
+        val h = size.height
+        val apex = Offset(w / 2f, h * 0.715f)
+        val half = beamHalfAngle(spread)
+        val len = beamRadius(level, h)
+        val k = 0.42f + 0.58f * level
+        val f = half / 360f
+        val c0 = 0.75f                                    // yukarı yön (sweep'te 270°)
+        val fr0 = TorchFringe.copy(alpha = 0f)
+        val stops = arrayOf(
+            0f to fr0,
+            (c0 - 1.25f * f) to fr0,
+            (c0 - 1.05f * f) to TorchFringe.copy(alpha = 0.28f),
+            (c0 - 0.84f * f) to TorchBlue.copy(alpha = 0.40f),
+            (c0 - 0.52f * f) to TorchTeal.copy(alpha = 0.62f),
+            (c0 - 0.22f * f) to TorchLav.copy(alpha = 0.86f),
+            c0 to Color.White.copy(alpha = 0.97f),
+            (c0 + 0.22f * f) to TorchLav.copy(alpha = 0.86f),
+            (c0 + 0.52f * f) to TorchTeal.copy(alpha = 0.62f),
+            (c0 + 0.84f * f) to TorchBlue.copy(alpha = 0.40f),
+            (c0 + 1.05f * f) to TorchFringe.copy(alpha = 0.28f),
+            (c0 + 1.25f * f) to fr0,
+            1f to fr0,
+        )
+        drawRect(Brush.sweepGradient(*stops, center = apex), alpha = k)
+        // Uzaklaştıkça sönen yumuşak maske
+        drawRect(
+            Brush.radialGradient(
+                0f to Color.White, 0.28f to Color.White.copy(alpha = 0.88f),
+                0.66f to Color.White.copy(alpha = 0.30f), 1f to Color.White.copy(alpha = 0f),
+                center = apex, radius = len,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+}
+
+/** Parlaklığa bağlı yay yarıçapı: sonunda kartın dışına taşar (en parlak: ekran ışıkla dolar). */
+private fun beamRadius(level: Float, h: Float): Float {
+    val base = lerpF(0.14f * h, 0.60f * h, level)
+    return base + smooth(0.80f, 1f, level) * 0.75f * h
+}
+
+@Composable
+private fun TorchOverlayArt(level: Float, spread: Float) {
+    Canvas(Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        val dpx = 1.dp.toPx()
+        val apex = Offset(w / 2f, h * 0.715f)
+        val half = beamHalfAngle(spread)
+        val rIn = beamRadius(level, h)
+        val k = 0.42f + 0.58f * level
+        val burst = smooth(0.80f, 1f, level)
+
+        // Sıcak çıkış noktası (fener başının hemen üstü)
+        drawCircle(
+            brush = Brush.radialGradient(
+                0f to Color.White.copy(alpha = 0.95f * k), 0.4f to TorchLav.copy(alpha = 0.45f * k),
+                1f to TorchLav.copy(alpha = 0f), center = apex, radius = 0.17f * h,
+            ),
+            radius = 0.17f * h, center = apex,
+        )
+
+        // En parlakta ışık tüm kartı doldurur
+        if (burst > 0.01f) {
+            val fr = lerpF(0.5f * h, 1.15f * h, burst)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    0f to Color.White.copy(alpha = 0.80f * burst), 0.45f to TorchLav.copy(alpha = 0.38f * burst),
+                    1f to TorchLav.copy(alpha = 0f), center = apex, radius = fr,
+                ),
+                radius = fr, center = apex,
+            )
+        }
+
+        // En parlak + en geniş: ortada büyük ışık topu
+        val gl = smooth(0.85f, 1f, level) * smooth(0.55f, 1f, spread)
+        if (gl > 0.01f) {
+            val r = lerpF(0.10f * w, 0.60f * w, gl)
+            val oc = Offset(w / 2f, h * 0.46f)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    0f to Color.White.copy(alpha = 0.95f * gl), 0.35f to TorchLav.copy(alpha = 0.50f * gl),
+                    1f to TorchLav.copy(alpha = 0f), center = oc, radius = r,
+                ),
+                radius = r, center = oc,
+            )
+        }
+
+        // Noktalı dış ölçek yayı
+        val rOuter = 0.60f * h
+        var ang = -50f
+        while (ang <= 50f) {
+            val rad = (ang - 90f) * (PI / 180.0)
+            drawCircle(Color.White.copy(alpha = 0.34f), 0.95f * dpx,
+                Offset(apex.x + rOuter * cos(rad).toFloat(), apex.y + rOuter * sin(rad).toFloat()))
+            ang += 4f
+        }
+
+        // Parlaklığa göre büyüyen düz yay + ucunda güneş
+        val span = max(half, 5f)
+        drawArc(
+            color = Color.White.copy(alpha = 0.85f), startAngle = -90f - span, sweepAngle = span * 2f, useCenter = false,
+            topLeft = Offset(apex.x - rIn, apex.y - rIn), size = Size(rIn * 2f, rIn * 2f),
+            style = Stroke(width = 1.7f * dpx, cap = StrokeCap.Round),
+        )
+        val endRad = (-90f + span) * (PI / 180.0)
+        val ex = cos(endRad).toFloat(); val ey = sin(endRad).toFloat()
+        val sunR = lerpF(2.5f, 5.5f, burst) * dpx
+        drawSun(Offset(apex.x + (rIn + 4.2f * sunR) * ex, apex.y + (rIn + 4.2f * sunR) * ey), sunR, Color.White.copy(alpha = 0.72f))
+
+        // Fener simgesi ve parıltısı
+        val gc = Offset(w / 2f, h * 0.83f)
+        drawCircle(
+            brush = Brush.radialGradient(0f to TorchLav.copy(alpha = 0.40f * k), 1f to TorchLav.copy(alpha = 0f), center = Offset(gc.x, gc.y - 0.07f * w), radius = 0.36f * w),
+            radius = 0.36f * w, center = Offset(gc.x, gc.y - 0.07f * w),
+        )
+        val glyph = Color(
+            red = lerpF(0.56f, 0.93f, level), green = lerpF(0.54f, 0.91f, level), blue = lerpF(0.72f, 1f, level),
+        )
+        drawTorchGlyph(gc, 0.30f * w, glyph, TorchBg)
     }
 }
