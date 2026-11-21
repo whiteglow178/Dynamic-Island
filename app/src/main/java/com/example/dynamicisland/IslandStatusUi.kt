@@ -108,7 +108,7 @@ internal fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
 }
 
 @Composable
-private fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
+internal fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val sc = size.width / 24f
         withTransform({ scale(sc, sc, Offset.Zero) }) {

@@ -139,7 +139,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { edgeGlow.attach() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
-        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() } }
+        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() }; runCatching { landscape.rehost() } }
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
@@ -147,6 +147,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
         runCatching { torch.start() }           // fener açılınca ada göstergesi + ışık kartı
+        runCatching { landscape.start() }       // yatay mod: dikey ada + yan baloncuklar
         runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
@@ -229,7 +230,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
                 val st = settings.value
                 // iOS tarzı banner açıksa bildirim adada değil cam banner olarak gösterilir; pencere eklenemezse adaya düşer
-                if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
+                if (!(st.notifBanner && !landscape.active && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
             is IslandEvent.ShazamListening -> shazam.onListening()
@@ -767,6 +768,20 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 inverted = s.invertedIsland,
             )
         }.also { c -> c.onCover = { on -> lockDot.suppress = on; lockDot.recheck() } }
+    }
+
+    // ---- Yatay mod: telefon yan çevrilince dikey ada + simgesi düz yan baloncuklar -> LandscapeIsland.kt
+    private val landscape by lazy {
+        LandscapeController(this, this, this, wm, settings, ui, scope) { on -> setMainIslandHidden(on) }
+    }
+    private var mainHidden = false
+    /** Yatay mod açıkken normal ada penceresi görünmez olur (çizilmez, dokunuş almaz); kapanınca geri gelir. */
+    private fun setMainIslandHidden(h: Boolean) {
+        mainHidden = h
+        applyMainHidden()
+    }
+    private fun applyMainHidden() {
+        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden) View.INVISIBLE else View.VISIBLE }
     }
 
     // ---- Fener (flaş) göstergesi -> TorchOverlay.kt
@@ -1498,6 +1513,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         d.show()
         d.window?.decorView?.let { stripInsets(it) }   // show'dan SONRA: kalan dolguları sıfırla
         dialog = d
+        applyMainHidden()
     }
 
     /** Dialog'un decor/içerik katmanlarına eklediği tüm sistem çubuğu dolgularını sıfırlar. */
@@ -1975,6 +1991,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { lockDot.stop() }
         runCatching { faceId.stop() }
         runCatching { torch.stop() }
+        runCatching { landscape.stop() }
         IslandSounds.stopAll()
         lyricsJob?.cancel()
         runCatching { fxWindow.detach() }
