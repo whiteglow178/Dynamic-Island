@@ -4,14 +4,21 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- ada (hap) -->
     <path
         android:fillColor="#000000"
-        android:pathData="M38,40 h32 a14,14 0 0 1 0,28 h-32 a14,14 0 0 1 0,-28 z" />
+        android:strokeColor="#4A3F9E"
+        android:strokeWidth="0.9"
+        android:pathData="M27,42 h54 a12,12 0 0 1 0,24 h-54 a12,12 0 0 1 0,-24 z" />
+    <!-- "omni" halkası: her şeyi kapsayan göz -->
     <path
-        android:fillColor="#3A3A3C"
-        android:pathData="M33,54 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 z" />
-    <path android:fillColor="#30D158" android:pathData="M60,50 h3 v8 h-3 z" />
-    <path android:fillColor="#30D158" android:pathData="M65,47 h3 v14 h-3 z" />
-    <path android:fillColor="#30D158" android:pathData="M70,49 h3 v10 h-3 z" />
-    <path android:fillColor="#30D158" android:pathData="M75,51 h3 v6 h-3 z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#D2C4FF"
+        android:strokeWidth="2"
+        android:pathData="M33.5,54 a6.5,6.5 0 1 0 13,0 a6.5,6.5 0 1 0 -13,0 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M37.8,54 a2.2,2.2 0 1 0 4.4,0 a2.2,2.2 0 1 0 -4.4,0 z" />
+    <!-- üç özellik noktası -->
+    <path android:fillColor="#9A86FF" android:pathData="M55.6,54 a2.4,2.4 0 1 0 4.8,0 a2.4,2.4 0 1 0 -4.8,0 z" />
+    <path android:fillColor="#5AB0FF" android:pathData="M63.6,54 a2.4,2.4 0 1 0 4.8,0 a2.4,2.4 0 1 0 -4.8,0 z" />
+    <path android:fillColor="#FF7FCB" android:pathData="M71.6,54 a2.4,2.4 0 1 0 4.8,0 a2.4,2.4 0 1 0 -4.8,0 z" />
 </vector>
