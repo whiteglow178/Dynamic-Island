@@ -468,6 +468,13 @@ private fun HomeScreen() {
         SectionCard("Dene", "Adanın görünümlerini ve animasyonlarını önizle") {
             IslandActionButton("Dene", { tryOpen = true }, tonal = false)
         }
+        SectionCard("Uygulama ikonu", "Ana ekrandaki ikonun rengi") {
+            var darkIcon by remember { mutableStateOf(AppIcon.isDark(ctx)) }
+            RadioRow("Beyaz", "Açık zeminli ikon", !darkIcon) { darkIcon = false; AppIcon.set(ctx, false) }
+            RadioRow("Koyu", "Antrasit zeminli ikon", darkIcon) { darkIcon = true; AppIcon.set(ctx, true) }
+            Text("Ana ekrandaki ikonun değişmesi birkaç saniye sürebilir; bazı başlatıcılarda uygulamayı yeniden açmak gerekir.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
         Spacer(Modifier.height(8.dp))
     }
 

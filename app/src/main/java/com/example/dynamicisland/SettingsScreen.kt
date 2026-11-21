@@ -752,13 +752,6 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 HiddenAppsPicker(draft.hiddenAppList()) { draft = draft.copy(hiddenAppPkgs = it.joinToString(",")) }
             }
         }
-        sec("Uygulama ikonu", "Ana ekrandaki ikonun rengi") {
-            var darkIcon by remember { mutableStateOf(AppIcon.isDark(ctx)) }
-            RadioRow("Beyaz", "Açık zeminli ikon", !darkIcon) { darkIcon = false; AppIcon.set(ctx, false) }
-            RadioRow("Koyu", "Antrasit zeminli ikon", darkIcon) { darkIcon = true; AppIcon.set(ctx, true) }
-            Text("Ana ekrandaki ikonun değişmesi birkaç saniye sürebilir; bazı başlatıcılarda uygulamayı yeniden açmak gerekir.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-        }
         sec("Yedekleme", "Ayarlarını dosyaya kaydet ya da dosyadan geri yükle") {
             IslandActionButton("Ayarları dışa aktar", { exportLauncher.launch("omni-island-ayarlar.json") })
             IslandActionButton("Yedekten geri yükle", { importLauncher.launch(arrayOf("*/*")) })
