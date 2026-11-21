@@ -243,7 +243,7 @@ class IslandProgress(val w: State<Float>, val h: State<Float>) {
     val mean: Float get() = (w.value + h.value) / 2f
 }
 
-private fun specFor(cfg: IslandSettings, expanding: Boolean, isWidth: Boolean): FiniteAnimationSpec<Float> {
+internal fun specFor(cfg: IslandSettings, expanding: Boolean, isWidth: Boolean): FiniteAnimationSpec<Float> {
     if (!cfg.animEnabled) return snap()
     return when (cfg.animStyle) {
         0 -> spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)           // Yaylı
@@ -527,7 +527,7 @@ private fun darkTone(c: Color): Color {
 }
 
 /** Ekolayzır için: albüm rengi aynı tonda ama en parlak ve biraz pastel; koyu ada gövdesinden net ayrılır. */
-private fun brightTone(c: Color): Color {
+internal fun brightTone(c: Color): Color {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(c.toArgb(), hsv)
     hsv[1] = (hsv[1] * 0.85f).coerceIn(0f, 0.8f)
@@ -535,7 +535,7 @@ private fun brightTone(c: Color): Color {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
-private fun bodyColorFor(cfg: IslandSettings, art: Color?, accent: Color): Color {
+internal fun bodyColorFor(cfg: IslandSettings, art: Color?, accent: Color): Color {
     val tint: Color? = if (cfg.dynamicColor) art else null
     val base = Color(cfg.islandColorArgb)   // albüm rengi kapalı / kapak yok: ada seçilen renge boyanır (varsayılan siyah)
     return when {
@@ -663,7 +663,7 @@ private fun DrawScope.drawGlassRim(cornerT: Float = -1f) {
 
 /** Renk State olarak taşınır, yalnızca çizim fazında okunur => animasyonda recomposition yok. */
 @Composable
-private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape, cornerT: Float = -1f, borderTint: Color? = null): Modifier {
+internal fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape, cornerT: Float = -1f, borderTint: Color? = null): Modifier {
     val liquid = cfg.glassEnabled && cfg.liquidEnabled
     var m = this.clip(shape).drawBehind { drawRect(body.value) }
     if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular, cornerT) }
@@ -690,7 +690,7 @@ private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shap
 }
 
 /** Blur filtresi yerine kademeli (azalan opaklıkta) halkalar: GPU dostu, her cihazda çalışır. */
-private fun Modifier.islandGlow(enabled: Boolean, color: State<Color>, intensity: Float): Modifier =
+internal fun Modifier.islandGlow(enabled: Boolean, color: State<Color>, intensity: Float): Modifier =
     if (!enabled) this else this.drawBehind {
         val rings = 6
         val step = GLOW_PAD_DP.dp.toPx() / rings
@@ -1148,7 +1148,7 @@ fun IslandPill(
 
 /** Kapağı ada içine net (bulanıklaştırılmamış) çizer; yazılar okunsun diye üstüne koyu katman biner. */
 @Composable
-private fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: IslandProgress) {
+internal fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: IslandProgress) {
     Box(
         Modifier.fillMaxSize().graphicsLayer {
             // Kapalı adada kapalıysa: ada açılırken belirir, küçülürken solar
