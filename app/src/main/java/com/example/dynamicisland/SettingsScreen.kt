@@ -694,6 +694,10 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Ada evcili", "Adanın altından sarkan küçük yaratık") {
             SwitchRow("Ada evcili", "Adanın kenarına tutunup sarkar. Şarj olurken ve gece uyur, müzik çalarken dans eder, uzun süre dokunmazsan sıkılıp esner, bildirim gelince heyecanla aşağı sarkar, adaya dokununca savrulur. Ada açılınca adanın içine saklanır",
                 draft.playPet) { draft = draft.copy(play = draft.play.copy(playPet = it)) }
+            if (draft.playPet) {
+                SwitchRow("Konuşsun", "Yanında küçük konuşma baloncukları çıkar: sabah \"Günaydın!\", pil azken \"Acıktım…\", müzikte notalar, gece \"Uyku vakti…\", bildirimde \"Yeni bildirim!\", sulayınca \"Teşekkürler!\". Ara sıra kendi kendine de konuşur",
+                    draft.playPetTalk) { draft = draft.copy(play = draft.play.copy(playPetTalk = it)) }
+            }
         }
         sec("Mıknatıs", "Şarj ve kulaklık bağlanınca") {
             SwitchRow("Şarj kablosunu yakalasın", "Şarja takınca ada, kabloya doğru aşağı sıvı bir damla uzatıp geri çeker",
@@ -746,6 +750,58 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Gizli oyun", "Boştaki adaya hızlıca 5 kez dokununca \"Ada Pong\" açılır: ada raket olur, parmağınla sağa sola kaydırıp topu kaçırmamaya çalışırsın. Adaya tek dokunuşun başka bir işi varsa (favoriler, çeviri) bu kısayol çalışmaz",
                 draft.playGame) { draft = draft.copy(play = draft.play.copy(playGame = it)) }
             IslandActionButton("Oyunu şimdi aç", { IslandGameActivity.open(ctx) })
+        }
+        sec("Adayı fırlat", "Adayı yana savur, ekranda seksin") {
+            SwitchRow("Adayı fırlat", "Boştaki adayı parmağınla hızlıca sağa ya da sola savur: ada ekrana fırlar, kenarlara çarpıp seker, yerçekimiyle düşer, sonra yaylanarak yerine döner. \"Boştayken de göster\" açık olmalı",
+                draft.playFling) { draft = draft.copy(play = draft.play.copy(playFling = it)) }
+        }
+        sec("Ada saksısı", "Adadan sarkan, her gün sulanan bitki") {
+            SwitchRow("Ada saksısı", "Adanın kenarından küçük bir sarmaşık sarkar. Her gün adaya ilk dokunuşun onu sular ve bir boy büyür. Bir gün sulamazsan yaprakları düşer, iki gün sulamazsan solar ve küçülmeye başlar. Yedi gün üst üste bakarsan çiçek açar",
+                draft.playPlant) { draft = draft.copy(play = draft.play.copy(playPlant = it)) }
+            if (draft.playPlant) {
+                LaunchedEffect(Unit) { PlantStore.load(ctx) }
+                val st = when (PlantStore.thirst) { 0 -> "bugün sulandı"; 1 -> "susadı, adaya dokun"; else -> "soldu, hemen sula" }
+                Text("Boy: ${PlantStore.growth}/14 · $st", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            }
+        }
+        sec("Mevsim modu", "Kar, çiçek, güneş, yaprak") {
+            SwitchRow("Mevsim modu", "Kışın adanın kenarında kar birikir ve kar taneleri süzülür, ilkbaharda kenarında çiçekler açar ve yapraklar uçuşur, yazın çevresinde ışıltılar parlar, sonbaharda adadan sarı-turuncu yapraklar dökülür",
+                draft.playSeason) { draft = draft.copy(play = draft.play.copy(playSeason = it)) }
+            if (draft.playSeason) {
+                SegmentedTabs(listOf("Otomatik", "Kış", "Bahar", "Yaz", "Güz"), draft.playSeasonMode) { draft = draft.copy(play = draft.play.copy(playSeasonMode = it)) }
+            }
+        }
+        sec("Ritim kısayolları", "Adaya ritimle dokun, uygulama açılsın") {
+            SwitchRow("Ritim kısayolları", "Boştaki adaya kendi belirlediğin ritimle dokununca seçtiğin uygulama açılır. Adaya tek dokunuşun başka bir işi varsa (favoriler, çeviri) o da çalışmaya devam eder",
+                draft.playRhythm) { draft = draft.copy(play = draft.play.copy(playRhythm = it)) }
+            if (draft.playRhythm) {
+                RhythmShortcutsEditor(draft.playRhythms) { draft = draft.copy(play = draft.play.copy(playRhythms = it)) }
+            }
+        }
+        sec("Kutlama anları", "Konfeti zamanı") {
+            SwitchRow("Kutlama anları", "Şarjda pil %100 olunca, doğum gününde ve yılbaşında adadan konfeti fışkırır, evcil dans eder, yüz sevinir",
+                draft.playParty) { draft = draft.copy(play = draft.play.copy(playParty = it)) }
+            if (draft.playParty) {
+                val months = listOf("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
+                SliderRow("Doğum günü: gün", draft.playBirthDay.toFloat(), 0f..31f, if (draft.playBirthDay == 0) "Yok" else "${draft.playBirthDay}") {
+                    draft = draft.copy(play = draft.play.copy(playBirthDay = kotlin.math.round(it).toInt()))
+                }
+                if (draft.playBirthDay > 0) {
+                    SliderRow("Doğum günü: ay", draft.playBirthMonth.toFloat(), 1f..12f, months[(draft.playBirthMonth - 1).coerceIn(0, 11)]) {
+                        draft = draft.copy(play = draft.play.copy(playBirthMonth = kotlin.math.round(it).toInt().coerceIn(1, 12)))
+                    }
+                }
+                IslandActionButton("Şimdi dene", { PlayFx.emit(PlayEvent.Party) })
+            }
+        }
+        sec("Karalama tahtası", "Adaya kendi çizimin") {
+            SwitchRow("Karalama tahtası", "Boştaki adayı basılı tutunca çizim tahtası açılır. Çizdiğin şey boştaki adada küçük bir çıkartma olarak durur. Basılı tutmanın başka bir işi varsa (favoriler, çeviri) aşağıdaki düğmeyi kullan",
+                draft.playDoodle) { draft = draft.copy(play = draft.play.copy(playDoodle = it)) }
+            if (draft.playDoodle) {
+                LaunchedEffect(Unit) { DoodleStore.load(ctx) }
+                IslandActionButton("Çiz", { IslandDoodleActivity.open(ctx) })
+                if (DoodleStore.strokes.isNotEmpty()) IslandActionButton("Çizimi sil", { DoodleStore.save(ctx, emptyList()) })
+            }
         }
         sec("Cep hissi", "Ekran açılınca ada yerine düşer") {
             SwitchRow("Cep hissi", "Ekran açılınca ada kamera deliğinden düşüp yaylanarak yerine oturur. Uzun süre boş kalınca küçülüp kamera deliğine girer, bir olay gelince fırlayıp çıkar",

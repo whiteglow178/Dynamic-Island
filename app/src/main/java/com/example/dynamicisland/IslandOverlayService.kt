@@ -683,6 +683,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         PlayFx.lastActivityMs = System.currentTimeMillis()      // evcil: dokunulunca sıkılmaz
         PlayFx.fullness = 0f                                    // bildirim yiyen ada: dokununca "tokluk" geçer
         if (secretGameTap()) return
+        rhythmTap()
+        // Ada saksısı: günün ilk dokunuşu bitkiyi sular
+        if (settings.value.playPlant && PlantStore.water(this)) PlayFx.emit(PlayEvent.Water)
         if (settings.value.playRipple && settings.value.playRippleTap) PlayFx.emit(PlayEvent.Ripple)
         if (settings.value.playPuff) PlayFx.emit(PlayEvent.Puff)
         if (!landscape.active && openStack()) return          // birden fazla olay varsa hepsi alt alta açılır (yatay modda baloncuklar var)
@@ -857,6 +860,28 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val playCtl by lazy { PlayController(this, settings, scope) }
     private var playOn = false
     private val gameTaps = ArrayDeque<Long>()
+    private val rhythmTaps = ArrayList<Long>()
+    private var rhythmJob: Job? = null
+
+    /** Ritim kısayolları: boştaki adaya yapılan dokunuşlar biriktirilir, 0,8 sn ara verilince ritim karşılaştırılır. */
+    private fun rhythmTap() {
+        val s = settings.value
+        if (!s.playRhythm || ui.value.content !is IslandContent.Idle) { rhythmTaps.clear(); return }
+        val now = android.os.SystemClock.uptimeMillis()
+        if (rhythmTaps.isNotEmpty() && now - rhythmTaps.last() > 1_500L) rhythmTaps.clear()
+        rhythmTaps.add(now)
+        rhythmJob?.cancel()
+        rhythmJob = scope.launch {
+            delay(800L)
+            val taps = rhythmTaps.toList()
+            rhythmTaps.clear()
+            if (taps.size < 3) return@launch                       // tek / çift dokunuş kısayol sayılmaz
+            val pat = Rhythm.classify(taps.zipWithNext { a, b -> b - a })
+            val hit = Rhythm.parse(settings.value.playRhythms).firstOrNull { it.first == pat } ?: return@launch
+            PlayFx.kick(3f)
+            launchFavorite(hit.second)
+        }
+    }
 
     /** Gizli oyun: boştaki adaya 1,8 sn içinde 5 kez dokununca "Ada Pong" açılır. */
     private fun secretGameTap(): Boolean {
@@ -985,6 +1010,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (cur.content is IslandContent.Idle) {
             if (s.translateReady() && s.translateTrigger == 1) openTranslate()
             else if (s.favoritesReady()) favorites.open()
+            else if (s.playDoodle) IslandDoodleActivity.open(this)          // karalama tahtası
         } else if (cur.content is IslandContent.Media && !cur.expanded) {
             // Küçük müzik adası: basılı tutunca müzik uygulaması açılır ya da ada genişler
             if (s.openCompLong) openMusicApp()
@@ -1904,7 +1930,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
-        val playTouch = k.kind == 0 && s.showIdle && (s.playPull || s.playGame)
+        val playTouch = k.kind == 0 && s.showIdle &&
+            (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant)
         setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady())) || playTouch) && !appHide.hidden)
         when {
             k.stackH > 0 -> {

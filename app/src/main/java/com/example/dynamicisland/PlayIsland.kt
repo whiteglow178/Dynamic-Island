@@ -35,6 +35,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
@@ -237,11 +239,19 @@ fun PlayIslandHost(
         }
     }
 
+    val flingOn = s.playFling && compactIdle
+    val doodleOn = s.playDoodle && compactIdle
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(s.playDoodle) { if (s.playDoodle) DoodleStore.load(ctx) }
+    // Ada savrulmuşken açılırsa / gizlenirse uçuş takılı kalmasın
+    LaunchedEffect(PlayFx.flying) { if (PlayFx.flying) { delay(4_000L); PlayFx.flying = false } }
+
     val anyTransform = s.playPhysics || s.playPocket || s.playPuff || s.playMagnet || s.playEater || s.playPull
     Box(
         Modifier
             .fillMaxSize()
             .graphicsLayer {
+                alpha = if (PlayFx.flying) 0f else 1f                    // savrulurken ada efekt penceresinde uçar
                 if (!anyTransform) return@graphicsLayer
                 val j = PlayFx.jelly
                 val b = if (cfg.playPuff) PlayFx.puff else 0f
@@ -287,11 +297,39 @@ fun PlayIslandHost(
                     }
                 }
             }
+            .pointerInput(flingOn) {
+                if (!flingOn) return@pointerInput
+                // Savurma: hızlı yatay kaydırma. Dokunuşlar tüketilmez.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val vt = VelocityTracker()
+                    vt.addPosition(down.uptimeMillis, down.position)
+                    var lastPos = down.position
+                    while (true) {
+                        val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!ch.pressed) break
+                        vt.addPosition(ch.uptimeMillis, ch.position)
+                        lastPos = ch.position
+                    }
+                    val v = vt.calculateVelocity()
+                    val moved = lastPos - down.position
+                    if (abs(v.x) > 1_100.dp.toPx() && abs(v.x) > abs(v.y) * 1.2f && abs(moved.x) > 24.dp.toPx() && !PlayFx.flying) {
+                        PlayFx.flingVx = v.x; PlayFx.flingVy = v.y
+                        PlayFx.flying = true
+                        PlayFx.emit(PlayEvent.Fling)
+                    }
+                }
+            }
             .drawWithContent {
                 drawContent()
                 if (liquidOn) {
                     val cy = if (cfg.invertedIsland) size.height - padPx - chPx / 2f else padPx + chPx / 2f
                     drawLiquid(Offset(size.width / 2f, cy), cwPx, chPx, liquidBubbles.value)
+                }
+                if (doodleOn && DoodleStore.strokes.isNotEmpty()) {
+                    val cy = if (cfg.invertedIsland) size.height - padPx - chPx / 2f else padPx + chPx / 2f
+                    drawDoodle(DoodleStore.strokes, Offset(size.width / 2f, cy), cwPx, chPx)
                 }
                 if (face.visible) {
                     val cy = if (cfg.invertedIsland) size.height - padPx - chPx / 2f else padPx + chPx / 2f
@@ -326,6 +364,11 @@ private fun rememberFaceState(on: Boolean, compactIdle: Boolean): FaceState {
         if (!on) return@LaunchedEffect
         PlayFx.events.collect { e ->
             if (e == PlayEvent.Notif) pendingHappy = true
+            if (e == PlayEvent.Party || e == PlayEvent.Water) launch {
+                f.happyUntil = System.currentTimeMillis() + (if (e == PlayEvent.Party) 4_000L else 1_500L)
+                delay(if (e == PlayEvent.Party) 4_050L else 1_550L)
+                f.happyUntil = 0L
+            }
             if (e == PlayEvent.ScreenOn) launch {
                 f.open.snapTo(0.05f); delay(260); f.open.animateTo(1f, tween(320))
             }
@@ -477,5 +520,22 @@ private fun DrawScope.drawLiquid(c: Offset, cw: Float, ch: Float, bubbleT: Float
         }
         // Yüzeydeki ışık çizgisi
         drawPath(surf, Color.White.copy(alpha = 0.55f), style = Stroke(ch * 0.04f, cap = StrokeCap.Round))
+    }
+}
+
+// ================================================================ Karalama tahtası
+
+/** Kayıtlı çizimi boştaki adanın içine (kenarlardan biraz içeride) beyaz çizgilerle çizer. */
+private fun DrawScope.drawDoodle(strokes: List<List<Offset>>, c: Offset, cw: Float, ch: Float) {
+    val l = c.x - cw / 2f + ch * 0.35f
+    val t = c.y - ch / 2f + ch * 0.14f
+    val w = cw - ch * 0.7f
+    val h = ch * 0.72f
+    val col = Color.White.copy(alpha = 0.92f)
+    for (st in strokes) {
+        if (st.size == 1) { drawCircle(col, ch * 0.04f, Offset(l + st[0].x * w, t + st[0].y * h)); continue }
+        val p = Path()
+        st.forEachIndexed { i, o -> if (i == 0) p.moveTo(l + o.x * w, t + o.y * h) else p.lineTo(l + o.x * w, t + o.y * h) }
+        drawPath(p, col, style = Stroke(ch * 0.07f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
     }
 }

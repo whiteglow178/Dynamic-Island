@@ -421,6 +421,17 @@ data class PlaySettings(
     val playDaylight: Boolean = false,        // adanın çevresinde günün saatine göre renk değiştiren hale
     val playDaylightAmt: Float = 0.6f,        // hale parlaklığı 0..1
     val playGame: Boolean = false,            // boştaki adaya hızlıca 5 kez dokununca gizli oyun
+    val playFling: Boolean = false,           // adayı yana savurunca ekranda seker, sonra yerine döner
+    val playPetTalk: Boolean = true,          // evcil konuşma baloncukları (evcil açıkken)
+    val playPlant: Boolean = false,           // adadan sarkan, her gün dokunarak sulanan bitki
+    val playSeason: Boolean = false,          // mevsime göre kar / çiçek / parıltı / yaprak
+    val playSeasonMode: Int = 0,              // 0 otomatik (tarihe göre), 1 kış, 2 ilkbahar, 3 yaz, 4 sonbahar
+    val playRhythm: Boolean = false,          // boştaki adaya ritimle dokununca uygulama açılır
+    val playRhythms: String = "",             // "SSL=paket;LS=paket" (S kısa ara, L uzun ara)
+    val playParty: Boolean = false,           // pil %100, doğum günü, yılbaşı: konfeti
+    val playBirthDay: Int = 0,                // doğum günü (gün, 0 = yok)
+    val playBirthMonth: Int = 1,              // doğum günü (ay)
+    val playDoodle: Boolean = false,          // boştaki adada kendi çizimin
 )
 
 val IslandSettings.playPhysics get() = play.playPhysics
@@ -443,6 +454,17 @@ val IslandSettings.playPull get() = play.playPull
 val IslandSettings.playDaylight get() = play.playDaylight
 val IslandSettings.playDaylightAmt get() = play.playDaylightAmt
 val IslandSettings.playGame get() = play.playGame
+val IslandSettings.playFling get() = play.playFling
+val IslandSettings.playPetTalk get() = play.playPetTalk
+val IslandSettings.playPlant get() = play.playPlant
+val IslandSettings.playSeason get() = play.playSeason
+val IslandSettings.playSeasonMode get() = play.playSeasonMode
+val IslandSettings.playRhythm get() = play.playRhythm
+val IslandSettings.playRhythms get() = play.playRhythms
+val IslandSettings.playParty get() = play.playParty
+val IslandSettings.playBirthDay get() = play.playBirthDay
+val IslandSettings.playBirthMonth get() = play.playBirthMonth
+val IslandSettings.playDoodle get() = play.playDoodle
 
 class SettingsRepository(context: Context) {
     private val store = context.applicationContext.islandStore
@@ -481,6 +503,9 @@ class SettingsRepository(context: Context) {
         val PL_RIP = booleanPreferencesKey("pl_rip"); val PL_RIP_T = booleanPreferencesKey("pl_rip_t"); val PL_POC = booleanPreferencesKey("pl_poc"); val PL_POC_S = floatPreferencesKey("pl_poc_s")
         val PL_LIQ = booleanPreferencesKey("pl_liq"); val PL_EAT = booleanPreferencesKey("pl_eat"); val PL_EAT_F = booleanPreferencesKey("pl_eat_f"); val PL_PULL = booleanPreferencesKey("pl_pull")
         val PL_DAY = booleanPreferencesKey("pl_day"); val PL_DAY_A = floatPreferencesKey("pl_day_a"); val PL_GAME = booleanPreferencesKey("pl_game")
+        val PL_FLING = booleanPreferencesKey("pl_fling"); val PL_TALK = booleanPreferencesKey("pl_talk"); val PL_PLANT = booleanPreferencesKey("pl_plant")
+        val PL_SEASON = booleanPreferencesKey("pl_season"); val PL_SEASON_M = intPreferencesKey("pl_season_m"); val PL_RHY = booleanPreferencesKey("pl_rhy"); val PL_RHYS = stringPreferencesKey("pl_rhys")
+        val PL_PARTY = booleanPreferencesKey("pl_party"); val PL_BD = intPreferencesKey("pl_bd"); val PL_BM = intPreferencesKey("pl_bm"); val PL_DOODLE = booleanPreferencesKey("pl_doodle")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val INV_ISLAND = booleanPreferencesKey("inv_island")
         val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below"); val LAND_IN_ISLAND = booleanPreferencesKey("land_in_island")
@@ -658,6 +683,11 @@ class SettingsRepository(context: Context) {
                 playLiquid = p[K.PL_LIQ] ?: d.playLiquid, playEater = p[K.PL_EAT] ?: d.playEater, playEaterFull = p[K.PL_EAT_F] ?: d.playEaterFull,
                 playPull = p[K.PL_PULL] ?: d.playPull, playDaylight = p[K.PL_DAY] ?: d.playDaylight, playDaylightAmt = p[K.PL_DAY_A] ?: d.playDaylightAmt,
                 playGame = p[K.PL_GAME] ?: d.playGame,
+                playFling = p[K.PL_FLING] ?: d.playFling, playPetTalk = p[K.PL_TALK] ?: d.playPetTalk, playPlant = p[K.PL_PLANT] ?: d.playPlant,
+                playSeason = p[K.PL_SEASON] ?: d.playSeason, playSeasonMode = p[K.PL_SEASON_M] ?: d.playSeasonMode,
+                playRhythm = p[K.PL_RHY] ?: d.playRhythm, playRhythms = p[K.PL_RHYS] ?: d.playRhythms,
+                playParty = p[K.PL_PARTY] ?: d.playParty, playBirthDay = p[K.PL_BD] ?: d.playBirthDay, playBirthMonth = p[K.PL_BM] ?: d.playBirthMonth,
+                playDoodle = p[K.PL_DOODLE] ?: d.playDoodle,
             ),
             launchSpeed = p[K.LA_SPD] ?: d.launchSpeed,
             musicOpenAnim = p[K.MO_ANIM] ?: d.musicOpenAnim,
@@ -788,7 +818,9 @@ class SettingsRepository(context: Context) {
             it[K.PL_MAG] = s.playMagnet; it[K.PL_MAG_B] = s.playMagnetBuds; it[K.PL_PUFF] = s.playPuff; it[K.PL_PUFF_S] = s.playPuffStrength
             it[K.PL_FACE] = s.playFace; it[K.PL_RIP] = s.playRipple; it[K.PL_RIP_T] = s.playRippleTap; it[K.PL_POC] = s.playPocket; it[K.PL_POC_S] = s.playPocketIdleSec;
             it[K.PL_LIQ] = s.playLiquid; it[K.PL_EAT] = s.playEater; it[K.PL_EAT_F] = s.playEaterFull; it[K.PL_PULL] = s.playPull
-            it[K.PL_DAY] = s.playDaylight; it[K.PL_DAY_A] = s.playDaylightAmt; it[K.PL_GAME] = s.playGame; it[K.HIDE_MUSIC] = s.hideInMusicApp
+            it[K.PL_DAY] = s.playDaylight; it[K.PL_DAY_A] = s.playDaylightAmt; it[K.PL_GAME] = s.playGame;
+            it[K.PL_FLING] = s.playFling; it[K.PL_TALK] = s.playPetTalk; it[K.PL_PLANT] = s.playPlant; it[K.PL_SEASON] = s.playSeason; it[K.PL_SEASON_M] = s.playSeasonMode
+            it[K.PL_RHY] = s.playRhythm; it[K.PL_RHYS] = s.playRhythms; it[K.PL_PARTY] = s.playParty; it[K.PL_BD] = s.playBirthDay; it[K.PL_BM] = s.playBirthMonth; it[K.PL_DOODLE] = s.playDoodle; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.INV_ISLAND] = s.invertedIsland
             it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow; it[K.LAND_IN_ISLAND] = s.landscapeEventsInIsland

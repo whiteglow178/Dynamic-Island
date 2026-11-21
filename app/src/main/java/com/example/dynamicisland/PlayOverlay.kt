@@ -21,6 +21,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -33,6 +35,15 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Job
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -76,7 +87,8 @@ class PlayOverlay(
     private var lp: WindowManager.LayoutParams? = null
     private var tries = 0
 
-    fun wanted(s: IslandSettings) = s.playPet || s.playMagnet || s.playRipple || s.playPuff || s.playEater || s.playDaylight
+    fun wanted(s: IslandSettings) = s.playPet || s.playMagnet || s.playRipple || s.playPuff || s.playEater || s.playDaylight ||
+        s.playFling || s.playPlant || s.playSeason || s.playParty
 
     fun attach() {
         if (view != null || !wanted(settings.value)) return
@@ -155,11 +167,15 @@ private fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow
     if (!anchor.shown) return
     Box(Modifier.fillMaxSize()) {
         if (s.playDaylight) DaylightFx(anchor, s.playDaylightAmt)
+        if (s.playSeason) SeasonFx(anchor, seasonOf(s.playSeasonMode))
+        if (s.playPlant) PlantFx(anchor)
         if (s.playEater) EaterFx(anchor)
         if (s.playRipple) RippleFx(anchor)
         if (s.playMagnet) MagnetFx(anchor)
         if (s.playPuff) PuffDustFx(anchor)
-        if (s.playPet) PetFx(anchor)
+        if (s.playPet) PetFx(anchor, s.playPetTalk, s.playPlant)
+        if (s.playParty) PartyFx(anchor)
+        if (s.playFling) FlingFx(anchor)
     }
 }
 
@@ -343,17 +359,53 @@ private fun PuffDustFx(a: PlayAnchor) {
 // ================================================================ 2) Ada evcili
 
 @Composable
-private fun PetFx(a: PlayAnchor) {
+private fun PetFx(a: PlayAnchor, talk: Boolean, plantOn: Boolean) {
     val show = a.compactVisible && PlayFx.pocket < 0.5f
     val hide = remember { Animatable(if (show) 0f else 1f) }
     LaunchedEffect(show) { hide.animateTo(if (show) 0f else 1f, tween(if (show) 520 else 320, easing = FastOutSlowInEasing)) }
     val peek = remember { Animatable(0f) }
+    // ---- Konuşma baloncuğu
+    val measurer = rememberTextMeasurer()
+    var say by remember { mutableStateOf<String?>(null) }
+    val sayAnim = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val sayJob = remember { arrayOfNulls<Job>(1) }
+    val talkNow by rememberUpdatedState(talk && show)
+    fun speak(text: String) {
+        if (!talkNow) return
+        sayJob[0]?.cancel()
+        say = text
+        sayJob[0] = scope.launch {
+            sayAnim.snapTo(0f)
+            sayAnim.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 500f))
+            delay(2_400L)
+            sayAnim.animateTo(0f, tween(220))
+        }
+    }
     LaunchedEffect(Unit) {
         PlayFx.events.collect { e ->
-            if (e == PlayEvent.Notif) launch {                     // bildirim: heyecanla aşağı sarkıp geri tırmanır
-                peek.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
-                peek.animateTo(0f, spring(dampingRatio = 0.35f, stiffness = 260f))
+            when (e) {
+                PlayEvent.Notif -> {
+                    launch {                                       // bildirim: heyecanla aşağı sarkıp geri tırmanır
+                        peek.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
+                        peek.animateTo(0f, spring(dampingRatio = 0.35f, stiffness = 260f))
+                    }
+                    speak(listOf("Yeni bildirim!", "Bir şey geldi!", "Bak bak!").random())
+                }
+                PlayEvent.Party -> speak("Yaşasın!")
+                PlayEvent.Water -> speak("Teşekkürler!")
+                PlayEvent.Puff -> speak("Uçuyoruuum!")
+                PlayEvent.Fling -> speak("Vuuuu!")
+                is PlayEvent.Say -> speak(e.text)
+                else -> Unit
             }
+        }
+    }
+    // Ara sıra kendi kendine konuşur (duruma göre)
+    LaunchedEffect(talk, show) {
+        while (talk && show) {
+            delay(Random.nextLong(60_000L, 120_000L))
+            speak(petChatter(plantOn))
         }
     }
     if (hide.value >= 0.999f && !show) return
@@ -375,8 +427,9 @@ private fun PetFx(a: PlayAnchor) {
         val now = System.currentTimeMillis()
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val sleeping = PlayFx.charging || hour < 6
-        val dancing = !sleeping && PlayFx.musicPlaying
-        val bored = !sleeping && !dancing && now - PlayFx.lastActivityMs > 10 * 60_000L
+        val dancing = (!sleeping && PlayFx.musicPlaying) || now < PlayFx.partyUntil
+        val partying = now < PlayFx.partyUntil
+        val bored = !sleeping && !dancing && !partying && now - PlayFx.lastActivityMs > 10 * 60_000L
         val blow = PlayFx.puff
 
         // Askı noktası: adanın kenarında, ortanın biraz sağında
@@ -459,6 +512,50 @@ private fun PetFx(a: PlayAnchor) {
                 drawLine(zc, Offset(zx, zy + zs), Offset(zx + zs, zy + zs), zw, StrokeCap.Round)
             }
         }
+    }
+    // Konuşma baloncuğu (evcilin yanında; sığmazsa solunda)
+    val txt = say
+    if (txt != null && sayAnim.value > 0.01f) {
+        Canvas(Modifier.fillMaxSize()) {
+            val R = a.h * 0.42f
+            val dir = a.dir()
+            val bodyX = a.liveCx() + a.w * 0.22f
+            val bodyY = a.edgeY() + dir * R * 1.55f
+            val lay = measurer.measure(txt, TextStyle(color = Color(0xFF1C1C1E), fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
+            val pad = 7.dp.toPx()
+            val bw = lay.size.width + pad * 2f
+            val bh = lay.size.height + pad * 1.3f
+            var bx = bodyX + R * 1.25f
+            val leftSide = bx + bw > a.screenW - 6.dp.toPx()
+            if (leftSide) bx = bodyX - R * 1.25f - bw
+            val by = bodyY - bh / 2f
+            val tailX = if (leftSide) bx + bw else bx
+            scale(sayAnim.value, Offset(tailX, by + bh / 2f)) {
+                val tail = Path().apply {
+                    moveTo(tailX, by + bh * 0.35f)
+                    lineTo(tailX + (if (leftSide) 1f else -1f) * R * 0.45f, by + bh * 0.62f)
+                    lineTo(tailX, by + bh * 0.72f)
+                    close()
+                }
+                drawPath(tail, Color.White.copy(alpha = 0.96f))
+                drawRoundRect(Color.White.copy(alpha = 0.96f), Offset(bx, by), Size(bw, bh), CornerRadius(bh / 2f))
+                drawText(lay, topLeft = Offset(bx + pad, by + (bh - lay.size.height) / 2f))
+            }
+        }
+    }
+}
+
+private fun petChatter(plantOn: Boolean): String {
+    val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    return when {
+        plantOn && PlantStore.thirst >= 1 -> "Çiçeği sula!"
+        PlayFx.musicPlaying -> listOf("♪ ♫", "Bu şarkı güzel!", "♪").random()
+        PlayFx.batteryLow -> "Acıktım…"
+        PlayFx.charging -> "Zzz…"
+        h in 6..9 -> "Günaydın!"
+        h >= 23 || h < 5 -> "Uyku vakti…"
+        System.currentTimeMillis() - PlayFx.lastActivityMs > 10 * 60_000L -> "Sıkıldım…"
+        else -> listOf("Merhaba!", "Buradayım", "Nasılsın?", "Hey!", "Bugün güzel bir gün").random()
     }
 }
 
@@ -564,3 +661,317 @@ private fun DaylightFx(a: PlayAnchor, amount: Float) {
         }
     }
 }
+
+// ================================================================ Adayı fırlat
+
+/**
+ * Ada yana savrulunca gerçek ada gizlenir, burada onun kopyası uçar: ekran kenarlarına çarpıp seker, yerçekimiyle
+ * düşer, ~1,8 sn sonra (ya da yavaşlayınca) yaylanarak yerine döner ve gerçek ada yeniden görünür.
+ */
+@Composable
+private fun FlingFx(a: PlayAnchor) {
+    val live by rememberUpdatedState(a)
+    var pos by remember { mutableStateOf(Offset.Zero) }
+    var rot by remember { mutableFloatStateOf(0f) }
+    val flying = PlayFx.flying
+    LaunchedEffect(flying) {
+        if (!flying) return@LaunchedEffect
+        val an = live
+        val d = an.h / 37f
+        val home = Offset(an.cx, an.top + an.h / 2f)
+        var p = home
+        val maxV = 4_000f * d
+        var vx = PlayFx.flingVx.coerceIn(-maxV, maxV)
+        var vy = PlayFx.flingVy.coerceIn(-maxV, maxV) + 300f * d
+        var r = 0f
+        var last = 0L
+        var t = 0f
+        val hw = an.w / 2f; val hh = an.h / 2f
+        // 1) Serbest uçuş
+        while (t < 1.8f && (t < 0.4f || hypot(vx, vy) > 120f * d)) {
+            withFrameNanos { now ->
+                val dt = if (last == 0L) 1f / 60f else ((now - last) / 1e9f).coerceIn(0.001f, 0.033f)
+                last = now; t += dt
+                vy += 1_600f * d * dt                           // yerçekimi
+                vx *= (1f - 0.4f * dt); vy *= (1f - 0.2f * dt)
+                var nx = p.x + vx * dt; var ny = p.y + vy * dt
+                if (nx - hw < 0f) { nx = hw; vx = abs(vx) * 0.72f; PlayFx.kick(2f) }
+                if (nx + hw > an.screenW) { nx = an.screenW - hw; vx = -abs(vx) * 0.72f; PlayFx.kick(2f) }
+                if (ny - hh < 0f) { ny = hh; vy = abs(vy) * 0.72f; PlayFx.kick(2f) }
+                if (ny + hh > an.screenH) { ny = an.screenH - hh; vy = -abs(vy) * 0.6f; vx *= 0.9f; PlayFx.kick(2.5f) }
+                p = Offset(nx, ny)
+                r += vx * dt * 0.08f
+                pos = p; rot = r
+            }
+        }
+        // 2) Yerine dönüş
+        val from = p; val r0 = r
+        val back = Animatable(0f)
+        back.animateTo(1f, tween(560, easing = FastOutSlowInEasing)) {
+            val k = value
+            // Kavisli dönüş: önce biraz aşağı, sonra adanın yerine
+            val mid = Offset((from.x + home.x) / 2f, max(from.y, home.y) + an.h * 2f)
+            val u = 1f - k
+            pos = Offset(u * u * from.x + 2f * u * k * mid.x + k * k * home.x, u * u * from.y + 2f * u * k * mid.y + k * k * home.y)
+            rot = r0 * u
+        }
+        PlayFx.flying = false
+        PlayFx.kick(4f)
+    }
+    if (!flying) return
+    Canvas(Modifier.fillMaxSize()) {
+        val w = a.w; val h = a.h
+        val p = if (pos == Offset.Zero) Offset(a.cx, a.top + h / 2f) else pos
+        rotate(rot, p) {
+            // hafif gölge
+            drawRoundRect(Color.Black.copy(alpha = 0.25f), Offset(p.x - w / 2f + 2f * density, p.y - h / 2f + 4f * density), Size(w, h), CornerRadius(h / 2f))
+            drawRoundRect(a.color, Offset(p.x - w / 2f, p.y - h / 2f), Size(w, h), CornerRadius(h / 2f))
+        }
+    }
+}
+
+// ================================================================ Ada saksısı (sarkan bitki)
+
+@Composable
+private fun PlantFx(a: PlayAnchor) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) { PlantStore.load(ctx) }
+    // Gün dönünce susuzluk durumu güncellensin
+    var dayTick by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) { while (true) { delay(10 * 60_000L); PlantStore.decay(ctx); dayTick++ } }
+    val water = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        PlayFx.events.collect { if (it == PlayEvent.Water) launch { water.snapTo(0f); water.animateTo(1f, tween(900)) ; water.snapTo(0f) } }
+    }
+    if (!a.compactVisible) return
+    var t by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            withFrameNanos { now -> if (last != 0L) t += ((now - last) / 1e9f).coerceIn(0f, 0.1f); last = now }
+            delay(40)                                           // ~20 kare/sn yeter: yavaş salınım
+        }
+    }
+    Canvas(Modifier.fillMaxSize()) {
+        if (dayTick < 0L) return@Canvas
+        val h = a.h
+        val dir = a.dir()
+        val g = PlantStore.growth.coerceIn(1, 14)
+        val thirst = PlantStore.thirst
+        val root = Offset(a.liveCx() - a.w * 0.30f, a.edgeY() - dir * 2f)
+        val len = h * (0.45f + 0.17f * g)
+        val droop = when (thirst) { 0 -> 0f; 1 -> 0.35f; else -> 1f }
+        val stem = when (thirst) { 0 -> Color(0xFF2E9E4F); 1 -> Color(0xFF7A9A3A); else -> Color(0xFF7A5A3A) }
+        val leaf = when (thirst) { 0 -> Color(0xFF34C759); 1 -> Color(0xFFA4B84A); else -> Color(0xFF9C7A4E) }
+        val sway = h * 0.10f * (1f - droop * 0.6f)
+        fun at(u: Float) = Offset(root.x + kotlin.math.sin(u * 3f + t * 1.1f) * sway * u, root.y + dir * u * len)
+        // Gövde
+        val path = Path()
+        for (i in 0..24) {
+            val q = at(i / 24f)
+            if (i == 0) path.moveTo(q.x, q.y) else path.lineTo(q.x, q.y)
+        }
+        drawPath(path, stem, style = Stroke(h * 0.06f, cap = StrokeCap.Round))
+        // Yapraklar: düğümlerde sırayla iki yana; susayınca aşağı sarkar, solunca kahverengi
+        val nodes = (2 + g / 2).coerceAtMost(9)
+        for (k in 1..nodes) {
+            val u = k / (nodes + 0.6f)
+            val c = at(u)
+            val side = if (k % 2 == 0) 1f else -1f
+            val ang = side * (35f + 45f * droop) * dir + (if (dir > 0) 90f else -90f) * droop * 0.4f
+            rotate(ang, c) {
+                drawOval(leaf, Offset(c.x, c.y - h * 0.05f), Size(h * 0.20f * (1f - 0.25f * droop), h * 0.10f))
+            }
+        }
+        // Çiçekler: 7 gün üst üste bakılınca
+        if (thirst == 0 && g >= 7) {
+            val n = (g - 6).coerceAtMost(4)
+            for (k in 0 until n) {
+                val c = at(0.35f + k * 0.18f)
+                val fc = if (k % 2 == 0) Color(0xFFFF8FB1) else Color(0xFFFFFFFF)
+                val pr = h * 0.06f
+                for (i in 0 until 5) {
+                    val an = (i * 72f + t * 8f) * (PI.toFloat() / 180f)
+                    drawCircle(fc, pr, Offset(c.x + kotlin.math.cos(an) * pr * 1.1f, c.y + kotlin.math.sin(an) * pr * 1.1f))
+                }
+                drawCircle(Color(0xFFFFD60A), pr * 0.7f, c)
+            }
+        }
+        // Ucunda tomurcuk
+        drawCircle(leaf, h * 0.045f, at(1f))
+        // Sulama damlaları
+        val wv = water.value
+        if (wv > 0f) {
+            for (k in 0 until 4) {
+                val u = (wv * 1.3f - k * 0.12f).coerceIn(0f, 1f)
+                if (u <= 0f || u >= 1f) continue
+                val c = at(u)
+                drawCircle(Color(0xFF64D2FF).copy(alpha = 1f - u), h * 0.05f, Offset(c.x + (k - 1.5f) * h * 0.05f, c.y))
+            }
+        }
+    }
+}
+
+// ================================================================ Mevsim modu
+
+/** 1 kış, 2 ilkbahar, 3 yaz, 4 sonbahar. 0 = tarihe göre (kuzey yarıküre). */
+private fun seasonOf(mode: Int): Int {
+    if (mode in 1..4) return mode
+    return when (java.time.LocalDate.now().monthValue) { 12, 1, 2 -> 1; 3, 4, 5 -> 2; 6, 7, 8 -> 3; else -> 4 }
+}
+
+private class Flake(var x: Float, var y: Float, var vx: Float, var vy: Float, var life: Float, val size: Float, var rot: Float, val spin: Float, val col: Color)
+
+@Composable
+private fun SeasonFx(a: PlayAnchor, season: Int) {
+    val parts = remember { ArrayList<Flake>() }
+    var frame by remember { mutableLongStateOf(0L) }
+    val live by rememberUpdatedState(a)
+    val visible = a.compactVisible
+    LaunchedEffect(visible, season) {
+        parts.clear()
+        if (!visible) return@LaunchedEffect
+        var last = 0L
+        var acc = 0f
+        while (true) {
+            withFrameNanos { now ->
+                val dt = if (last == 0L) 1f / 30f else ((now - last) / 1e9f).coerceIn(0.001f, 0.1f)
+                last = now
+                val an = live
+                val d = an.h / 37f
+                acc += dt * (if (season == 3) 2.5f else 1.4f)         // saniyede ~1-2 parça
+                while (acc >= 1f && parts.size < 24) {
+                    acc -= 1f
+                    val x = an.liveCx() + (Random.nextFloat() - 0.5f) * an.w * 0.9f
+                    when (season) {
+                        1 -> parts.add(Flake(x, an.edgeY(), (Random.nextFloat() - 0.5f) * 10f * d, an.dir() * (18f + Random.nextFloat() * 18f) * d, 1f, (1.4f + Random.nextFloat() * 1.6f) * d, 0f, 0f, Color.White))
+                        2 -> parts.add(Flake(x, an.edgeY(), (Random.nextFloat() - 0.5f) * 20f * d, an.dir() * (14f + Random.nextFloat() * 14f) * d, 1f, (2.2f + Random.nextFloat() * 1.5f) * d, Random.nextFloat() * 360f, (Random.nextFloat() - 0.5f) * 180f, if (Random.nextBoolean()) Color(0xFFFFB7CE) else Color(0xFFFFE4EC)))
+                        3 -> {   // parıltı: adanın çevresinde rastgele noktada belirip söner
+                            val side = Random.nextFloat()
+                            val px = an.liveCx() + (Random.nextFloat() - 0.5f) * (an.w + 16f * d)
+                            val py = an.liveCy() + an.dir() * (an.h / 2f + (2f + side * 10f) * d)
+                            parts.add(Flake(px, py, 0f, 0f, 1f, (2f + Random.nextFloat() * 2.5f) * d, Random.nextFloat() * 45f, 0f, Color(0xFFFFE9A8)))
+                        }
+                        else -> parts.add(Flake(x, an.edgeY(), (Random.nextFloat() - 0.5f) * 30f * d, an.dir() * (22f + Random.nextFloat() * 22f) * d, 1f, (3f + Random.nextFloat() * 2f) * d, Random.nextFloat() * 360f, (Random.nextFloat() - 0.5f) * 260f,
+                            listOf(Color(0xFFFF9F0A), Color(0xFFFF6B2C), Color(0xFFD9822B), Color(0xFFE8B23A)).random()))
+                    }
+                }
+                val it2 = parts.iterator()
+                while (it2.hasNext()) {
+                    val f = it2.next()
+                    f.life -= dt / (if (season == 3) 0.9f else 4.5f)
+                    f.x += (f.vx + kotlin.math.sin(f.y * 0.02f) * 8f * d) * dt
+                    f.y += f.vy * dt
+                    f.rot += f.spin * dt
+                    if (f.life <= 0f) it2.remove()
+                }
+                frame = now
+            }
+            delay(16)
+        }
+    }
+    if (!visible) return
+    Canvas(Modifier.fillMaxSize()) {
+        if (frame < 0L) return@Canvas
+        val d = a.h / 37f
+        val cx = a.liveCx()
+        // Sabit süs: kışın adanın kenarında kar, ilkbaharda kenarda çiçekler
+        if (season == 1) {
+            drawRoundRect(Color.White.copy(alpha = 0.85f), Offset(cx - a.w / 2f + a.h * 0.2f, a.liveCy() - a.h / 2f + a.dir() * 2.2f * d),
+                Size(a.w - a.h * 0.4f, a.h), CornerRadius(a.h / 2f))
+        }
+        if (season == 2) {
+            for (k in 0 until 4) {
+                val fx = cx - a.w * 0.32f + k * a.w * 0.21f
+                val fy = a.edgeY() + a.dir() * 2.5f * d
+                val pr = 2.6f * d
+                val fc = if (k % 2 == 0) Color(0xFFFF8FB1) else Color(0xFFFFFFFF)
+                for (i in 0 until 5) {
+                    val an = i * 72f * (PI.toFloat() / 180f)
+                    drawCircle(fc, pr, Offset(fx + kotlin.math.cos(an) * pr * 1.1f, fy + kotlin.math.sin(an) * pr * 1.1f))
+                }
+                drawCircle(Color(0xFFFFD60A), pr * 0.7f, Offset(fx, fy))
+            }
+        }
+        for (f in parts) {
+            val al = f.life.coerceIn(0f, 1f)
+            when (season) {
+                1 -> drawCircle(f.col.copy(alpha = 0.9f * al), f.size, Offset(f.x, f.y))
+                3 -> {   // dört köşeli yıldız
+                    val tw = kotlin.math.sin(al * PI.toFloat())
+                    val r = f.size * tw
+                    drawLine(f.col.copy(alpha = tw), Offset(f.x - r, f.y), Offset(f.x + r, f.y), 1.2f * d, StrokeCap.Round)
+                    drawLine(f.col.copy(alpha = tw), Offset(f.x, f.y - r), Offset(f.x, f.y + r), 1.2f * d, StrokeCap.Round)
+                }
+                else -> rotate(f.rot, Offset(f.x, f.y)) {
+                    drawOval(f.col.copy(alpha = al), Offset(f.x - f.size, f.y - f.size * 0.5f), Size(f.size * 2f, f.size))
+                }
+            }
+        }
+    }
+}
+
+// ================================================================ Kutlama (konfeti)
+
+private class Confetti(var x: Float, var y: Float, var vx: Float, var vy: Float, var rot: Float, val spin: Float, val col: Color, val w: Float, val h: Float)
+
+@Composable
+private fun PartyFx(a: PlayAnchor) {
+    val parts = remember { ArrayList<Confetti>() }
+    var frame by remember { mutableLongStateOf(0L) }
+    var active by remember { mutableStateOf(false) }
+    val live by rememberUpdatedState(a)
+    LaunchedEffect(Unit) {
+        PlayFx.events.collect {
+            if (it == PlayEvent.Party) {
+                val an = live
+                val d = an.h / 37f
+                PlayFx.partyUntil = System.currentTimeMillis() + 4_000L
+                PlayFx.kick(5f)
+                repeat(140) {
+                    val ang = (Random.nextFloat() - 0.5f) * 2.8f       // aşağı yönde geniş yelpaze
+                    val sp = (400f + Random.nextFloat() * 800f) * d
+                    parts.add(Confetti(an.liveCx(), an.edgeY(), kotlin.math.sin(ang) * sp, an.dir() * kotlin.math.cos(ang) * sp,
+                        Random.nextFloat() * 360f, (Random.nextFloat() - 0.5f) * 720f, CONFETTI.random(),
+                        (4f + Random.nextFloat() * 4f) * d, (2f + Random.nextFloat() * 2f) * d))
+                }
+                active = true
+            }
+        }
+    }
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
+        var last = 0L
+        while (parts.isNotEmpty()) {
+            withFrameNanos { now ->
+                val dt = if (last == 0L) 1f / 60f else ((now - last) / 1e9f).coerceIn(0.001f, 0.05f)
+                last = now
+                val an = live
+                val d = an.h / 37f
+                val iter = parts.iterator()
+                while (iter.hasNext()) {
+                    val c = iter.next()
+                    c.vy += an.dir() * 900f * d * dt
+                    c.vx *= (1f - 1.2f * dt); c.vy *= (1f - 0.6f * dt)
+                    c.x += c.vx * dt; c.y += c.vy * dt
+                    c.rot += c.spin * dt
+                    if (c.y > an.screenH + 40f || c.y < -40f) iter.remove()
+                }
+                frame = now
+            }
+        }
+        active = false
+    }
+    if (!active) return
+    Canvas(Modifier.fillMaxSize()) {
+        if (frame < 0L) return@Canvas
+        for (c in parts) {
+            // dönerken yassılaşan şerit: 3B dönme hissi
+            val flip = kotlin.math.abs(kotlin.math.cos(c.rot * PI.toFloat() / 90f))
+            rotate(c.rot, Offset(c.x, c.y)) {
+                drawRect(c.col, Offset(c.x - c.w / 2f, c.y - c.h * flip / 2f), Size(c.w, c.h * flip + 0.5f))
+            }
+        }
+    }
+}
+private val CONFETTI = listOf(Color(0xFFFF375F), Color(0xFFFFD60A), Color(0xFF30D158), Color(0xFF64D2FF), Color(0xFFBF5AF2), Color(0xFFFF9F0A), Color.White)

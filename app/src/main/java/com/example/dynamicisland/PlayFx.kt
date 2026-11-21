@@ -58,6 +58,10 @@ sealed interface PlayEvent {
     data object ScreenOn : PlayEvent      // ekran açıldı (cep hissi, yüz uyanır)
     data object Notif : PlayEvent         // bildirim geldi (evcil kafasını çıkarır, yüz sevinir)
     data object Eaten : PlayEvent         // bildirim baloncuğu adaya girdi (ada yutar)
+    data object Party : PlayEvent         // kutlama: konfeti
+    data object Water : PlayEvent         // bitki sulandı
+    data object Fling : PlayEvent         // ada savruldu (hız: PlayFx.flingVx / flingVy)
+    data class Say(val text: String) : PlayEvent   // evcil bir şey söylesin
 }
 
 object PlayFx {
@@ -83,6 +87,9 @@ object PlayFx {
     var fullness by mutableFloatStateOf(0f)            // yenen bildirim sayısı (0..4): ada "doyar"
     var liquidAngle by mutableFloatStateOf(0f)         // pil sıvısının yüzey açısı (radyan)
     var liquidV = 0f
+    var flying by mutableStateOf(false)                // ada ekranda uçuyor (gerçek ada gizli, efekt penceresi çizer)
+    var flingVx = 0f; var flingVy = 0f
+    var partyUntil = 0L                                // kutlama süresince evcil dans eder, yüz sevinir
     var lastActivityMs = System.currentTimeMillis()   // son dokunma / bildirim: evcil sıkılır mı
 
     val events = MutableSharedFlow<PlayEvent>(extraBufferCapacity = 16)
@@ -113,6 +120,24 @@ class PlayController(
     private var devCb: AudioDeviceCallback? = null
     private var devCbAt = 0L
     private var screenOn = true
+    private var fullCelebrated = true          // açılışta zaten doluysa kutlama yapılmaz
+    private var wasCharging = true
+    private var wasLow = true
+
+    /** Doğum günü ya da yılbaşı: günün ilk ekran açılışında konfeti. */
+    private fun dateParty() {
+        val s = settings.value
+        if (!s.playParty) return
+        val d = java.time.LocalDate.now()
+        val birthday = s.playBirthDay > 0 && d.dayOfMonth == s.playBirthDay && d.monthValue == s.playBirthMonth
+        val newYear = d.dayOfMonth == 1 && d.monthValue == 1
+        if ((birthday || newYear) && PartyStore.claimToday(ctx)) {
+            main.postDelayed({
+                PlayFx.emit(PlayEvent.Party)
+                PlayFx.emit(PlayEvent.Say(if (birthday) "İyi ki doğdun!" else "Mutlu yıllar!"))
+            }, 900L)
+        }
+    }
 
     private val listener = object : SensorEventListener {
         override fun onSensorChanged(e: SensorEvent) {
@@ -132,7 +157,7 @@ class PlayController(
         val r = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 when (i.action) {
-                    Intent.ACTION_SCREEN_ON -> { screenOn = true; syncSensor(); PlayFx.emit(PlayEvent.ScreenOn) }
+                    Intent.ACTION_SCREEN_ON -> { screenOn = true; syncSensor(); PlayFx.emit(PlayEvent.ScreenOn); dateParty() }
                     Intent.ACTION_SCREEN_OFF -> { screenOn = false; syncSensor() }
                     Intent.ACTION_POWER_CONNECTED -> if (settings.value.playMagnet) PlayFx.emit(PlayEvent.Charger)
                     Intent.ACTION_BATTERY_CHANGED -> readBattery(i)
@@ -158,6 +183,8 @@ class PlayController(
         }
         devCbAt = SystemClock.uptimeMillis()
         runCatching { am?.registerAudioDeviceCallback(cb, main) }.onSuccess { devCb = cb }
+        runCatching { PlantStore.load(ctx); DoodleStore.load(ctx) }
+        main.postDelayed({ dateParty() }, 3_000L)
         // Sensör yalnızca fizik ya da yüz açıkken
         scope.launch { settings.map { it.playPhysics || it.playFace || it.playLiquid }.distinctUntilChanged().collect { syncSensor() } }
     }
@@ -168,6 +195,14 @@ class PlayController(
         val sc = i.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
         PlayFx.charging = st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL
         if (lvl >= 0) PlayFx.batteryPct = (lvl.toFloat() / sc).coerceIn(0f, 1f)
+        // Kutlama: şarjdayken pil %100 olunca (her şarjda bir kez)
+        val full = PlayFx.charging && lvl >= sc
+        if (full && !fullCelebrated && settings.value.playParty) PlayFx.emit(PlayEvent.Party)
+        if (full) fullCelebrated = true
+        if (!PlayFx.charging) fullCelebrated = false
+        if (st == BatteryManager.BATTERY_STATUS_CHARGING && !wasCharging) PlayFx.emit(PlayEvent.Say("Mmm, enerji!"))
+        if (PlayFx.batteryLow && !wasLow) PlayFx.emit(PlayEvent.Say("Acıktım…"))
+        wasCharging = st == BatteryManager.BATTERY_STATUS_CHARGING; wasLow = PlayFx.batteryLow
         PlayFx.batteryLow = lvl in 0..(sc * 15 / 100) && !PlayFx.charging
     }
 
