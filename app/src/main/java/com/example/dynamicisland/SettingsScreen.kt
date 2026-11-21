@@ -681,6 +681,53 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Her zaman açık", "Asistan animasyonundaki renkli kenar ışığı sürekli görünür", draft.edgeGlowAlways) { draft = draft.copy(edgeGlowAlways = it) }
         }
 
+        // ---- Oyuncak ada (PlayFx.kt): her özellik ayrı sayfa, ayrı ayar
+        pendingGroup = "Oyuncak ada"
+        sec("Fiziksel ada", "Telefonu eğince ada sıvı gibi yana kayar") {
+            SwitchRow("Fiziksel ada", "Telefonu sağa sola eğince ada o yöne kayar, kenara çarpınca hafifçe ezilip seker. Ekran kapalıyken sensör dinlenmez. Açıkken cam bulanıklığı kapanır (ada kayabilsin diye pencere büyür)",
+                draft.playPhysics) { draft = draft.copy(playPhysics = it) }
+            if (draft.playPhysics) {
+                SliderRow("En fazla kayma", draft.playPhysicsRangeDp, 4f..30f, "${draft.playPhysicsRangeDp.toInt()} dp") { draft = draft.copy(playPhysicsRangeDp = it) }
+                SwitchRow("Sallayınca jöle gibi titresin", "Telefonu sallayınca ada jöle gibi sarsılır", draft.playJelly) { draft = draft.copy(playJelly = it) }
+            }
+        }
+        sec("Ada evcili", "Adanın altından sarkan küçük yaratık") {
+            SwitchRow("Ada evcili", "Adanın kenarına tutunup sarkar. Şarj olurken ve gece uyur, müzik çalarken dans eder, uzun süre dokunmazsan sıkılıp esner, bildirim gelince heyecanla aşağı sarkar, adaya dokununca savrulur. Ada açılınca adanın içine saklanır",
+                draft.playPet) { draft = draft.copy(playPet = it) }
+        }
+        sec("Mıknatıs", "Şarj ve kulaklık bağlanınca") {
+            SwitchRow("Şarj kablosunu yakalasın", "Şarja takınca ada, kabloya doğru aşağı sıvı bir damla uzatıp geri çeker",
+                draft.playMagnet) { draft = draft.copy(playMagnet = it) }
+            if (draft.playMagnet) {
+                SwitchRow("Kulaklığı çeksin", "Kulaklık bağlanınca iki yandan iki damla mıknatıs gibi hızlanarak gelip adaya yapışır", draft.playMagnetBuds) { draft = draft.copy(playMagnetBuds = it) }
+            }
+        }
+        sec("Dokununca savrulma", "Adaya dokununca rüzgâr yemiş gibi") {
+            SwitchRow("Dokununca savrulma", "Adaya her dokunuşta ada rüzgâr yemiş gibi yassılaşıp titrer, kenarından toz uçuşur, evcil savrulur, gözler kısılır. Dokunmanın normal işi (müziği açmak vb.) aynen çalışır",
+                draft.playPuff) { draft = draft.copy(playPuff = it) }
+            if (draft.playPuff) {
+                SliderRow("Şiddet", draft.playPuffStrength, 0f..1f, "%${(draft.playPuffStrength * 100).toInt()}") { draft = draft.copy(playPuffStrength = it) }
+            }
+        }
+        sec("Ada yüzü", "Boştaki adada gözler") {
+            SwitchRow("Ada yüzü", "Boştaki adada iki göz: göz kırpar, etrafa bakınır, telefonu eğince o yöne bakar. Şarjda ve gece uyur, pil azken yorgun görünür, bildirimden sonra sevinir, sallayınca başı döner, dokununca gözlerini kısar. \"Boştayken de göster\" açık olmalı",
+                draft.playFace) { draft = draft.copy(playFace = it) }
+        }
+        sec("Dalga", "Adadan ekrana yayılan su halkaları") {
+            SwitchRow("Bildirimde dalga", "Bildirim gelince adadan ekrana halka halka su dalgası yayılır",
+                draft.playRipple) { draft = draft.copy(playRipple = it) }
+            if (draft.playRipple) {
+                SwitchRow("Dokununca da dalga", "Adaya dokununca da dalga yayılır", draft.playRippleTap) { draft = draft.copy(playRippleTap = it) }
+            }
+        }
+        sec("Cep hissi", "Ekran açılınca ada yerine düşer") {
+            SwitchRow("Cep hissi", "Ekran açılınca ada kamera deliğinden düşüp yaylanarak yerine oturur. Uzun süre boş kalınca küçülüp kamera deliğine girer, bir olay gelince fırlayıp çıkar",
+                draft.playPocket) { draft = draft.copy(playPocket = it) }
+            if (draft.playPocket) {
+                SliderRow("Deliğe girme süresi", draft.playPocketIdleSec, 4f..60f, "${draft.playPocketIdleSec.toInt()} sn") { draft = draft.copy(playPocketIdleSec = it) }
+            }
+        }
+
         // ---- Hareket
         pendingGroup = "Hareket"
         sec("Açılış animasyonu stili", "Bildirime ya da müzik uygulamasına dokununca") {

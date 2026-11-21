@@ -138,6 +138,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { statusCover.attach() }      // ada penceresinden ÖNCE eklenir: ada her zaman üstte kalır
         runCatching { edgeGlow.attach() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
         runCatching { decor.attach() }            // ada süsleri (kedi, salıncak, damla) adanın ALTINDA kalır
+        runCatching { play.attach() }             // oyuncak ada efektleri de adanın ALTINDA kalır
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
         IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() }; runCatching { landscape.rehost() } }
@@ -150,6 +151,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { torch.start() }           // fener açılınca ada göstergesi + ışık kartı
         runCatching { landscape.start() }       // yatay mod: dikey ada + yan baloncuklar
         runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
+        runCatching { playCtl.start() }         // oyuncak ada: sensör, şarj, kulaklık, ekran olayları
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
         // Bildirim dinleyicisi sistem tarafından yeniden bağlanırken zaman alabilir (özellikle uzun süre sonra):
@@ -194,6 +196,23 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch {
             settings.map { it.edgeGlowAlways }.distinctUntilChanged().collect { edgeGlow.setActive(assistantActive || it) }
         }
+        // ---- Oyuncak ada
+        scope.launch {
+            // Efekt penceresi açılıp kapanınca pencereler yeniden sıralanır (efekt penceresi adanın altında kalmalı)
+            settings.map { play.wanted(it) }.distinctUntilChanged().collect { on ->
+                if (on != playOn) { playOn = on; runCatching { reattach() } }
+            }
+        }
+        scope.launch {
+            // Yeni bildirim: evcil kafasını çıkarır, yüz sevinir, dalga yayılır
+            ui.map { it.content as? IslandContent.Notif }.distinctUntilChanged().collect { n ->
+                if (n != null) {
+                    PlayFx.emit(PlayEvent.Notif)
+                    if (settings.value.playRipple) PlayFx.emit(PlayEvent.Ripple)
+                }
+            }
+        }
+        scope.launch { mediaState.collect { PlayFx.musicPlaying = it?.playing == true } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -661,6 +680,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun onPillTap() {
         playSfx(SoundEvent.Tap)
+        PlayFx.lastActivityMs = System.currentTimeMillis()      // evcil: dokunulunca sıkılmaz
+        if (settings.value.playRipple && settings.value.playRippleTap) PlayFx.emit(PlayEvent.Ripple)
+        if (settings.value.playPuff) PlayFx.emit(PlayEvent.Puff)
         if (!landscape.active && openStack()) return          // birden fazla olay varsa hepsi alt alta açılır (yatay modda baloncuklar var)
         val cur = ui.value
         when (cur.content) {
@@ -827,12 +849,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     // ---- Ada süsleri: adanın üstünde karakter, sarkan süsler, mürekkep damlası -> IslandDecor.kt
     private val decorAnchor = MutableStateFlow<DecorAnchor?>(null)
     private val decor by lazy { DecorOverlay(this, this, this, wm, settings, decorAnchor) }
+    // ---- Oyuncak ada (PlayFx.kt / PlayOverlay.kt / PlayIsland.kt)
+    private val playAnchor = MutableStateFlow<PlayAnchor?>(null)
+    private val play by lazy { PlayOverlay(this, this, this, wm, settings, playAnchor) }
+    private val playCtl by lazy { PlayController(this, settings, scope) }
+    private var playOn = false
     private var decorOn = false
 
     /** Süslerin dayanacağı kapalı adanın ekrandaki yeri ve süslerin görünüp görünmeyeceği. */
     private fun refreshDecor() {
         val s = settings.value
-        if (!decor.wanted(s)) { decorAnchor.value = null; return }
+        val dOn = decor.wanted(s)
+        val pOn = play.wanted(s)
+        if (!dOn && !pOn) { decorAnchor.value = null; playAnchor.value = null; return }
         val u = ui.value
         val c = u.content
         val pill = pillCompactSizeDp(s, c)
@@ -845,12 +874,20 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val sw = wm.currentWindowMetrics.bounds.width()
         val visible = !u.expanded && !u.swallow && u.stack.isEmpty() && !mainHidden && !appHide.hidden &&
             c !is IslandContent.Assistant && (s.showIdle || c !is IslandContent.Idle) && !s.dotMode
-        decorAnchor.value = DecorAnchor(
+        val anchor = DecorAnchor(
             cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
             top = islandTopPx(s, hPx).toFloat(),
             w = dp(wDp).toFloat(), h = hPx.toFloat(),
             inverted = s.invertedIsland, visible = visible,
             screenH = screenHPx().toFloat(),
+        )
+        decorAnchor.value = if (dOn) anchor else null
+        playAnchor.value = if (!pOn) null else PlayAnchor(
+            cx = anchor.cx, top = anchor.top, w = anchor.w, h = anchor.h,
+            inverted = anchor.inverted, compactVisible = visible,
+            shown = !mainHidden && !appHide.hidden && !landscape.active,
+            screenW = sw.toFloat(), screenH = anchor.screenH,
+            color = islandPanelColor(s, (c as? IslandContent.Media)?.artColor ?: lastMedia?.artColor ?: 0, opaque = true),
         )
     }
 
@@ -1486,12 +1523,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { statusCover.detach() }
         runCatching { edgeGlow.detach() }
         runCatching { decor.detach() }
+        runCatching { play.detach() }
         // Erişilebilirlik bağlantısı değişince dış söz penceresinin türü de değişir: yeniden kur.
         // Önce durum çubuğu örtüsü, sonra söz penceresi, en son ada eklenir; böylece ada her zaman üstte kalır ve sözler adanın "içinden" çıkar.
         runCatching { detachOutside() }
         runCatching { statusCover.attach() }
         runCatching { edgeGlow.attach() }
         runCatching { decor.attach() }
+        runCatching { play.attach() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
         composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
@@ -1536,6 +1575,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
             setContent {
+                PlayIslandHost(settings, ui) {
                 IslandRoot(
                     state = ui, settingsFlow = settings, lyricsFlow = lyrics,
                     onTap = ::onPillTap, onCommand = ::onCommand, onOutput = ::openOutputPanel,
@@ -1546,6 +1586,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap, onSidePress = ::onSidePress,
                     onStackClose = ::onStackTap,
                 )
+                }
             }
         }
         composeView = view
@@ -2084,6 +2125,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { statusCover.detach() }
         runCatching { edgeGlow.detach() }
         runCatching { decor.detach() }
+        runCatching { play.detach() }
+        runCatching { playCtl.stop() }
         detachOutside()
         collapseJob?.cancel()
         scope.cancel()

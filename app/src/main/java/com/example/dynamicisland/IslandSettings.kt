@@ -182,8 +182,22 @@ data class IslandSettings(
     val musicExitAtomicFull: Boolean = false, // atom ada: panel önce tüm ekranı kaplar, sonra küçülüp adaya girer
     val musicExitSwallow: Boolean = true,     // panel adaya varınca ada büyüyüp onu yutar
     val musicExitSpeed: Float = 1f,           // müzikten çıkış animasyonu hızı (1 = normal)
-    val musicExitStretch: Boolean = false,
-    val musicFluidAnim: Boolean = false,        // Akıcı yutma: pencere bulanıklaşarak adaya küçülür, ada şişip yutar; müzik açılışı da aynı tarzda    // yeni yutma: ada aşağı doğru uzun bir kapsüle uzanıp yumuşakça eski haline döner (iOS tarzı)
+    val musicExitStretch: Boolean = false,    // yeni yutma: ada aşağı doğru uzun bir kapsüle uzanıp yumuşakça eski haline döner
+    val musicFluidAnim: Boolean = false,      // Akıcı yutma: pencere bulanıklaşarak adaya küçülür, ada şişip yutar; müzik açılışı da aynı tarzda
+    // ---- Oyuncak ada (bkz. PlayFx.kt) — her biri ayrı ayar
+    val playPhysics: Boolean = false,         // telefonu eğince ada yana kayar
+    val playPhysicsRangeDp: Float = 14f,      // en fazla kayma (dp)
+    val playJelly: Boolean = true,            // sallayınca / kenara çarpınca jöle gibi titrer
+    val playPet: Boolean = false,             // adanın altından sarkan ruh halli evcil
+    val playMagnet: Boolean = false,          // şarja takınca ada kabloya doğru damla uzatır
+    val playMagnetBuds: Boolean = true,       // kulaklık bağlanınca iki yandan damla çeker
+    val playPuff: Boolean = false,            // adaya dokununca ada rüzgâr yemiş gibi savrulur, toz uçuşur
+    val playPuffStrength: Float = 0.7f,       // savrulma şiddeti 0..1
+    val playFace: Boolean = false,            // boştaki adada gözler
+    val playRipple: Boolean = false,          // bildirimde adadan dalga yayılır
+    val playRippleTap: Boolean = true,        // adaya dokununca da dalga
+    val playPocket: Boolean = false,          // ekran açılınca ada düşüp oturur, boşta kamera deliğine girer
+    val playPocketIdleSec: Float = 12f,       // kamera deliğine girmeden önce boşta bekleme (sn)
     // Müzik uygulamasını açma + hareketler
     val musicOpenAnim: Boolean = true,        // adadan müzik uygulamasını açarken açılış animasyonu
     val launchClassic: Boolean = false,       // bildirim + müzik uygulaması açılışı: klasik büyüyen ekran
@@ -335,6 +349,8 @@ data class IslandSettings(
         if (glowEnabled) GLOW_PAD_DP else 0f,
         if (animEnabled && animStyle == 3) BOUNCE_PAD_DP else 0f,
         if (neonStyle != 0) NEON_PAD_DP else 0f,
+        if (playPhysics) playPhysicsRangeDp + 8f else 0f,          // kayan / titreyen ada kesilmesin
+        if (playMagnet || playPocket || playPuff) 8f else 0f,
     )
 
     /** Adanın gizleneceği uygulamaların paket adları. */
@@ -420,6 +436,10 @@ class SettingsRepository(context: Context) {
         val PILL_WM = intPreferencesKey("pill_wm"); val PILL_WR = intPreferencesKey("pill_wr")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
         val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_INLINE = booleanPreferencesKey("nt_inline"); val NT_BMENU = booleanPreferencesKey("nt_bmenu"); val NT_BMENU_TAP = booleanPreferencesKey("nt_bmenu_tap"); val NT_BICON = booleanPreferencesKey("nt_bicon"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full"); val MX_FLUID = booleanPreferencesKey("mx_fluid")
+        val PL_PHY = booleanPreferencesKey("pl_phy"); val PL_PHY_R = floatPreferencesKey("pl_phy_r"); val PL_JELLY = booleanPreferencesKey("pl_jelly")
+        val PL_PET = booleanPreferencesKey("pl_pet"); val PL_MAG = booleanPreferencesKey("pl_mag"); val PL_MAG_B = booleanPreferencesKey("pl_mag_b")
+        val PL_PUFF = booleanPreferencesKey("pl_puff"); val PL_PUFF_S = floatPreferencesKey("pl_puff_s"); val PL_FACE = booleanPreferencesKey("pl_face")
+        val PL_RIP = booleanPreferencesKey("pl_rip"); val PL_RIP_T = booleanPreferencesKey("pl_rip_t"); val PL_POC = booleanPreferencesKey("pl_poc"); val PL_POC_S = floatPreferencesKey("pl_poc_s")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val INV_ISLAND = booleanPreferencesKey("inv_island")
         val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below"); val LAND_IN_ISLAND = booleanPreferencesKey("land_in_island")
@@ -588,6 +608,11 @@ class SettingsRepository(context: Context) {
             musicExitSwallow = p[K.MX_SW] ?: d.musicExitSwallow,
             musicExitStretch = p[K.MX_STR] ?: d.musicExitStretch,
             musicFluidAnim = p[K.MX_FLUID] ?: d.musicFluidAnim,
+            playPhysics = p[K.PL_PHY] ?: d.playPhysics, playPhysicsRangeDp = p[K.PL_PHY_R] ?: d.playPhysicsRangeDp, playJelly = p[K.PL_JELLY] ?: d.playJelly,
+            playPet = p[K.PL_PET] ?: d.playPet, playMagnet = p[K.PL_MAG] ?: d.playMagnet, playMagnetBuds = p[K.PL_MAG_B] ?: d.playMagnetBuds,
+            playPuff = p[K.PL_PUFF] ?: d.playPuff, playPuffStrength = p[K.PL_PUFF_S] ?: d.playPuffStrength, playFace = p[K.PL_FACE] ?: d.playFace,
+            playRipple = p[K.PL_RIP] ?: d.playRipple, playRippleTap = p[K.PL_RIP_T] ?: d.playRippleTap,
+            playPocket = p[K.PL_POC] ?: d.playPocket, playPocketIdleSec = p[K.PL_POC_S] ?: d.playPocketIdleSec,
             launchSpeed = p[K.LA_SPD] ?: d.launchSpeed,
             musicOpenAnim = p[K.MO_ANIM] ?: d.musicOpenAnim,
             launchClassic = p[K.LA_CL] ?: d.launchClassic, launchAtomic = p[K.LA_AT] ?: d.launchAtomic,
@@ -712,7 +737,10 @@ class SettingsRepository(context: Context) {
             it[K.OP_EA] = s.openExpArt; it[K.OP_ET] = s.openExpTitle; it[K.OP_EX] = s.openExpAny
             it[K.OP_CA] = s.openCompArt; it[K.OP_CL] = s.openCompLong; it[K.OP_CT] = s.openCompTap
             it[K.EXP_LONG] = s.expandOnLong; it[K.SW_DN] = s.swipeDownExpand; it[K.SW_UP] = s.swipeUpCollapse; it[K.LP_MS] = s.longPressMs
-            it[K.MX_CLASSIC] = s.musicExitClassic; it[K.MX_ATOMIC] = s.musicExitAtomic; it[K.MX_ATOMIC_FULL] = s.musicExitAtomicFull; it[K.MX_FLUID] = s.musicFluidAnim; it[K.HIDE_MUSIC] = s.hideInMusicApp
+            it[K.MX_CLASSIC] = s.musicExitClassic; it[K.MX_ATOMIC] = s.musicExitAtomic; it[K.MX_ATOMIC_FULL] = s.musicExitAtomicFull; it[K.MX_FLUID] = s.musicFluidAnim;
+            it[K.PL_PHY] = s.playPhysics; it[K.PL_PHY_R] = s.playPhysicsRangeDp; it[K.PL_JELLY] = s.playJelly; it[K.PL_PET] = s.playPet
+            it[K.PL_MAG] = s.playMagnet; it[K.PL_MAG_B] = s.playMagnetBuds; it[K.PL_PUFF] = s.playPuff; it[K.PL_PUFF_S] = s.playPuffStrength
+            it[K.PL_FACE] = s.playFace; it[K.PL_RIP] = s.playRipple; it[K.PL_RIP_T] = s.playRippleTap; it[K.PL_POC] = s.playPocket; it[K.PL_POC_S] = s.playPocketIdleSec; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.INV_ISLAND] = s.invertedIsland
             it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow; it[K.LAND_IN_ISLAND] = s.landscapeEventsInIsland
