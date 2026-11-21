@@ -224,6 +224,12 @@ fun AssistantOrb(fullWidth: Boolean = false) {
  */
 @Composable
 fun AssistantGlassOrb() {
+    // Android 13+: GPU shader ile gerçekçi cam + ışık. Daha eski sürümlerde Canvas ile çizilen sürüm.
+    if (glassOrbShaderSupported()) AssistantGlassOrbRealistic() else AssistantGlassOrbLegacy()
+}
+
+@Composable
+private fun AssistantGlassOrbLegacy() {
     val t = rememberInfiniteTransition(label = "glassOrb")
     val wave = t.animateFloat(0f, 1f, infiniteRepeatable(tween(4200, easing = LinearEasing)), label = "gWave")
     val hue = t.animateFloat(0f, 1f, infiniteRepeatable(tween(7000, easing = LinearEasing)), label = "gHue")
