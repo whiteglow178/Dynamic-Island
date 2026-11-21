@@ -1328,10 +1328,13 @@ private fun lyricsPages(draft: IslandSettings, version: Int, set: (IslandSetting
             draft.musicExitAnim) { set(draft.copy(musicExitAnim = it)) }
         if (draft.musicExitAnim) {
             SliderRow("Hız", draft.musicExitSpeed, 0.5f..3f, "%.1fx".format(draft.musicExitSpeed)) { set(draft.copy(musicExitSpeed = it)) }
+            SwitchRow("Akıcı yutma", "Uygulama penceresi bulanıklaşarak küçülür ve adanın altına girer, ada aşağı doğru şişip yutar ve yaylanarak eski haline döner. Müzik uygulamasını adadan açarken de tersi oynar: ada şişer, pencere altından bulanık çıkıp ekranı kaplar. Açıksa aşağıdaki yutma ve panel seçenekleri kullanılmaz",
+                draft.musicFluidAnim) { set(draft.copy(musicFluidAnim = it, musicExitStretch = if (it) false else draft.musicExitStretch)) }
+            if (!draft.musicFluidAnim) {
             SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa ada büyümez (Uzayan ada açıksa onun yerine o oynar)",
                 draft.musicExitSwallow) { set(draft.copy(musicExitSwallow = it)) }
             SwitchRow("Uzayan ada (iOS tarzı)", "Ada yukarı doğru (ekran kenarına kadar) yumuşakça büyür, sonra normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır. Bu sırada cam / çerçeve efektleri düz renkle çizilir",
-                draft.musicExitStretch) { set(draft.copy(musicExitStretch = it)) }
+                draft.musicExitStretch) { set(draft.copy(musicExitStretch = it, musicFluidAnim = if (it) false else draft.musicFluidAnim)) }
             SectionDivider()
             SubHeader("Panel animasyonu")
             SwitchRow("Klasik panel", "Uzun panel küçülerek adaya girer",
@@ -1344,6 +1347,7 @@ private fun lyricsPages(draft: IslandSettings, version: Int, set: (IslandSetting
             }
             Text("İkisi de açıksa her çıkışta rastgele biri oynar.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
         }
     }
     if (!draft.lyricsEnabled) { sec("Sıfırla", "Söz ayarlarını başlangıç değerine döndür") { IslandActionButton("Söz ayarlarını varsayılana döndür", onReset) }; return@buildPages }

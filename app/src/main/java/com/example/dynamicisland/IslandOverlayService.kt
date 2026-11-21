@@ -1096,7 +1096,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (!sent) launchApp(ctrl.packageName)
         }
         val s = settings.value
-        launchWithAnim(s.musicOpenAnim, pickAtomic(s.launchClassic, s.launchAtomic), s.launchSpeed, open)
+        launchWithAnim(s.musicOpenAnim, pickAtomic(s.launchClassic, s.launchAtomic), s.launchSpeed, fluid = s.musicFluidAnim && s.musicExitAnim, open = open)
     }
 
     /** Adayı dikey kaydırma: aşağı (+1) genişletir, yukarı (-1) küçültür. */
@@ -1218,13 +1218,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /** Ada önce açıktan kapalı hale geçer; animasyon (açıksa) bu geçişle birlikte başlar, ekran kapanınca [open] çalışır. */
-    private fun launchWithAnim(animOn: Boolean, atomic: Boolean = false, speed: Float = 1f, open: () -> Unit) {
+    private fun launchWithAnim(animOn: Boolean, atomic: Boolean = false, speed: Float = 1f, fluid: Boolean = false, open: () -> Unit) {
         collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
         if (!animOn || landscape.active) { open(); return }
         if (launching) return
         launching = true
         // Atom ada: kart adanın kendisinden açıldığı için ada küçülmesini beklemeden başlar
-        scope.launch { delay(if (atomic) 0L else LAUNCH_LEAD_MS); startLaunchTransition(open, atomic, speed) }
+        scope.launch { delay(if (atomic || fluid) 0L else LAUNCH_LEAD_MS); startLaunchTransition(open, atomic, speed, fluid) }
     }
 
     /** Stil seçimi: yalnızca atom açıksa atom; klasik de açıksa her seferinde rastgele. */
@@ -1254,7 +1254,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         launchWithAnim(s.notifLaunchAnim, pickAtomic(s.launchClassic, s.launchAtomic), s.launchSpeed, open)
     }
 
-    private fun startLaunchTransition(open: () -> Unit, atomic: Boolean = false, speed: Float = 1f) {
+    private fun startLaunchTransition(open: () -> Unit, atomic: Boolean = false, speed: Float = 1f, fluid: Boolean = false) {
         val s = settings.value
         val sw = wm.currentWindowMetrics.bounds.width()
         val chPx = dp(s.compactHeightDp)
@@ -1268,7 +1268,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         )
         val added = overlays.show(launchSlot) { onFin ->
             val onCov = { runCatching { open() }; Unit }                  // ekran tamamen siyah: uygulamayı aç
-            if (atomic) AtomicLaunch(spec, onCovered = onCov, onFinished = onFin)
+            if (fluid) FluidLaunchFromIsland(spec, onCovered = onCov, onFinished = onFin)
+            else if (atomic) AtomicLaunch(spec, onCovered = onCov, onFinished = onFin)
             else LaunchTransition(spec, onCovered = onCov, onFinished = onFin)
         }
         if (!added) {                        // pencere eklenemedi: animasyonsuz aç
@@ -1298,7 +1299,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         lastExitAt = now
         startSwallowTransition()        // panel penceresi önce eklenir: ilk kare gecikmeden çizilsin
         if (!swallowSlot.shown) return false
-        if (s.musicExitStretch) startStretchOverlay() else swallowIsland()   // uzayan ada ekran katmanında çizilir, ada penceresi büyümez
+        if (s.musicFluidAnim) Unit                       // Akıcı yutma: pencere + şişen ada aynı katmanda çizilir
+        else if (s.musicExitStretch) startStretchOverlay() else swallowIsland()   // uzayan ada ekran katmanında çizilir, ada penceresi büyümez
         exitWatchdog?.cancel()
         exitWatchdog = scope.launch { delay(EXIT_WATCHDOG_MS); endExit() }   // ne olursa olsun animasyon durumu takılı kalmasın
         return true
@@ -1328,7 +1330,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Panel adaya varınca ada kısa süre büyüyüp onu yutar (içerik çizilmez), sonra kapalı müzik haline döner. */
     private fun swallowIsland() {
         val sw = settings.value
-        if (!sw.musicExitSwallow || sw.musicExitStretch) return   // uzayan ada açıksa o ayrı katmanda oynar
+        if (!sw.musicExitSwallow || sw.musicExitStretch || sw.musicFluidAnim) return   // uzayan ada / akıcı yutma ayrı katmanda oynar
         val m = lastMedia ?: return
         val c = ui.value.content
         if (!m.playing || (c !is IslandContent.Media && c !is IslandContent.Idle)) return
@@ -1351,8 +1353,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
             speed = s.musicExitSpeed,
-            color = islandPanelColor(s, lastMedia?.artColor ?: 0, opaque = fullStart),   // tam ekranda panel opak (ekranı örtmeli)
+            color = islandPanelColor(s, lastMedia?.artColor ?: 0, opaque = fullStart || s.musicFluidAnim),   // tam ekranda panel opak (ekranı örtmeli)
         )
+        if (s.musicFluidAnim) {
+            overlays.show(swallowSlot) { onDone -> FluidSwallowToIsland(spec, onFinished = onDone) }
+            return
+        }
         overlays.show(
             swallowSlot,
             // Panel tamamen silindi: ada bir an daha büyük kalıp küçülür (arkası görünmesin)

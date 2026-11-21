@@ -182,7 +182,8 @@ data class IslandSettings(
     val musicExitAtomicFull: Boolean = false, // atom ada: panel önce tüm ekranı kaplar, sonra küçülüp adaya girer
     val musicExitSwallow: Boolean = true,     // panel adaya varınca ada büyüyüp onu yutar
     val musicExitSpeed: Float = 1f,           // müzikten çıkış animasyonu hızı (1 = normal)
-    val musicExitStretch: Boolean = false,    // yeni yutma: ada aşağı doğru uzun bir kapsüle uzanıp yumuşakça eski haline döner (iOS tarzı)
+    val musicExitStretch: Boolean = false,
+    val musicFluidAnim: Boolean = false,        // Akıcı yutma: pencere bulanıklaşarak adaya küçülür, ada şişip yutar; müzik açılışı da aynı tarzda    // yeni yutma: ada aşağı doğru uzun bir kapsüle uzanıp yumuşakça eski haline döner (iOS tarzı)
     // Müzik uygulamasını açma + hareketler
     val musicOpenAnim: Boolean = true,        // adadan müzik uygulamasını açarken açılış animasyonu
     val launchClassic: Boolean = false,       // bildirim + müzik uygulaması açılışı: klasik büyüyen ekran
@@ -418,7 +419,7 @@ class SettingsRepository(context: Context) {
         val PILL_ART = booleanPreferencesKey("pill_art"); val PILL_WL = intPreferencesKey("pill_wl")
         val PILL_WM = intPreferencesKey("pill_wm"); val PILL_WR = intPreferencesKey("pill_wr")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
-        val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_INLINE = booleanPreferencesKey("nt_inline"); val NT_BMENU = booleanPreferencesKey("nt_bmenu"); val NT_BMENU_TAP = booleanPreferencesKey("nt_bmenu_tap"); val NT_BICON = booleanPreferencesKey("nt_bicon"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full")
+        val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_INLINE = booleanPreferencesKey("nt_inline"); val NT_BMENU = booleanPreferencesKey("nt_bmenu"); val NT_BMENU_TAP = booleanPreferencesKey("nt_bmenu_tap"); val NT_BICON = booleanPreferencesKey("nt_bicon"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full"); val MX_FLUID = booleanPreferencesKey("mx_fluid")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val INV_ISLAND = booleanPreferencesKey("inv_island")
         val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below"); val LAND_IN_ISLAND = booleanPreferencesKey("land_in_island")
@@ -586,6 +587,7 @@ class SettingsRepository(context: Context) {
             musicExitSpeed = p[K.MX_SPD] ?: d.musicExitSpeed,
             musicExitSwallow = p[K.MX_SW] ?: d.musicExitSwallow,
             musicExitStretch = p[K.MX_STR] ?: d.musicExitStretch,
+            musicFluidAnim = p[K.MX_FLUID] ?: d.musicFluidAnim,
             launchSpeed = p[K.LA_SPD] ?: d.launchSpeed,
             musicOpenAnim = p[K.MO_ANIM] ?: d.musicOpenAnim,
             launchClassic = p[K.LA_CL] ?: d.launchClassic, launchAtomic = p[K.LA_AT] ?: d.launchAtomic,
@@ -710,7 +712,7 @@ class SettingsRepository(context: Context) {
             it[K.OP_EA] = s.openExpArt; it[K.OP_ET] = s.openExpTitle; it[K.OP_EX] = s.openExpAny
             it[K.OP_CA] = s.openCompArt; it[K.OP_CL] = s.openCompLong; it[K.OP_CT] = s.openCompTap
             it[K.EXP_LONG] = s.expandOnLong; it[K.SW_DN] = s.swipeDownExpand; it[K.SW_UP] = s.swipeUpCollapse; it[K.LP_MS] = s.longPressMs
-            it[K.MX_CLASSIC] = s.musicExitClassic; it[K.MX_ATOMIC] = s.musicExitAtomic; it[K.MX_ATOMIC_FULL] = s.musicExitAtomicFull; it[K.HIDE_MUSIC] = s.hideInMusicApp
+            it[K.MX_CLASSIC] = s.musicExitClassic; it[K.MX_ATOMIC] = s.musicExitAtomic; it[K.MX_ATOMIC_FULL] = s.musicExitAtomicFull; it[K.MX_FLUID] = s.musicFluidAnim; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.INV_ISLAND] = s.invertedIsland
             it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow; it[K.LAND_IN_ISLAND] = s.landscapeEventsInIsland
