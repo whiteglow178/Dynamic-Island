@@ -1251,7 +1251,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (!sent) launchApp(n.pkg)
         }
         val s = settings.value
-        launchWithAnim(s.notifLaunchAnim, pickAtomic(s.launchClassic, s.launchAtomic), s.launchSpeed, open)
+        launchWithAnim(s.notifLaunchAnim, pickAtomic(s.launchClassic, s.launchAtomic), s.launchSpeed, open = open)
     }
 
     private fun startLaunchTransition(open: () -> Unit, atomic: Boolean = false, speed: Float = 1f, fluid: Boolean = false) {
