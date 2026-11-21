@@ -437,13 +437,10 @@ class LandscapeController internal constructor(
         val thick = (s.compactHeightDp * d).roundToInt().coerceAtLeast(2)
         val len = (s.compactWidthDp * d).roundToInt().coerceAtLeast(thick)
         val circle = s.iphoneCircleOn()
-        val bThick = when {
-            circle -> (s.iphoneCircleSizeDp() * d).roundToInt()
-            s.dotMode -> (s.dotLeftDp * d).roundToInt()
-            else -> thick
-        }.coerceAtLeast(2)
-        val bl = if (circle || s.dotMode) bThick else (thick * 1.7f).roundToInt()
-        val gap = ((if (circle) s.iphoneGapDp else if (s.dotMode) s.dotGapDp else 8f) * d).roundToInt()
+        // Baloncuk: dikey kullanımdaki yan baloncukla aynı ölçü (daire) ve aynı boşluk
+        val bThick = (sideSizeDp(s, -1) * d).roundToInt().coerceAtLeast(2)
+        val bl = bThick
+        val gap = (sideGapDp(s) * d).roundToInt()
         val extra = max(landMaxBubbles(s), landSlots(s)) * (bl + gap)
         // Kamera deliği: sol kenarda (ROTATION_90) ya da sağ kenarda (ROTATION_270)
         val display = dm.getDisplay(Display.DEFAULT_DISPLAY)
@@ -722,7 +719,7 @@ private fun LandscapeWindowContent(
                 key(occKey) {
                     val a = remember { Animatable(0f) }
                     LaunchedEffect(Unit) { a.animateTo(1f, tween(220)) }
-                    val slotH = if (occContent is IslandContent.Status && occContent.kind == StatusKind.Charging) g.bubbleLen else g.thick
+                    val slotH = g.thick
                     Box(
                         Modifier.align(if (g.below) Alignment.BottomCenter else Alignment.TopCenter)
                             .size(thickDp, dpOf(slotH)).graphicsLayer { alpha = a.value },
@@ -1069,8 +1066,8 @@ private fun LandBattery(c: IslandContent.Status, t: Dp) {
     LaunchedEffect(Unit) { delay(1400); showBolt = false }
     val green = Pal.c("status_charging")
     val lvl = c.progress.coerceIn(0f, 1f)
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Canvas(Modifier.size(width = t * 0.40f, height = t * 0.66f)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Canvas(Modifier.size(width = t * 0.32f, height = t * 0.46f)) {
             val tipH = size.height * 0.07f
             val bodyTop = tipH + 1f
             val bodyH = size.height - bodyTop
@@ -1081,9 +1078,9 @@ private fun LandBattery(c: IslandContent.Status, t: Dp) {
             drawRoundRect(green, Offset(0f, bodyTop + bodyH - fh), Size(size.width, fh), r)
         }
         if (showBolt) {
-            StatusIcon(c, Modifier.size(t * 0.3f))
+            StatusIcon(c, Modifier.size(t * 0.26f))
         } else {
-            Text(c.value.filter { it.isDigit() }, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(c.value.filter { it.isDigit() }, color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }
 }
