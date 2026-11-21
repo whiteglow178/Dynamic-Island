@@ -620,17 +620,31 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 "Gökkuşağı" to "Tüm renkler kenar boyunca akar",
                 "Ateş" to "Adanın çevresinde titreyen turuncu alevler",
                 "Neon" to "Tek renk, yavaşça nabız gibi parlar",
-            ), draft.neonStyle) { draft = draft.copy(neonStyle = it) }
+                "Elektrik" to "Kenardan kırık kırık şimşek telleri çıkar; üst kenar 1. renk, alt kenar 2. renk",
+                "Mor alev" to "Adanın çevresinde dumanlı mor alevler",
+                "Ses dalgası" to "Adanın çevresinde noktalı halka; noktalar ekolayzır gibi dışa doğru fışkırır",
+            ), draft.neonStyle) { st ->
+                // Seçilen stilin önerilen renkleri uygulanır (sonra istediğin gibi değiştirebilirsin)
+                draft = when (st) {
+                    1 -> draft.copy(neonStyle = st, neonColor1Argb = 0xFFFF3DCB.toInt(), neonColor2Argb = 0xFF3DFFC2.toInt())
+                    4 -> draft.copy(neonStyle = st, neonColor1Argb = 0xFF8FD3FF.toInt())
+                    5 -> draft.copy(neonStyle = st, neonColor1Argb = 0xFF4FA8FF.toInt(), neonColor2Argb = 0xFF9B4DFF.toInt())
+                    7 -> draft.copy(neonStyle = st, neonColor1Argb = 0xFFFF5A2A.toInt(), neonColor2Argb = 0xFFC03CFF.toInt())
+                    else -> draft.copy(neonStyle = st)
+                }
+                version++
+            }
             if (draft.neonStyle != 0) {
                 SliderRow("Çizgi kalınlığı", draft.neonWidthDp, 1f..6f, "${"%.1f".format(draft.neonWidthDp)} dp") { draft = draft.copy(neonWidthDp = it) }
                 SliderRow("Işık şiddeti", draft.neonGlow, 0f..1.5f, "${(draft.neonGlow * 100).toInt()}%") { draft = draft.copy(neonGlow = it) }
                 SliderRow("Hız", draft.neonSpeed, 0.25f..3f, "%.1fx".format(draft.neonSpeed)) { draft = draft.copy(neonSpeed = it) }
-                if (draft.neonStyle == 1 || draft.neonStyle == 4) {
-                    SubHeader(if (draft.neonStyle == 1) "Birinci renk" else "Renk")
+                val two = draft.neonStyle == 1 || draft.neonStyle == 5 || draft.neonStyle == 7
+                if (two || draft.neonStyle == 4) {
+                    SubHeader(when (draft.neonStyle) { 4 -> "Renk"; 5 -> "Üst kenar rengi"; 7 -> "Sol taraf rengi"; else -> "Birinci renk" })
                     key(version) { ColorPicker(draft.neonColor1Argb) { draft = draft.copy(neonColor1Argb = it) } }
                 }
-                if (draft.neonStyle == 1) {
-                    SubHeader("İkinci renk")
+                if (two) {
+                    SubHeader(when (draft.neonStyle) { 5 -> "Alt kenar rengi"; 7 -> "Sağ taraf rengi"; else -> "İkinci renk" })
                     key(version) { ColorPicker(draft.neonColor2Argb) { draft = draft.copy(neonColor2Argb = it) } }
                 }
             }

@@ -54,7 +54,8 @@ import kotlin.math.sin
 
 /*
  * ADA SÜSLERİ
- *  - Renkli çerçeve: renk geçişi / gökkuşağı (kenar boyunca akar), ateş (titreyen alevler), neon (tek renk, nabız).
+ *  - Renkli çerçeve: renk geçişi / gökkuşağı (kenar boyunca akar), ateş ve mor alev (titreyen alevler), neon (tek renk,
+ *    nabız), elektrik (kenardan çıkan şimşek telleri), ses dalgası (noktalı halka + dışa fışkıran çubuklar).
  *    Adanın kendi şekline çizilir; ada açılınca da büyüyen şekli izler. -> Modifier.islandNeon
  *  - Adanın üstünde oturan karakter (uzanan kedi, kedi / ayı kulakları) ve adadan sarkan süsler (salıncakta civciv,
  *    yıldızlar, yılbaşı süsleri, kalpler) ve adadan akan mürekkep damlası. Adanın ALTINDA duran, dokunuş almayan
@@ -95,10 +96,13 @@ internal fun Modifier.islandNeon(cfg: IslandSettings): Modifier {
     val phase = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(dur, easing = LinearEasing)), label = "neonPhase")
     val c1 = Color(cfg.neonColor1Argb)
     val c2 = Color(cfg.neonColor2Argb)
+    // Renk geçişinde iki rengin arası beyaza yakın parlak bir geçişle bağlanır (videodaki pembe → beyaz → mint)
+    val mid = lerp(lerp(c1, c2, 0.5f), Color.White, 0.55f)
     val pal = when (style) {
-        1 -> listOf(c1, c2)
+        1 -> listOf(c1, mid, c2, mid)
         2 -> RainbowPalette
         4 -> listOf(c1)
+        6 -> listOf(Color(0xFFB26BFF), Color(0xFF7B2CFF), Color(0xFFD9B8FF))
         else -> listOf(Color(0xFFFF6A00), Color(0xFFFFC400), Color(0xFFFF2A00))
     }
     val wDp = cfg.neonWidthDp
@@ -109,10 +113,23 @@ internal fun Modifier.islandNeon(cfg: IslandSettings): Modifier {
         val sw = wDp.dp.toPx()
         val pad = NEON_PAD_DP.dp.toPx()
         val pulse = if (style == 4) 0.6f + 0.4f * (0.5f + 0.5f * sin(p * 2f * PI.toFloat() * 2f)) else 1f
-        val brush: Brush = if (style == 4) Brush.linearGradient(listOf(c1, c1)) else flowBrush(pal, p, center)
+        val brush: Brush = when (style) {
+            4 -> Brush.linearGradient(listOf(c1, c1))
+            5 -> Brush.verticalGradient(listOf(c1, c2), 0f, size.height)       // elektrik: üst kenar 1. renk, alt kenar 2. renk
+            7 -> Brush.horizontalGradient(listOf(c1, c2), 0f, size.width)      // ses dalgası: soldan sağa
+            else -> flowBrush(pal, p, center)
+        }
 
+        if (style == 7) {
+            // Noktalı ses dalgası halkası: içerik üstte, halka adanın biraz dışında
+            drawContent()
+            drawSpectrum(p, r, pad, c1, c2, glow)
+            return@drawWithContent
+        }
         if (style == 3) {
-            drawFire(p, r, pad * glow.coerceAtLeast(0.3f))
+            drawFire(p, r, pad * glow.coerceAtLeast(0.3f), FireOrange)
+        } else if (style == 6) {
+            drawFire(p, r, pad * 1.15f * glow.coerceAtLeast(0.3f), FirePurple)
         } else if (glow > 0f) {
             // Dışa vuran yumuşak ışık: kademeli, giderek sönen halkalar
             val rings = 7
@@ -130,7 +147,8 @@ internal fun Modifier.islandNeon(cfg: IslandSettings): Modifier {
             }
         }
         drawContent()
-        val edge: Brush = if (style == 3) flowBrush(pal, p * 3f, center) else brush
+        if (style == 5) drawLightning(p, r, pad * glow.coerceAtLeast(0.3f), c1, c2)
+        val edge: Brush = if (style == 3 || style == 6) flowBrush(pal, p * 3f, center) else brush
         drawRoundRect(
             brush = edge, topLeft = Offset(sw / 2f, sw / 2f),
             size = Size(size.width - sw, size.height - sw),
@@ -162,8 +180,85 @@ private fun DrawScope.perimeterPoint(s: Float, r: Float): Pair<Offset, Offset> {
     return corner(r, r, PI.toFloat(), (d / arc).coerceIn(0f, 1f))
 }
 
-/** Kenar boyunca titreyen alevler: sarı çekirdek, turuncu gövde, kırmızıya sönen uç. */
-private fun DrawScope.drawFire(p: Float, r: Float, reach: Float) {
+private class FirePal(val core: Color, val body: Color, val tip: Color)
+private val FireOrange = FirePal(Color(0xFFFFE07A), Color(0xFFFF8A00), Color(0xFFFF2A00))
+private val FirePurple = FirePal(Color(0xFFE9D6FF), Color(0xFF9B4DFF), Color(0xFF4A12B8))
+
+/** 0..1 arası, (i, j) için hep aynı sözde rastgele sayı (titreme her karede yeniden hesaplanır ama sıçramaz). */
+private fun hash01(i: Int, j: Int): Float {
+    val v = sin(i * 12.9898f + j * 78.233f) * 43758.547f
+    return v - kotlin.math.floor(v)
+}
+
+/**
+ * Elektrik: kenarda ince parlak çizgi; çizgiden dışarı doğru kısa, kırık kırık şimşek telleri hızla belirip söner.
+ * Üst kenarda [top] rengi, alt kenarda [bottom] rengi.
+ */
+private fun DrawScope.drawLightning(p: Float, r: Float, reach: Float, top: Color, bottom: Color) {
+    val n = 70
+    val step = (p * 140f).toInt()               // ~30 ms'de bir yeni şimşek deseni
+    val sw = 1.1.dp.toPx()
+    for (i in 0 until n) {
+        val h = hash01(i, step)
+        if (h > 0.42f) continue
+        val (pt, nrm) = perimeterPoint(i / n.toFloat() + hash01(i, step + 7) * 0.01f, r)
+        val col = lerp(top, bottom, (pt.y / size.height).coerceIn(0f, 1f))
+        val len = reach * (0.25f + 0.75f * hash01(i + 31, step))
+        val tang = Offset(-nrm.y, nrm.x)
+        val path = Path().apply {
+            moveTo(pt.x, pt.y)
+            var cur = pt
+            val segs = 3
+            for (k in 1..segs) {
+                val along = len * k / segs
+                val jit = (hash01(i * 7 + k, step) - 0.5f) * len * 0.7f
+                cur = Offset(pt.x + nrm.x * along + tang.x * jit, pt.y + nrm.y * along + tang.y * jit)
+                lineTo(cur.x, cur.y)
+            }
+        }
+        val a = (0.35f + 0.65f * hash01(i + 5, step)).coerceIn(0f, 1f)
+        drawPath(path, col.copy(alpha = a * 0.35f), style = Stroke(sw * 3.5f, cap = StrokeCap.Round))     // yumuşak hale
+        drawPath(path, lerp(col, Color.White, 0.5f).copy(alpha = a), style = Stroke(sw, cap = StrokeCap.Round))
+    }
+}
+
+/**
+ * Ses dalgası halkası: adanın biraz dışında sık dizilmiş küçük noktalar (soldan sağa [left] → [right] rengi).
+ * Halka boyunca gezen "vuruşlar" noktaları dışa doğru kısa çubuklara dönüştürür (ekolayzır gibi).
+ */
+private fun DrawScope.drawSpectrum(p: Float, r: Float, pad: Float, left: Color, right: Color, glow: Float) {
+    val gap = 3.dp.toPx()
+    val dotR = 0.9.dp.toPx()
+    val sw = size.width; val sh = size.height
+    val ro = r + gap
+    val per = 2 * (sw - 2 * r).coerceAtLeast(0f) + 2 * (sh - 2 * r).coerceAtLeast(0f) + 2f * PI.toFloat() * ro
+    val n = (per / 3.4.dp.toPx()).toInt().coerceIn(40, 400)
+    val step = (p * 90f).toInt()
+    val tau = 2f * PI.toFloat()
+    for (i in 0 until n) {
+        val s = i / n.toFloat()
+        val (pt, nrm) = perimeterPoint(s, r)
+        val base = Offset(pt.x + nrm.x * gap, pt.y + nrm.y * gap)
+        val col = lerp(left, right, (base.x / sw).coerceIn(0f, 1f))
+        // İki vuruş halka boyunca ters yönlerde gezer; üstüne nokta başına titreme
+        fun burst(c: Float, wid: Float): Float {
+            var d = abs(s - c); d = min(d, 1f - d)
+            return kotlin.math.exp(-(d * d) / (2 * wid * wid))
+        }
+        val b1 = burst(((p * 1.3f) % 1f), 0.035f) * (0.6f + 0.4f * sin(tau * p * 7f))
+        val b2 = burst(((1f - p * 0.9f) % 1f + 1f) % 1f, 0.025f) * (0.6f + 0.4f * cos(tau * p * 5f))
+        val amp = ((b1 + b2) * (0.45f + 0.55f * hash01(i, step))).coerceIn(0f, 1f)
+        val len = amp * pad * 0.9f * glow.coerceIn(0.4f, 1.5f)
+        if (len > dotR * 1.5f) {
+            drawLine(col, base, Offset(base.x + nrm.x * len, base.y + nrm.y * len), dotR * 1.5f, StrokeCap.Round)
+        } else {
+            drawCircle(col.copy(alpha = 0.9f), dotR, base)
+        }
+    }
+}
+
+/** Kenar boyunca titreyen alevler: açık çekirdek, parlak gövde, koyuya sönen uç. */
+private fun DrawScope.drawFire(p: Float, r: Float, reach: Float, fp: FirePal) {
     val n = 46
     val tau = 2f * PI.toFloat()
     for (i in 0 until n) {
@@ -175,9 +270,9 @@ private fun DrawScope.drawFire(p: Float, r: Float, reach: Float) {
         val c = Offset(pt.x + nrm.x * len * 0.45f, pt.y + nrm.y * len * 0.45f)
         drawCircle(
             Brush.radialGradient(
-                0f to Color(0xFFFFE07A).copy(alpha = 0.95f),
-                0.35f to Color(0xFFFF8A00).copy(alpha = 0.75f),
-                0.75f to Color(0xFFFF2A00).copy(alpha = 0.25f),
+                0f to fp.core.copy(alpha = 0.95f),
+                0.35f to fp.body.copy(alpha = 0.75f),
+                0.75f to fp.tip.copy(alpha = 0.25f),
                 1f to Color.Transparent,
                 center = c, radius = len * 0.7f,
             ),

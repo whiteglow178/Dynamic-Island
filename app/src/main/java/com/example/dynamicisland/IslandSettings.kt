@@ -285,7 +285,7 @@ data class IslandSettings(
     val colorOverrides: String = "",
 
     // ---------------------------------------------------------- Ada süsleri
-    val neonStyle: Int = 0,                  // renkli çerçeve: 0 kapalı, 1 renk geçişi, 2 gökkuşağı, 3 ateş, 4 neon (tek renk, nabız)
+    val neonStyle: Int = 0,                  // renkli çerçeve: 0 kapalı, 1 renk geçişi, 2 gökkuşağı, 3 ateş, 4 neon, 5 elektrik, 6 mor alev, 7 ses dalgası
     val neonColor1Argb: Int = 0xFFFF3DCB.toInt(),
     val neonColor2Argb: Int = 0xFF3DFFC2.toInt(),
     val neonWidthDp: Float = 2.5f,           // çizgi kalınlığı
