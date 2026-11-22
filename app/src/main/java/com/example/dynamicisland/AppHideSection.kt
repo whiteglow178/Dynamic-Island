@@ -60,7 +60,7 @@ private suspend fun loadInstalledApps(ctx: android.content.Context): List<Instal
  * Seçili uygulamalar ön plandayken ada gizlenir.
  */
 @Composable
-fun HiddenAppsPicker(selected: List<String>, onChange: (List<String>) -> Unit, title: String = "Ada gizlenecek uygulamalar") {
+fun HiddenAppsPicker(selected: List<String>, title: String = "Ada gizlenecek uygulamalar", onChange: (List<String>) -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var open by remember { mutableStateOf(false) }

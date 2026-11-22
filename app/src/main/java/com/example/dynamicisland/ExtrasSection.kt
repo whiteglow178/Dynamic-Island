@@ -108,7 +108,7 @@ fun ExtrasSections() {
             SubHeader("Kamuflajın duracağı uygulamalar")
             Text("Bu uygulamalar açıkken ekran görüntüsü hiç alınmaz; ada normal rengine döner. Bankacılık, mesajlaşma, şifre yöneticisi gibi uygulamaları ekleyebilirsin.",
                 color = dim, fontSize = 12.sp, lineHeight = 17.sp)
-            HiddenAppsPicker(cur.camoSkipList(), { list -> set(cur.copy(camoSkipPkgs = list.joinToString(","))) }, title = "Kamuflajın duracağı uygulamalar")
+            HiddenAppsPicker(cur.camoSkipList(), title = "Kamuflajın duracağı uygulamalar") { list -> set(cur.copy(camoSkipPkgs = list.joinToString(","))) }
         }
         Text(
             "Android 11 ve üstü gerekir. Güncellemeden sonra ilk kez açıyorsan Ayarlar > Erişilebilirlik'ten Omni Island'ı bir kez kapatıp aç (ekran rengini okuma yeteneği böyle etkinleşir)." +
