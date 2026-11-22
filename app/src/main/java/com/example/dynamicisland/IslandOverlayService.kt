@@ -1013,12 +1013,31 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val notifBanner by lazy { NotifBannerOverlay(this, this, this, wm, scope, { settings.value }) { n -> openNotification(n) } }
     private val call: CallController by lazy { CallController(host, sideCall) }
 
+    // ---- Çizerek komut -> GestureCmd.kt
+    private val gesturePad: GesturePad by lazy { GesturePad(this) { a -> runGestureAction(a) } }
+
+    /** Harfe atanan komutu çalıştırır; servis gerektirenler burada, diğerleri GestureAction.runSimple'da. */
+    private fun runGestureAction(a: Int) {
+        val s = settings.value
+        when (a) {
+            GestureAction.TRANSLATE ->
+                if (s.translateReady()) openTranslate()
+                else android.widget.Toast.makeText(this, "Önce ayarlardan Çeviri'yi aç", android.widget.Toast.LENGTH_SHORT).show()
+            GestureAction.FAVORITES ->
+                if (s.favoritesReady()) favorites.open()
+                else android.widget.Toast.makeText(this, "Önce ayarlardan Favoriler'i aç ve uygulama seç", android.widget.Toast.LENGTH_SHORT).show()
+            GestureAction.DOODLE -> IslandDoodleActivity.open(this)
+            else -> GestureAction.runSimple(this, a)
+        }
+    }
+
     /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */
     private fun onPillLongPress() {
         val cur = ui.value
         val s = settings.value
         if (cur.content is IslandContent.Idle) {
-            if (s.translateReady() && s.translateTrigger == 1) openTranslate()
+            if (GestureStore.flow(applicationContext).value.enabled && gesturePad.canShow()) gesturePad.show()   // çizerek komut
+            else if (s.translateReady() && s.translateTrigger == 1) openTranslate()
             else if (s.favoritesReady()) favorites.open()
             else if (s.playDoodle) IslandDoodleActivity.open(this)          // karalama tahtası
             else if (s.playBreath && !BreathSession.active) BreathSession.start()   // nefes egzersizi
@@ -2167,6 +2186,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { lockDot.stop() }
         runCatching { faceId.stop() }
         runCatching { torch.stop() }
+        runCatching { gesturePad.dismiss() }
         runCatching { landscape.stop() }
         IslandSounds.stopAll()
         lyricsJob?.cancel()

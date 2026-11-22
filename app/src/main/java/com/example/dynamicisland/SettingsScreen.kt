@@ -404,6 +404,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         page("Kenar tuşları", PreviewKind.SideCall, "Cevapla / Reddet kenar tuşları") { SideCallSettingsSection() }
         page("Kenar ses tuşları", PreviewKind.SideCall, "Telefonun kenarında ses artır / azalt tuşları") { SideVolumeSettingsSection() }
         page("Kenar müzik çubukları", PreviewKind.PillStyle, "Dikey müzik tuşları ve ilerleme çubuğu") { SideMusicSettingsSection() }
+        page("Çizerek komut", PreviewKind.Island, "Adaya basılı tut, harf çiz: kamera, müzik, fener...") { GestureSettingsSection() }
 
         // ---- Görünüm
         pendingGroup = "Görünüm"
