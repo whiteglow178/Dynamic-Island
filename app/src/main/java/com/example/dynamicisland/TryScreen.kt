@@ -109,6 +109,11 @@ private val TryItems = listOf(
     TryItem("Uçak Modu", "Uçak modu açıldı görünümü.", Color(0xFFFF9F0A), 12),
     TryItem("Zil Sesi", "Zil sesi seviyesi: ada yana genişler, seviye çubuğu değişir.", Color(0xFFD1D1D6), 13),
     TryItem("Düşük Pil", "Düşük pil uyarısı. Ayarlarda \"Düşük pil uyarısı genişlesin\" açıksa büyük kart olarak açılır.", Color(0xFFFF3B30), 14),
+    TryItem("Kulaklık", "Kulaklık bağlanınca açılan kart: adı, simgesi ve pil yüzdesi.", Color(0xFFE5E5EA), 15),
+    TryItem("Navigasyon", "Yol tarifi: kapalı adada dönüş oku ve mesafe, açınca talimat ve varış süresi.", Color(0xFF30D158), 16),
+    TryItem("Sipariş Takibi", "Sipariş canlı takibi: kalan süre, Alındı → Hazırlanıyor → Yolda → Teslim edildi.", Color(0xFFFF9F0A), 17),
+    TryItem("Rahatsız Etmeyin", "Rahatsız Etmeyin açıldı görünümü.", Color(0xFF7D7AFF), 18),
+    TryItem("Erişim Noktası", "Kişisel erişim noktası (hotspot) açıldı görünümü.", Color(0xFF34C759), 19),
 )
 
 /** Dönme açısı (derece). Fazla dönmesin diye küçük; ters yöne dönerse eksi yap. */
@@ -312,6 +317,46 @@ private fun tryIslandScript(
                 ) else IslandContent.Status(StatusKind.LowBattery, title = "Düşük Pil", value = "%20", progress = 0.20f)
             )
             delay(3800); ui.closeIsland()
+        }
+        15 -> {
+            ui.openIsland(
+                IslandContent.Status(StatusKind.Headphones, title = "Kablosuz Kulaklık", subtitle = "Bağlandı", value = "%80", progress = 0.8f)
+            )
+            delay(3500); ui.closeIsland()
+        }
+        16 -> {
+            fun nav(m: Int) = IslandContent.Live(
+                kind = LiveKind.Nav, pkg = "demo", key = "demo-nav", big = "$m m",
+                title = "Atatürk Caddesi'ne sağa dönün", text = "", sub = "Varış 22:41 · 12 dk · 4,6 km",
+            )
+            // Önce kapalı ada (ok + mesafe), sonra açılır ve mesafe azalır
+            ui.value = IslandUiState(content = nav(350), expanded = false)
+            delay(2600)
+            ui.value = IslandUiState(content = nav(300), expanded = true)
+            for (m in intArrayOf(250, 200, 150, 100, 50)) { delay(700); ui.value = ui.value.copy(content = nav(m)) }
+            delay(900); ui.closeIsland()
+        }
+        17 -> {
+            fun order(stage: Int, big: String, text: String) = IslandContent.Live(
+                kind = LiveKind.Delivery, pkg = "demo", key = "demo-order", big = big,
+                title = "Siparişin", text = text, stage = stage,
+            )
+            ui.value = IslandUiState(content = order(1, "15 dk", "Restoran siparişini hazırlıyor"), expanded = false)
+            delay(2400)
+            ui.value = IslandUiState(content = order(1, "15 dk", "Restoran siparişini hazırlıyor"), expanded = true)
+            delay(1600)
+            ui.value = ui.value.copy(content = order(2, "8 dk", "Kurye yolda, 8 dakika içinde kapında"))
+            delay(2000)
+            ui.value = ui.value.copy(content = order(3, "Teslim", "Siparişin teslim edildi. Afiyet olsun!"))
+            delay(2000); ui.closeIsland()
+        }
+        18 -> {
+            ui.openIsland(IslandContent.Status(StatusKind.Focus, title = "Rahatsız Etmeyin", value = "Açık", extra = 1))
+            delay(2600); ui.closeIsland()
+        }
+        19 -> {
+            ui.openIsland(IslandContent.Status(StatusKind.Hotspot, title = "Erişim Noktası", value = "Açık", extra = 1))
+            delay(2600); ui.closeIsland()
         }
     }
 }
@@ -974,6 +1019,24 @@ private fun DrawScope.drawGlyph(kind: Int, c: Color, gap: Color) {
         12 -> drawPlaneGlyph(c)
         13 -> drawPath(BellPath, c)
         14 -> drawBatteryGlyph(c, c, 0.2f)
+        15 -> drawHeadphoneGlyph(c, false)
+        16 -> { // navigasyon: sağa dönüş oku
+            drawPath(
+                Path().apply {
+                    moveTo(7f, 21f); lineTo(7f, 11.5f)
+                    quadraticBezierTo(7f, 8.5f, 10f, 8.5f)
+                    lineTo(14.5f, 8.5f); lineTo(14.5f, 4.5f); lineTo(21f, 10.5f); lineTo(14.5f, 16.5f); lineTo(14.5f, 12.5f)
+                    lineTo(11f, 12.5f); lineTo(11f, 21f); close()
+                }, c,
+            )
+        }
+        17 -> { // sipariş: kutu
+            drawRoundRect(c, Offset(3f, 8f), Size(18f, 13f), CornerRadius(2.5f, 2.5f))
+            drawRoundRect(c, Offset(2f, 4f), Size(20f, 5f), CornerRadius(2f, 2f))
+            drawRect(gap, Offset(10.6f, 4f), Size(2.8f, 17f))
+        }
+        18 -> drawMoonGlyph(c)
+        19 -> drawHotspotGlyph(c)
         9 -> { // favoriler: 2x2 uygulama ızgarası
             val cr = CornerRadius(2.4f, 2.4f)
             drawRoundRect(c, Offset(3.5f, 3.5f), Size(7.5f, 7.5f), cr)
