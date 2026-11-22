@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -47,6 +49,9 @@ private val LIVE_STAGES = listOf("Alındı", "Hazırlanıyor", "Yolda", "Teslim 
 object LiveFlags {
     @Volatile var nav = false
     @Volatile var delivery = false
+    @Volatile var progress = false
+    @Volatile var score = false
+    val any: Boolean get() = nav || delivery || progress || score
 }
 
 // ================================================================ Bildirimden ayrıştırma
@@ -150,6 +155,97 @@ object LiveParse {
     }
 }
 
+// ================================================================ İlerleme ve maç skoru (Birleşik özellikler)
+object LiveParse2 {
+    private fun str(n: Notification, key: String) = n.extras.getCharSequence(key)?.toString().orEmpty().trim()
+
+    /**
+     * İlerleme çubuklu, devam eden bildirim: indirme, yükleme, yedekleme, dosya aktarımı.
+     * Belirsiz (dönen) ilerleme, medya oynatıcı, arama ve navigasyon bildirimleri alınmaz.
+     */
+    fun progress(sbn: StatusBarNotification, icon: ImageBitmap?): IslandContent.Live? {
+        val n = sbn.notification ?: return null
+        if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return null
+        val ex = n.extras
+        val max = ex.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        if (max <= 0 || ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false)) return null
+        val cat = n.category.orEmpty()
+        if (cat == Notification.CATEGORY_CALL || cat == Notification.CATEGORY_TRANSPORT || cat == "navigation") return null
+        if (ex.getString(Notification.EXTRA_TEMPLATE)?.contains("MediaStyle") == true) return null
+        val prog = (ex.getInt(Notification.EXTRA_PROGRESS, 0).toFloat() / max).coerceIn(0f, 1f)
+        val title = str(n, Notification.EXTRA_TITLE)
+        val text = str(n, Notification.EXTRA_TEXT).ifBlank { str(n, Notification.EXTRA_SUB_TEXT) }
+        if (title.isBlank() && text.isBlank()) return null
+        return IslandContent.Live(
+            kind = LiveKind.Progress, pkg = sbn.packageName, key = sbn.key,
+            big = if (prog >= 0.999f) "Tamam" else "%" + (prog * 100).toInt(),
+            title = title.ifBlank { text }, text = if (title.isBlank()) "" else text,
+            icon = icon, progress = prog, intent = n.contentIntent,
+        )
+    }
+
+    private val sportsPkgHints = listOf(
+        "mackolik", "sofascore", "fotmob", "flashscore", "livescore", "onefootball", "bein", "espn", "sporx", "fanatik",
+        "forza", "365scores", "scores365", "nesine", "bilyoner", "iddaa", "tff", "uefa", "fifa", "nba", "thescore",
+        "yahoo.sports", "sports", "futbol", "football", "soccer", "aspor", "trtspor", "tivibu", "exxen",
+    )
+    // "Galatasaray 2 - 1 Fenerbahçe"
+    private val inlineRx = Regex("""^\s*(.{2,40}?)\s+(\d{1,2})\s*[-–:]\s*(\d{1,2})\s+(.{2,40}?)\s*$""")
+    // "Galatasaray - Fenerbahçe" / "Galatasaray vs Fenerbahçe"
+    private val teamsRx = Regex("""^\s*(.{2,40}?)\s+(?:-|–|vs\.?|v)\s+(.{2,40}?)\s*$""", RegexOption.IGNORE_CASE)
+    private val scoreRx = Regex("""(?<![\d:])(\d{1,2})\s*[-–:]\s*(\d{1,2})(?![\d:])""")
+    private val minuteRx = Regex("""(\d{1,3}(?:\+\d{1,2})?)\s*(?:'|’|′|\.?\s*dk\b|\.?\s*dakika)""", RegexOption.IGNORE_CASE)
+    private val htRx = Regex("""devre arası|ilk yarı sonu|ilk yarı sona erdi|half[- ]?time|\bHT\b|\bİY\b""", RegexOption.IGNORE_CASE)
+    private val ftRx = Regex("""maç sonu|maç bitti|maç sona erdi|maç tamamlandı|full[- ]?time|final score|\bFT\b|\bMS\b|match ended""", RegexOption.IGNORE_CASE)
+    private val goalRx = Regex("""\bgo+l+\b|\bgoal\b|⚽""", RegexOption.IGNORE_CASE)
+    private val junkRx = Regex("""^(?:go+l+!*|goal!*|⚽|🔴|canlı|live)[\s:!-]*""", RegexOption.IGNORE_CASE)
+
+    private fun cleanTeam(s: String): String = s.replace(junkRx, "").replace(minuteRx, "")
+        .replace(Regex("""\(.*?\)"""), "").trim(' ', '-', '–', ':', '|', '·', ',', '!')
+
+    /**
+     * Canlı maç skoru: takımlar ve skor başlıktan ya da yazıdan çıkarılır. Spor uygulaması değilse yalnızca
+     * "Takım 2 - 1 Takım" kalıbı ve devam eden / gol bildirimi kabul edilir (sohbetlerdeki rastgele sayılar alınmasın).
+     */
+    fun score(sbn: StatusBarNotification, icon: ImageBitmap?): IslandContent.Live? {
+        val n = sbn.notification ?: return null
+        if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return null
+        val cat = n.category.orEmpty()
+        if (cat == Notification.CATEGORY_MESSAGE || cat == Notification.CATEGORY_EMAIL || cat == Notification.CATEGORY_PROMO) return null
+        val pkg = sbn.packageName.lowercase()
+        val sportsApp = sportsPkgHints.any { pkg.contains(it) }
+        val title = str(n, Notification.EXTRA_TITLE)
+        val text = str(n, Notification.EXTRA_TEXT).ifBlank { str(n, Notification.EXTRA_BIG_TEXT) }
+        val sub = str(n, Notification.EXTRA_SUB_TEXT)
+        val all = "$title $text $sub"
+        var a = ""; var b = ""; var sa = -1; var sb = -1
+        for (line in listOf(title, text, sub).flatMap { it.split('\n') }) {
+            val m = inlineRx.find(line.replace(junkRx, "").replace(Regex("""\s*\(.*?\)\s*$"""), "")) ?: continue
+            a = cleanTeam(m.groupValues[1]); b = cleanTeam(m.groupValues[4])
+            sa = m.groupValues[2].toInt(); sb = m.groupValues[3].toInt()
+            if (a.isNotBlank() && b.isNotBlank()) break
+        }
+        if (a.isBlank() || b.isBlank()) {
+            if (!sportsApp) return null
+            val tm = teamsRx.find(title.replace(junkRx, "")) ?: return null
+            a = cleanTeam(tm.groupValues[1]); b = cleanTeam(tm.groupValues[2])
+            val sc = scoreRx.find(text) ?: scoreRx.find(sub) ?: return null
+            sa = sc.groupValues[1].toInt(); sb = sc.groupValues[2].toInt()
+        }
+        if (a.isBlank() || b.isBlank() || a.any { it.isDigit() } && a.length < 3) return null
+        val ongoing = sbn.isOngoing || (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
+        if (!sportsApp && !(ongoing || goalRx.containsMatchIn(all))) return null
+        val phase = when { ftRx.containsMatchIn(all) -> 2; htRx.containsMatchIn(all) -> 1; else -> 0 }
+        val minute = minuteRx.find(all)?.groupValues?.get(1)?.let { "$it'" }.orEmpty()
+        return IslandContent.Live(
+            kind = LiveKind.Score, pkg = sbn.packageName, key = sbn.key,
+            big = "$sa - $sb", title = "$a - $b", text = "", sub = minute,
+            icon = icon, intent = n.contentIntent,
+            teamA = a, teamB = b, scoreA = sa, scoreB = sb, minute = minute, phase = phase,
+        )
+    }
+}
+
 // ================================================================ Görünüm
 
 @Composable
@@ -163,7 +259,12 @@ private fun LiveIcon(c: IslandContent.Live, size: Dp, preferApp: Boolean) {
     } else {
         Canvas(Modifier.size(size)) {
             val sc = this.size.width / 24f
-            if (c.kind == LiveKind.Nav) drawTurnArrow(LIVE_GREEN, sc) else drawBoxGlyph(LIVE_GREEN, sc)
+            when (c.kind) {
+                LiveKind.Nav -> drawTurnArrow(LIVE_GREEN, sc)
+                LiveKind.Score -> drawBallGlyph(sc)
+                LiveKind.Progress -> drawDownGlyph(LIVE_GREEN, sc)
+                LiveKind.Delivery -> drawBoxGlyph(LIVE_GREEN, sc)
+            }
         }
     }
 }
@@ -174,6 +275,30 @@ private fun DrawScope.drawTurnArrow(color: Color, sc: Float) {
         lineTo(15f * sc, 22f * sc); lineTo(9f * sc, 22f * sc); lineTo(9f * sc, 11f * sc); lineTo(4f * sc, 11f * sc); close()
     }
     drawPath(p, color)
+}
+
+private fun DrawScope.drawBallGlyph(sc: Float) {
+    val c = Offset(12f * sc, 12f * sc)
+    drawCircle(Color.White, 10f * sc, c)
+    val pent = Path().apply {
+        for (k in 0 until 5) {
+            val a = Math.toRadians(-90.0 + k * 72.0)
+            val x = c.x + kotlin.math.cos(a).toFloat() * 4f * sc
+            val y = c.y + kotlin.math.sin(a).toFloat() * 4f * sc
+            if (k == 0) moveTo(x, y) else lineTo(x, y)
+        }
+        close()
+    }
+    drawPath(pent, Color(0xFF1C1C1E))
+}
+
+private fun DrawScope.drawDownGlyph(color: Color, sc: Float) {
+    val p = Path().apply {
+        moveTo(9f * sc, 3f * sc); lineTo(15f * sc, 3f * sc); lineTo(15f * sc, 11f * sc); lineTo(19f * sc, 11f * sc)
+        lineTo(12f * sc, 18f * sc); lineTo(5f * sc, 11f * sc); lineTo(9f * sc, 11f * sc); close()
+    }
+    drawPath(p, color)
+    drawRoundRect(color, Offset(4f * sc, 19.5f * sc), Size(16f * sc, 2.5f * sc), CornerRadius(1.2f * sc))
 }
 
 private fun DrawScope.drawBoxGlyph(color: Color, sc: Float) {
@@ -193,7 +318,7 @@ internal fun LiveCompact(c: IslandContent.Live, modifier: Modifier = Modifier) {
             LiveIcon(c, 22.dp, preferApp = false)
             Spacer(Modifier.weight(1f))
             Text(
-                c.big, color = if (c.kind == LiveKind.Delivery) LIVE_GREEN else Color.White,
+                c.big, color = if (c.kind == LiveKind.Delivery || c.kind == LiveKind.Progress || c.goal) LIVE_GREEN else Color.White,
                 fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, softWrap = false,
             )
         }
@@ -203,6 +328,7 @@ internal fun LiveCompact(c: IslandContent.Live, modifier: Modifier = Modifier) {
 /** Açık ada: navigasyonda büyük ok + mesafe + talimat; siparişte uygulama, başlık, kalan süre ve aşama çubuğu. */
 @Composable
 internal fun LivePanel(c: IslandContent.Live, rb: RainbowStyle?) {
+    if (c.kind == LiveKind.Score) { ScorePanel(c, rb); return }
     if (c.kind == LiveKind.Nav) {
         Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
@@ -269,6 +395,39 @@ private fun DeliveryTrack(c: IslandContent.Live) {
             LIVE_STAGES.forEachIndexed { i, s ->
                 Text(s, color = if (i <= c.stage) Color.White.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.35f), fontSize = 10.sp, maxLines = 1)
             }
+        }
+    }
+}
+
+/** Maç skoru kartı: iki takım, ortada büyük skor; altta dakika / devre arası / maç sonu ve canlı noktası. Golde skor yeşil. */
+@Composable
+private fun ScorePanel(c: IslandContent.Live, rb: RainbowStyle?) {
+    Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            Text(c.teamA, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 2,
+                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, lineHeight = 18.sp, modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(14.dp))
+            Text(
+                "${c.scoreA}  -  ${c.scoreB}", color = if (c.goal) LIVE_GREEN else Color.White,
+                fontSize = 30.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                modifier = if (c.goal) Modifier else Modifier.rainbowFill(rb),
+            )
+            Spacer(Modifier.width(14.dp))
+            Text(c.teamB, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 2,
+                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Start, lineHeight = 18.sp, modifier = Modifier.weight(1f))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (c.appIcon != null) { LiveIcon(c, 18.dp, preferApp = true); Spacer(Modifier.width(8.dp)) }
+            val status = when {
+                c.goal -> "GOL!"
+                c.phase == 2 -> "Maç sonu"
+                c.phase == 1 -> "Devre arası"
+                c.minute.isNotBlank() -> c.minute
+                else -> "Canlı"
+            }
+            Text(status, color = if (c.phase == 2) Color.White.copy(alpha = 0.6f) else LIVE_GREEN, fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f))
+            if (c.phase == 0) Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFFF453A)))
         }
     }
 }

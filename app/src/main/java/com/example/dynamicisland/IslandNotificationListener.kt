@@ -556,7 +556,9 @@ class IslandNotificationListener : NotificationListenerService() {
             val ongoing = (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
             val summary = (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0
             if (userGone && !ongoing && !summary && sbn.packageName != packageName) {
-                IslandBus.post(IslandEvent.NotifTrashed(sbn.packageName))
+                val ttl = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+                val txt = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+                IslandBus.post(IslandEvent.NotifTrashed(sbn.packageName, ttl.ifBlank { txt }))
             }
         }
     }
@@ -586,7 +588,9 @@ class IslandNotificationListener : NotificationListenerService() {
         val n = sbn.notification ?: return false
         val icon = runCatching { n.getLargeIcon()?.loadDrawable(this)?.toBitmap(128, 128)?.asImageBitmap() }.getOrNull()
         val live = (if (LiveFlags.nav) LiveParse.nav(sbn, icon) else null)
+            ?: (if (LiveFlags.score) LiveParse2.score(sbn, icon) else null)
             ?: (if (LiveFlags.delivery) LiveParse.delivery(sbn, icon) else null)
+            ?: (if (LiveFlags.progress) LiveParse2.progress(sbn, icon) else null)
         if (live == null) {
             // Önceden canlı olan bildirim artık uymuyor (ör. navigasyon bitti): adadan kalksın
             if (liveKeys.remove(sbn.key)) IslandBus.post(IslandEvent.LiveGone(sbn.key))
@@ -609,7 +613,7 @@ class IslandNotificationListener : NotificationListenerService() {
             return
         }
         // Navigasyon / sipariş takibi: adada canlı etkinlik olarak kalır (özellik kapalıysa normal yoldan gider)
-        if (sbn.packageName != packageName && (LiveFlags.nav || LiveFlags.delivery) && handleLive(sbn)) return
+        if (sbn.packageName != packageName && LiveFlags.any && handleLive(sbn)) return
         if (sbn.packageName == packageName || sbn.isOngoing ||
             n.flags and Notification.FLAG_GROUP_SUMMARY != 0 ||
             n.category == Notification.CATEGORY_TRANSPORT ||

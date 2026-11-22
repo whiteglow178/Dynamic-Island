@@ -177,9 +177,12 @@ private fun foldDeg(a: Float): Float = ((a + 90f) % 180f + 180f) % 180f - 90f
  */
 @Composable
 fun FlipAlbumArt(
-    art: ImageBitmap?, size: Dp, flip: ArtFlip?, spin: () -> Float, corner: Dp,
+    art: ImageBitmap?, size: Dp, flip0: ArtFlip?, spin: () -> Float, corner: Dp,
     allowOld: Boolean = true, modifier: Modifier = Modifier, video: String = "",
 ) {
+    // Dağılan kapak açıkken çevirme animasyonu yerine parçacık geçişi kullanılır
+    val dissolve = FxPrefs.coverDissolve && video.isEmpty()
+    val flip = if (dissolve) null else flip0
     val showOld by remember(flip) { derivedStateOf { flip != null && flip.from != null && flip.trackDeg < 90f } }
     val old = flip?.from
     // İlk yarıda eski kapak; ikinci yarıda yenisi (henüz yüklenmediyse eskisi kalır, boşluk / ♪ görünmez)
@@ -205,6 +208,8 @@ fun FlipAlbumArt(
     ) {
         if (video.isNotEmpty()) {
             VideoBackdrop(video, 0f)
+        } else if (dissolve) {
+            DissolveArt(art ?: old, Modifier.fillMaxSize())
         } else if (shown != null) {
             Image(
                 bitmap = shown, contentDescription = null, contentScale = ContentScale.Crop,
@@ -770,7 +775,15 @@ fun IslandPill(
     val fx = remember { IslandFxState() }
     // Şarkının havası: hava efekti ayardan değil, çalan şarkının kapak renginden seçilir (-1 = ayardaki efekt)
     val moodArt = (content as? IslandContent.Media)?.artColor ?: 0
-    val moodWeather = if (cfg.more.musicMood && moodArt != 0) moodWeatherFor(moodArt) else -1
+    val moodByArt = if (cfg.more.musicMood && moodArt != 0) {
+        if (cfg.more.moodExtended) moodWeatherExtended(moodArt) else moodWeatherFor(moodArt)
+    } else -1
+    // Takvim olayları: özel gün / saatte olay kendiliğinden açılır (şarkının havasından önceliklidir); dakikada bir yeniden bakılır
+    var calTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(cfg.more.calendarFx) { while (cfg.more.calendarFx) { delay(60_000L); calTick = System.currentTimeMillis() } }
+    val calWeather = if (cfg.more.calendarFx) calendarWeather(calTick) else -1
+    val moodWeather = if (calWeather >= 0) calWeather else moodByArt
+    SideEffect { FxPrefs.coverDissolve = cfg.more.coverDissolve }
     val effWeather = if (moodWeather >= 0) moodWeather else cfg.fxWeather
     val fxActive = fxMode != 0 && content is IslandContent.Media && (effWeather != 0 || cfg.fxBreak) && !swallow && !cfg.dotMode
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
@@ -957,6 +970,11 @@ fun IslandPill(
                 cfg.more.designStyle, dsPhoto,
                 Modifier.fillMaxSize().graphicsLayer { alpha = if (dsFull) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f) },
             )
+        }
+
+        // Pil azken kıvılcım (Ana Sayfa > Birleşik efektler): boştaki adanın kenarında arada bir çatırtı
+        if (cfg.more.lowBattSparks && content is IslandContent.Idle && !swallow && !cfg.dotMode) {
+            LowBattSparks(Modifier.fillMaxSize())
         }
 
         // Müzik çalarken alt kenarda albüm renginde hareketli ışık (içeriğin altında)

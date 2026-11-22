@@ -567,6 +567,17 @@ data class MoreSettings(
     val focusIndicator: Boolean = false,    // Rahatsız Etmeyin açılınca / kapanınca geniş hap
     val hotspotIndicator: Boolean = false,  // kişisel erişim noktası açılınca / kapanınca geniş hap
     val deliveryIsland: Boolean = false,    // sipariş / kargo bildirimleri adada canlı takip olarak kalır
+    // ---- Birleşik özellikler (ComboSection.kt)
+    val fxTilt: Boolean = false,            // ada olaylarında eğim ve sallama: yığınlar kayar, kabarcıklar eğik yükselir
+    val moodExtended: Boolean = false,      // şarkının havası portal olaylarını da seçebilir (sualtı, kutup ışığı, havai fişek...)
+    val moodLyrics: Boolean = false,        // olay şarkı sözüne tepki verir: yeni satırda küçük, nakaratta büyük patlama
+    val coverDissolve: Boolean = false,     // şarkı değişince kapak parçacıklara ayrılır, yenisi parçacıklardan birleşir
+    val calendarFx: Boolean = false,        // özel gün / saatte olay kendiliğinden açılır (yılbaşı, 29 Ekim, dolunay...)
+    val chargeArcs: Boolean = false,        // şarja takınca halkaya elektrik arkları akar
+    val lowBattSparks: Boolean = false,     // pil azken boştaki ada arada bir kıvılcım çakar
+    val notifShatter: Boolean = false,      // silinen bildirimin yazısı harf harf parçalanıp adaya çekilir
+    val progressIsland: Boolean = false,    // indirme / yükleme gibi ilerleme bildirimleri adada canlı ilerleme olur
+    val scoreIsland: Boolean = false,       // canlı maç skoru bildirimleri adada skor kartı olur
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -687,6 +698,10 @@ class SettingsRepository(context: Context) {
         val CPORTAL = booleanPreferencesKey("cportal"); val CRING = booleanPreferencesKey("cring"); val NBIRD = booleanPreferencesKey("nbird")
         val HPCARD = booleanPreferencesKey("hp_card"); val HPBATT = booleanPreferencesKey("hp_batt"); val NAVI = booleanPreferencesKey("nav_island")
         val FOCUSI = booleanPreferencesKey("focus_ind"); val HOTSPOT = booleanPreferencesKey("hotspot_ind"); val DELIV = booleanPreferencesKey("deliv_island")
+        val C_TILT = booleanPreferencesKey("c_tilt"); val C_MOODX = booleanPreferencesKey("c_moodx"); val C_MOODL = booleanPreferencesKey("c_moodl")
+        val C_DISS = booleanPreferencesKey("c_diss"); val C_CAL = booleanPreferencesKey("c_cal"); val C_ARCS = booleanPreferencesKey("c_arcs")
+        val C_LOWB = booleanPreferencesKey("c_lowb"); val C_SHAT = booleanPreferencesKey("c_shat"); val C_PROG = booleanPreferencesKey("c_prog")
+        val C_SCORE = booleanPreferencesKey("c_score")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -964,6 +979,16 @@ class SettingsRepository(context: Context) {
                 focusIndicator = p[K.FOCUSI] ?: d.more.focusIndicator,
                 hotspotIndicator = p[K.HOTSPOT] ?: d.more.hotspotIndicator,
                 deliveryIsland = p[K.DELIV] ?: d.more.deliveryIsland,
+                fxTilt = p[K.C_TILT] ?: d.more.fxTilt,
+                moodExtended = p[K.C_MOODX] ?: d.more.moodExtended,
+                moodLyrics = p[K.C_MOODL] ?: d.more.moodLyrics,
+                coverDissolve = p[K.C_DISS] ?: d.more.coverDissolve,
+                calendarFx = p[K.C_CAL] ?: d.more.calendarFx,
+                chargeArcs = p[K.C_ARCS] ?: d.more.chargeArcs,
+                lowBattSparks = p[K.C_LOWB] ?: d.more.lowBattSparks,
+                notifShatter = p[K.C_SHAT] ?: d.more.notifShatter,
+                progressIsland = p[K.C_PROG] ?: d.more.progressIsland,
+                scoreIsland = p[K.C_SCORE] ?: d.more.scoreIsland,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1083,6 +1108,10 @@ class SettingsRepository(context: Context) {
             it[K.CPORTAL] = m.coverPortal; it[K.CRING] = m.chargeRing; it[K.NBIRD] = m.notifBirds
             it[K.HPCARD] = m.headphoneCard; it[K.HPBATT] = m.headphoneBattery; it[K.NAVI] = m.navIsland
             it[K.FOCUSI] = m.focusIndicator; it[K.HOTSPOT] = m.hotspotIndicator; it[K.DELIV] = m.deliveryIsland
+            it[K.C_TILT] = m.fxTilt; it[K.C_MOODX] = m.moodExtended; it[K.C_MOODL] = m.moodLyrics
+            it[K.C_DISS] = m.coverDissolve; it[K.C_CAL] = m.calendarFx; it[K.C_ARCS] = m.chargeArcs
+            it[K.C_LOWB] = m.lowBattSparks; it[K.C_SHAT] = m.notifShatter; it[K.C_PROG] = m.progressIsland
+            it[K.C_SCORE] = m.scoreIsland
         }
     }
 

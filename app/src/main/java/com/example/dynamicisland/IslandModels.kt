@@ -27,7 +27,7 @@ enum class StatusKind {
 fun IslandContent.Status.isCard(): Boolean = kind == StatusKind.LowBatteryCard || kind == StatusKind.Headphones
 
 /** Canlı etkinlik türü: navigasyon ya da sipariş / kargo takibi. */
-enum class LiveKind { Nav, Delivery }
+enum class LiveKind { Nav, Delivery, Progress, Score }
 
 /** Geniş, tek satırlık iOS hapları: ağ, uçak modu, zil sesi seviyesi ve ince düşük pil hapı. */
 fun IslandContent.Status.isSysPill(): Boolean =
@@ -76,6 +76,14 @@ sealed interface IslandContent {
         val stage: Int = -1,                              // sipariş aşaması: 0 alındı, 1 hazırlanıyor, 2 yolda, 3 teslim edildi
         val progress: Float = -1f,                        // bildirimdeki ilerleme 0..1 (-1 = yok)
         val intent: android.app.PendingIntent? = null,
+        // ---- Maç skoru (LiveKind.Score)
+        val teamA: String = "",
+        val teamB: String = "",
+        val scoreA: Int = -1,
+        val scoreB: Int = -1,
+        val minute: String = "",                          // "67'", "45+2'"
+        val phase: Int = 0,                               // 0 oynanıyor, 1 devre arası, 2 maç sonu
+        val goal: Boolean = false,                        // az önce gol oldu (servis işaretler)
     ) : IslandContent
 
     /** Özel ada tasarımı (fotoğraf): boştaki adaya dokununca ada genişleyip fotoğrafı tamamen gösterir. */
@@ -226,7 +234,7 @@ sealed interface IslandEvent {
         val open: android.app.PendingIntent?, val key: String,
     ) : IslandEvent
     /** Kullanıcı bir bildirimi sildi (kaydırarak ya da "Tümünü temizle"): çöp kutusu ada animasyonu için. */
-    data class NotifTrashed(val pkg: String) : IslandEvent
+    data class NotifTrashed(val pkg: String, val text: String = "") : IslandEvent
     /** Shazam'ın dinleme bildirimi kalktı ya da "eşleşme yok" bildirimi geldi. */
     data object ShazamGone : IslandEvent
     /** Navigasyon / sipariş bildirimi geldi ya da güncellendi. */

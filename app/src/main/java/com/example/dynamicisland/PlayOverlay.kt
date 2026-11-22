@@ -91,7 +91,7 @@ class PlayOverlay(
     fun wanted(s: IslandSettings) = s.playPet || s.playMagnet || s.playRipple || s.playPuff || s.playEater || s.playDaylight ||
         s.playFling || s.playPlant || s.playSeason || s.playParty ||
         s.playVisitors || s.playDice || s.playBreath || s.playNightLight || s.playShadow || s.more.trashIsland ||
-        s.more.notifFlow || s.more.notifBirds
+        s.more.notifFlow || s.more.notifBirds || s.more.notifShatter
 
     fun attach() {
         if (view != null || !wanted(settings.value)) return
@@ -179,6 +179,7 @@ internal fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlo
         if (s.playPlant) PlantFx(anchor)
         if (s.playEater) EaterFx(anchor)
         if (s.more.trashIsland) TrashFx(anchor)
+        if (s.more.notifShatter) NotifShatterFx(anchor)
         if (s.more.notifFlow) NotifFlowFx(anchor)
         if (s.more.notifBirds) NotifBirdFx(anchor)
         if (s.playRipple) RippleFx(anchor)

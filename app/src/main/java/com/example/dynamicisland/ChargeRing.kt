@@ -57,8 +57,11 @@ class ChargeRingFlash(
     private var host: WindowManager? = null
     private val run = mutableIntStateOf(0)
     private val pct = mutableIntStateOf(0)
+    @Volatile private var arcs = false
 
-    fun play(a: FaceIdAnchor, percent: Int) {
+    /** [withArcs]: Şarjda elektrik (Birleşik efektler) – halkaya kenarlardan elektrik arkları akar. */
+    fun play(a: FaceIdAnchor, percent: Int, withArcs: Boolean = false) {
+        arcs = withArcs
         pct.intValue = percent.coerceIn(0, 100)
         if (view == null && !attach(a)) return
         run.intValue++
@@ -132,6 +135,7 @@ class ChargeRingFlash(
                         close()
                     }
                     drawPath(bolt, CR_GREEN.copy(alpha = ca))
+                    if (arcs) drawChargeArcs(c, r, fill, tt, ca, density, Offset(left, top), Size(bw, bh))
                 }
             }
         }
@@ -173,5 +177,69 @@ class ChargeRingFlash(
         v.disposeComposition()
         host = null
         onActive(false)
+    }
+}
+
+// ---------------------------------------------------------------- Şarjda elektrik
+/** Kırık çizgili ark (orta nokta kaydırma). */
+private fun crArc(a: Offset, b: Offset, rnd: java.util.Random, rough: Float): List<Offset> {
+    var pts = listOf(a, b)
+    val dx0 = b.x - a.x; val dy0 = b.y - a.y
+    var off = kotlin.math.sqrt(dx0 * dx0 + dy0 * dy0) * rough
+    repeat(4) {
+        val nx = ArrayList<Offset>(pts.size * 2)
+        for (i in 0 until pts.size - 1) {
+            val p = pts[i]; val q = pts[i + 1]
+            nx.add(p)
+            val dx = q.x - p.x; val dy = q.y - p.y
+            val l = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
+            val o = (rnd.nextFloat() - 0.5f) * 2f * off
+            nx.add(Offset((p.x + q.x) / 2f - dy / l * o, (p.y + q.y) / 2f + dx / l * o))
+        }
+        nx.add(pts.last())
+        pts = nx
+        off *= 0.5f
+    }
+    return pts
+}
+
+/**
+ * Halka dolarken kutunun kenarlarından dolan uca doğru titreyen elektrik arkları ve uçta kıvılcım.
+ * Her karede yeniden üretilir (titreme); dolum bitince arklar seyrelir.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawChargeArcs(
+    c: Offset, r: Float, fill: Float, tt: Float, ca: Float, d: Float, boxTL: Offset, boxSz: Size,
+) {
+    if (ca <= 0.01f || fill <= 0.002f) return
+    val rnd = java.util.Random((tt * 60f).toLong())
+    val ang = Math.toRadians((-90f + 360f * fill).toDouble())
+    val head = Offset(c.x + r * kotlin.math.cos(ang).toFloat(), c.y + r * kotlin.math.sin(ang).toFloat())
+    val filling = tt < CR_SWEEP_END
+    val n = if (filling) 3 else 1
+    if (!filling && rnd.nextFloat() > 0.35f) return
+    val glow = Color(0xFF52D6FF)
+    repeat(n) {
+        // kutunun kenarında rastgele bir nokta
+        val side = rnd.nextInt(4)
+        val u = rnd.nextFloat()
+        val inset = 4f * d
+        val src = when (side) {
+            0 -> Offset(boxTL.x + inset + u * (boxSz.width - inset * 2f), boxTL.y + inset)
+            1 -> Offset(boxTL.x + boxSz.width - inset, boxTL.y + inset + u * (boxSz.height - inset * 2f))
+            2 -> Offset(boxTL.x + inset + u * (boxSz.width - inset * 2f), boxTL.y + boxSz.height - inset)
+            else -> Offset(boxTL.x + inset, boxTL.y + inset + u * (boxSz.height - inset * 2f))
+        }
+        val pts = crArc(src, head, rnd, 0.22f)
+        val path = Path().apply { pts.forEachIndexed { i, o -> if (i == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y) } }
+        drawPath(path, glow.copy(alpha = 0.35f * ca), style = Stroke(5f * d, cap = StrokeCap.Round), blendMode = androidx.compose.ui.graphics.BlendMode.Plus)
+        drawPath(path, Color.White.copy(alpha = 0.9f * ca), style = Stroke(1.2f * d, cap = StrokeCap.Round))
+    }
+    // dolan uçta kıvılcım
+    drawCircle(androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color.White.copy(alpha = ca), glow.copy(alpha = 0.5f * ca), Color.Transparent), head, 10f * d),
+        10f * d, head, blendMode = androidx.compose.ui.graphics.BlendMode.Plus)
+    repeat(if (filling) 6 else 2) {
+        val a2 = rnd.nextFloat() * 6.2832f
+        val l = (3f + rnd.nextFloat() * 7f) * d
+        drawLine(Color(0xFFFFE08A).copy(alpha = ca), head, Offset(head.x + kotlin.math.cos(a2) * l, head.y + kotlin.math.sin(a2) * l), 1f * d, StrokeCap.Round)
     }
 }

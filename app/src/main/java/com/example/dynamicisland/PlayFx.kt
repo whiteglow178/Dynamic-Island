@@ -71,6 +71,7 @@ sealed interface PlayEvent {
     data class BirdLand(val kind: VisitorKind) : PlayEvent   // bildirim kuşu adaya konar
     data object BirdAway : PlayEvent                          // bildirim kuşu uçup gider
     data class Trashed(val icon: androidx.compose.ui.graphics.ImageBitmap?) : PlayEvent   // bildirim silindi: simgesi adaya uçar (çöp kutusu ada)
+    data class Shatter(val text: String, val style: Int) : PlayEvent   // bildirim silindi: yazısı harf harf parçalanıp adaya çekilir (ComboFx.kt)
 }
 
 object PlayFx {

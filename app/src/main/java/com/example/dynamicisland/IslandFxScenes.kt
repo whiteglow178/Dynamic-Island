@@ -150,6 +150,10 @@ internal class FxScenes {
     private var flashColor = Color.White
     private var inten = 0.6f
     private var nowMs = 0L
+    private var tilt = 0f                // telefonun yana eğimi (Eğilen dünya kapalıysa 0)
+    private var gustBoost = 0f           // söz tepkisi: rüzgâr hamlesi
+    private var auroraPulse = 0f         // söz tepkisi: kutup ışığı parlaması
+    private var pendingArcs = 0          // söz tepkisi: art arda atlayacak arklar
 
     fun clear() {
         ps.clear(); flashes.clear(); swimmers.clear(); arcs.clear()
@@ -224,6 +228,7 @@ internal class FxScenes {
     fun step(
         weather: Int, dt: Float, now: Long, W: Float, H: Float, d: Float, intensity: Float,
         targets: Collection<FxTarget>, byId: Map<String, FxTarget>,
+        tiltX: Float = 0f, shook: Boolean = false, cue: Int = 0,
     ) {
         if (scene != weather) {
             ps.clear(); flashes.clear(); swimmers.clear(); arcs.clear()
@@ -234,8 +239,13 @@ internal class FxScenes {
         nowMs = now
         inten = intensity
         time += dt
-        gust = 0.55f + 0.45f * (0.5f + 0.5f * fxNoise(time * 0.45f + 3f))
+        tilt = tiltX
+        if (gustBoost > 0f) gustBoost = (gustBoost - dt * 0.6f).coerceAtLeast(0f)
+        if (auroraPulse > 0f) auroraPulse = (auroraPulse - dt * 0.9f).coerceAtLeast(0f)
+        gust = 0.55f + 0.45f * (0.5f + 0.5f * fxNoise(time * 0.45f + 3f)) + gustBoost
         val widthK = (W / (340f * d)).coerceIn(0.6f, 1.8f)
+        if (shook) shakeOff(targets, d)
+        if (cue != 0) onCue(cue == 2, W, H, d)
 
         when (weather) {
             FXW_METEOR -> {
@@ -284,8 +294,8 @@ internal class FxScenes {
         for (t in targets) {
             if (t.pile == null || t.gone) continue
             when (t.pileKind) {
-                PILE_SAND -> relaxPile(t, dt, d, 0.6f, 0.22f * gust, 0.03f * d) { x, y, m -> spill(x, y, m, d, true) }
-                PILE_SNOW -> relaxPile(t, dt, d, 0.95f, 0.10f * gust, 0.015f * d) { x, y, m -> spill(x, y, m, d, false) }
+                PILE_SAND -> relaxPile(t, dt, d, 0.6f, 0.22f * gust, 0.03f * d, tiltBias(tilt) * 1.8f) { x, y, m -> spill(x, y, m, d, true) }
+                PILE_SNOW -> relaxPile(t, dt, d, 0.95f, 0.10f * gust, 0.015f * d, tiltBias(tilt) * 1.4f) { x, y, m -> spill(x, y, m, d, false) }
             }
         }
 
@@ -339,6 +349,7 @@ internal class FxScenes {
                 S_EMBER -> {
                     val damp = exp(-2f * dt)
                     p.vx *= damp; p.vy = p.vy * damp + 60f * d * dt
+                    p.vx += tilt * 120f * d * dt
                     p.x += p.vx * dt; p.y += p.vy * dt
                     p.life -= dt
                     if (p.life <= 0f) dead = true
@@ -346,6 +357,7 @@ internal class FxScenes {
                 S_SPARK -> {
                     p.vy += 900f * d * dt
                     p.vx *= (1f - 0.8f * dt)
+                    p.vx += tilt * 600f * d * dt
                     p.x += p.vx * dt; p.y += p.vy * dt
                     p.life -= dt
                     if (p.vy > 0f) {
@@ -364,7 +376,7 @@ internal class FxScenes {
                     p.vy += (-term - p.vy) * min(1f, 3f * dt)
                     val w = 5f + rr * 1.3f
                     p.a += dt * w
-                    val vx = rr * 0.6f * d * cos(p.a) * w
+                    val vx = rr * 0.6f * d * cos(p.a) * w - tilt * 70f * d       // kaldırma kuvveti: eğimde yukarı taraf
                     p.x += vx * dt; p.y += p.vy * dt
                     val t = solidAt(targets, p.x, p.y - p.size)
                     if (t != null) {
@@ -388,7 +400,8 @@ internal class FxScenes {
                         p.kind = S_BUBBLE; p.tid = null; p.vy = -20f * d
                     } else {
                         // tavanın altında kenara doğru yavaşça kayar (büyük kabarcık daha hızlı)
-                        p.vx += 12f * d * dt * (0.5f + p.size / d * 0.3f)
+                        if (abs(tilt) > 0.15f) p.b = if (tilt > 0f) -1f else 1f       // eğimde yukarı tarafa kayar
+                        p.vx += (12f * (0.5f + p.size / d * 0.3f) + abs(tilt) * 40f) * d * dt
                         p.ox += p.b * p.vx * dt
                         p.x = t.rect.left + p.ox
                         val bot = t.botAt(p.x)
@@ -401,7 +414,7 @@ internal class FxScenes {
                     }
                 }
                 S_MOTE -> {
-                    p.x += (p.vx + sin(time * 0.7f + p.a) * 3f * d) * dt; p.y += p.vy * dt
+                    p.x += (p.vx + sin(time * 0.7f + p.a) * 3f * d + tilt * 10f * d) * dt; p.y += p.vy * dt
                     p.life -= dt
                     if (p.life <= 0f || p.y > H + 4f * d) dead = true
                 }
@@ -419,6 +432,7 @@ internal class FxScenes {
                     val damp = exp(-p.a * dt)
                     p.vx *= damp; p.vy *= damp
                     p.vy += (if (p.b == 1f) 70f else 110f) * d * dt
+                    p.vx += tilt * 110f * d * dt
                     p.x += p.vx * dt; p.y += p.vy * dt
                     p.life -= dt
                     if (p.b == 1f && f() < 26f * dt) {
@@ -454,7 +468,7 @@ internal class FxScenes {
                     if (p.life <= 0f) dead = true
                 }
                 S_GRAIN -> {
-                    val wl = windSand * p.z
+                    val wl = windSand * p.z + tilt * 200f * d
                     p.vx += (wl - p.vx) * min(1f, 2.5f * dt)
                     p.vy += (fxNoise(p.x * 0.02f / d + time * 2.6f + p.z * 9f) * 90f * d - p.vy * 1.2f + 18f * d) * dt
                     p.x += p.vx * dt; p.y += p.vy * dt
@@ -478,18 +492,18 @@ internal class FxScenes {
                 }
                 S_FALL -> {
                     p.vy += 600f * d * dt
-                    p.vx += ((if (scene == FXW_SAND) windSand else windSnow) * 0.4f - p.vx) * min(1f, 2f * dt)
+                    p.vx += ((if (scene == FXW_SAND) windSand else windSnow) * 0.4f + tilt * 300f * d - p.vx) * min(1f, 2f * dt)
                     p.x += p.vx * dt; p.y += p.vy * dt
                     p.life -= dt
                     if (p.life <= 0f || p.y > H + 5f * d) dead = true
                 }
                 S_DUST -> {
-                    p.x += (p.vx + sin(time * 0.6f + p.a) * 2f * d) * dt; p.y += p.vy * dt
+                    p.x += (p.vx + sin(time * 0.6f + p.a) * 2f * d + tilt * 8f * d) * dt; p.y += p.vy * dt
                     p.life -= dt
                     if (p.life <= 0f) dead = true
                 }
                 S_FLAKE -> {
-                    val tx = windSnow * p.z * (1f + 0.5f * fxNoise(p.y * 0.03f / d + time * 1.7f + p.a))
+                    val tx = windSnow * p.z * (1f + 0.5f * fxNoise(p.y * 0.03f / d + time * 1.7f + p.a)) + tilt * 120f * d
                     val ty = (18f + 42f * p.z) * d * (1f + 0.6f * fxNoise(p.x * 0.025f / d - time * 1.3f + p.a * 0.5f))
                     p.vx += (tx - p.vx) * min(1f, 3f * dt); p.vy += (ty - p.vy) * min(1f, 3f * dt)
                     p.x += p.vx * dt; p.y += p.vy * dt
@@ -510,10 +524,77 @@ internal class FxScenes {
         if (scene == FXW_SEA) mergeStuckBubbles()
     }
 
+    // ================================================================ Sallama ve söz tepkisi (Birleşik özellikler)
+    /** Telefon sallanınca: yığınlar silkelenip saçılır, takılan kabarcıklar ve konan közler kopar, ateşböcekleri ürker. */
+    private fun shakeOff(targets: Collection<FxTarget>, d: Float) {
+        for (t in targets) {
+            if (t.gone) continue
+            val p = t.pile
+            if (p != null) {
+                val sand = t.pileKind == PILE_SAND
+                for (i in p.indices) {
+                    if (p[i] < 0.3f * d) continue
+                    val top = t.colTop(i) ?: continue
+                    val n = (p[i] / (0.6f * d)).toInt().coerceIn(1, 4)
+                    repeat(n) {
+                        if (ps.size < MAX_PS) {
+                            val q = SP(S_FALL, t.colX(i), top - f() * p[i], (f() - 0.5f) * 160f * d, -(60f + f() * 200f) * d, 1.6f,
+                                (if (sand) 0.6f + f() * 0.6f else 0.8f + f() * 0.9f) * d)
+                            q.color = if (sand) Color(sandColors[rnd.nextInt(sandColors.size)]) else Color.White
+                            ps.add(q)
+                        }
+                    }
+                }
+                t.pile = null; t.pileKind = 0
+            }
+            t.shake = min(t.shake + 2.5f * d, 7f * d)
+        }
+        for (p in ps) when (p.kind) {
+            S_BUBBLE_STUCK -> { p.kind = S_BUBBLE; p.tid = null; p.vy = -90f * d }
+            S_LANDED -> { p.kind = S_SPARK; p.tid = null; p.vy = -(80f + f() * 120f) * d; p.vx = (f() - 0.5f) * 120f * d; p.life = 0.8f; p.max = 0.8f }
+        }
+        if (scene == FXW_FIREFLY) for (s in swimmers) {
+            s.state = 0; s.tid = null; s.timer = 3f + f() * 4f
+            val a = f() * FX_TAU
+            s.vx = cos(a) * s.speed * 4f; s.vy = sin(a) * s.speed * 4f
+            s.phase = 0.999f                                    // ürkünce hepsi birden parlar
+        }
+        if (scene == FXW_SEA) for (s in swimmers) s.vx *= 3f    // balıklar fırlar
+    }
+
+    /** Şarkı sözünde yeni satır (küçük tepki) ya da nakarat (büyük tepki). */
+    private fun onCue(chorus: Boolean, W: Float, H: Float, d: Float) {
+        when (scene) {
+            FXW_METEOR -> {
+                repeat(if (chorus) 4 else 1) { spawnMeteor(W, H, d, forceBig = true) }
+                if (chorus) repeat(6) { spawnMeteor(W, H, d) }
+            }
+            FXW_SEA -> {
+                repeat(if (chorus) 40 else 12) { spawnBubble(W, H, d) }
+                if (chorus) for (s in swimmers) s.vx *= 2.5f
+            }
+            FXW_FIREWORKS -> repeat(if (chorus) 4 else 1) { launchRocket(W, H, d) }
+            FXW_FIREFLY -> for (s in swimmers) {
+                s.phase = 0.999f                                // hepsi aynı anda yanar
+                if (chorus && s.state == 2) { s.state = 0; s.vy = -s.speed * 2f; s.timer = 3f }
+            }
+            FXW_SAND, FXW_BLIZZARD -> gustBoost = max(gustBoost, if (chorus) 0.9f else 0.4f)
+            FXW_AURORA -> {
+                auroraPulse = max(auroraPulse, if (chorus) 1f else 0.5f)
+                if (chorus) repeat(25) {
+                    val p = SP(S_DUST, f() * W, f() * H * 0.9f, (f() - 0.5f) * 6f * d, (3f + f() * 6f) * d, 2f + f() * 2f, (0.6f + f() * 0.9f) * d)
+                    p.a = f() * FX_TAU
+                    ps.add(p)
+                }
+            }
+            FXW_ELECTRIC -> { nextEvent = 0f; if (chorus) pendingArcs = 3 }
+        }
+    }
+
     // ================================================================ 5 Meteor yağmuru
-    private fun spawnMeteor(W: Float, H: Float, d: Float) {
+    private fun spawnMeteor(W: Float, H: Float, d: Float, forceBig: Boolean = false) {
         if (ps.size >= MAX_PS) return
-        val big = f() < 0.16f
+        val big = forceBig || f() < 0.16f
         val sx = (f() * 1.3f - 0.05f) * W
         val sy = -f() * H * 0.25f - 6f * d
         // radyant: sol üstte ekran dışında; tüm meteorlar aynı noktadan yayılıyormuş gibi görünür (gerçek yağmurlarda olduğu gibi)
@@ -716,6 +797,7 @@ internal class FxScenes {
                     s.heading += (f() - 0.5f) * 5f * dt + fxNoise(time * 0.8f + s.seed) * 0.8f * dt
                     var dvx = cos(s.heading) * s.speed
                     var dvy = sin(s.heading) * s.speed * 0.7f
+                    dvx += tilt * s.speed * 0.8f
                     if (s.x < 12f * d) dvx += s.speed
                     if (s.x > W - 12f * d) dvx -= s.speed
                     if (s.y < 10f * d) dvy += s.speed
@@ -809,12 +891,13 @@ internal class FxScenes {
      * Yüzey eğimi yığılma açısını aşınca malzeme alçak komşuya akar (zemin yüksekliği farklı olsa da: harfin tepesinden
      * yanındaki alçak harfe). Rüzgâr yüzeyi yavaşça iter. Boşluğa ya da kenara gelen fazlalık dökülür.
      */
-    private inline fun relaxPile(t: FxTarget, dt: Float, d: Float, repose: Float, creep: Float, erode: Float, spillAt: (Float, Float, Float) -> Unit) {
+    private inline fun relaxPile(t: FxTarget, dt: Float, d: Float, repose: Float, creep: Float, erode: Float, tiltK: Float, spillAt: (Float, Float, Float) -> Unit) {
         val p = t.pile ?: return
         val n = p.size
         if (n != t.cols()) { t.pile = null; t.pileKind = 0; return }
         val cw = t.colW()
         val maxDiff = cw * repose
+        val bias = tiltK * cw                    // eğim: yokuş aşağı tarafa akış kolaylaşır
         // zemin yoksa (içerik değişti, sütun boşaldı) üstündeki dökülür
         for (i in 0 until n) if (p[i] > 0f && t.colTop(i) == null) { spillAt(t.colX(i), t.tight.top, p[i]); p[i] = 0f }
         repeat(2) {
@@ -828,7 +911,7 @@ internal class FxScenes {
                 }
                 val si = bi - p[i]
                 val sj = bj - p[i + 1]
-                val diff = sj - si                       // > 0: i daha yüksek
+                val diff = sj - si + bias                // > 0: i daha yüksek (eğimle birlikte)
                 if (diff > maxDiff) { val m = min((diff - maxDiff) * 0.5f, p[i]); p[i] -= m; p[i + 1] += m }
                 else if (-diff > maxDiff) { val m = min((-diff - maxDiff) * 0.5f, p[i + 1]); p[i + 1] -= m; p[i] += m }
             }
@@ -930,6 +1013,7 @@ internal class FxScenes {
         val live = targets.filter { !it.gone && it.tight.width > 4f * d }
         if (nextEvent <= 0f && live.isNotEmpty()) {
             nextEvent = (0.4f + f() * 1.6f) / (0.3f + inten)
+            if (pendingArcs > 0) { pendingArcs--; nextEvent = 0.09f }
             val ta = live[rnd.nextInt(live.size)]
             var tb: FxTarget? = null
             var pa: Offset? = null
@@ -1419,7 +1503,7 @@ internal class FxScenes {
     private fun DrawScope.drawAurora(W: Float, H: Float, d: Float, targets: Collection<FxTarget>) {
         drawRect(Brush.verticalGradient(0f to Color(0x55020817), 0.65f to Color.Transparent, endY = H))
         val step = 2.4f * d
-        val strength = 0.5f + 0.5f * inten
+        val strength = (0.5f + 0.5f * inten) * (1f + auroraPulse * 1.2f)
         for (c in 0 until 3) {
             val mid = H * (0.2f + c * 0.08f)
             val top = mid - H * 0.12f - H * 0.34f

@@ -567,6 +567,7 @@ private class FxSim {
     var autoCount = 0
     var shattered = false
     val scenes = FxScenes()                         // portal olayları (5 ve sonrası)
+    var lastCue = Int.MIN_VALUE                     // söz tepkisi: en son işlenen satır sırası
 
     fun f(): Float = rnd.nextFloat()
 
@@ -624,6 +625,24 @@ private class FxSim {
         val weather = cfg.fxWeather
         val inten = cfg.fxIntensity.coerceIn(0.05f, 1f)
         val restoreMs = (cfg.fxRestoreSec * 1000f).toLong()
+        // Birleşik özellikler: eğim / sallama ve söz tepkisi
+        val tilt = if (cfg.more.fxTilt) FxMotion.tiltX else 0f
+        val shook = cfg.more.fxTilt && FxMotion.consumeShake()
+        var cue = 0                                  // 0 yok, 1 yeni satır, 2 nakarat
+        val cs = FxCues.seq
+        if (lastCue == Int.MIN_VALUE) lastCue = cs
+        else if (cs != lastCue) { lastCue = cs; if (cfg.more.moodLyrics) cue = if (FxCues.chorus) 2 else 1 }
+        if (cue != 0 && weather in 1..FXW_SUN) {
+            acc += when (weather) { 1 -> if (cue == 2) 60f else 20f; 2 -> if (cue == 2) 45f else 15f; 4 -> if (cue == 2) 30f else 10f; else -> if (cue == 2) 35f else 12f }
+            if (weather == 1 && cue == 2) { bolt = makeBolt((0.1f + f() * 0.8f) * W, H * 0.92f, d); flash = 1f }   // nakaratta şimşek (öğeye çarpmaz)
+        }
+        if (shook) for (t in targets) {
+            if (t.gone) continue
+            if (t.snow > 0.2f) iceBurst(t, d)          // biriken kar silkelenir
+            t.snow = 0f
+            if (t.frozen) t.taps++                     // sallamak buzu çatlatır
+            t.shake = min(t.shake + 2.5f * d, 7f * d)
+        }
 
         if (weather in 1..FXW_SUN) {
             val base = when (weather) { 1 -> 90f; 2 -> 28f; 4 -> 16f; else -> 45f }
@@ -632,11 +651,11 @@ private class FxSim {
                 acc -= 1f
                 val x = f() * W
                 when (weather) {
-                    1 -> ps.add(P(K_RAIN, x, -6f * d, -30f * d, (650f + f() * 250f) * d, 0f, 1f))
-                    2 -> ps.add(P(K_FLAKE, x, -6f * d, (f() - 0.5f) * 30f * d, (55f + f() * 60f) * d, f() * 6.28f, (1.4f + f() * 1.8f) * d))
+                    1 -> ps.add(P(K_RAIN, x, -6f * d, (-30f + tilt * 320f) * d, (650f + f() * 250f) * d, 0f, 1f))
+                    2 -> ps.add(P(K_FLAKE, x, -6f * d, ((f() - 0.5f) * 30f + tilt * 70f) * d, (55f + f() * 60f) * d, f() * 6.28f, (1.4f + f() * 1.8f) * d))
                     // Güneş: panelin her yerinde yavaşça süzülen, belirip sönen altın parıltılar (öğelere zarar vermez)
                     4 -> ps.add(P(K_SUN, x, f() * H, (f() - 0.5f) * 14f * d, -(5f + f() * 12f) * d, 0f, (1.6f + f() * 2.4f) * d))
-                    else -> ps.add(P(K_ACID, x, -6f * d, -20f * d, (520f + f() * 200f) * d, 0f, 1f))
+                    else -> ps.add(P(K_ACID, x, -6f * d, (-20f + tilt * 300f) * d, (520f + f() * 200f) * d, 0f, 1f))
                 }
             }
         }
@@ -720,6 +739,7 @@ private class FxSim {
         for (t in targets) {
             if (!t.frozen && t.freeze > 0f) t.freeze = (t.freeze - 0.012f * dt).coerceAtLeast(0f)
             if (t.snow > 0f && weather != 2 && !t.frozen) t.snow = (t.snow - 0.05f * dt).coerceAtLeast(0f)
+            if (t.snow > 0f && abs(tilt) > 0.35f && !t.frozen) t.snow = (t.snow - abs(tilt) * 0.5f * dt).coerceAtLeast(0f)   // eğilince kar kayar
             if (t.melt >= 1f && t.meltRestoreAt == 0L) t.meltRestoreAt = now + restoreMs
             if (t.melt > 0f) {
                 if (t.meltRestoreAt > 0L && now >= t.meltRestoreAt) {
@@ -738,7 +758,7 @@ private class FxSim {
         }
 
         // Portal olayları kendi parçacıklarını yönetir
-        if (weather >= FXW_METEOR) scenes.step(weather, dt, now, W, H, d, inten, targets, fx.targets)
+        if (weather >= FXW_METEOR) scenes.step(weather, dt, now, W, H, d, inten, targets, fx.targets, tilt, shook, cue)
         else scenes.idle(targets)
 
         if (weather == 1 && cfg.fxLightning) {
@@ -898,6 +918,8 @@ fun FxLayer(
     val expandedFull by remember { derivedStateOf { progress.mean > 0.97f } }
     val scanBusy = remember { BooleanArray(1) }
     SideEffect { fx.live = live }
+    // Eğilen dünya: eğim ve sallama sensörü yalnızca panel tam açıkken dinlenir
+    if (cfg.more.fxTilt && expandedFull) FxMotionSensor()
 
     /** Sıradaki öğenin piksellerini tarar ve gerçek şeklini çıkarır. */
     fun scanNext(now: Long) {

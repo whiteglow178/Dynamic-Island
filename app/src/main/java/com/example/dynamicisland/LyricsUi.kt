@@ -483,8 +483,11 @@ private fun lineText(r: LyricsState.Ready, i: Int): String =
 fun PanelLyrics(cfg: IslandSettings, state: LyricsState, frame: LyricFrame, modifier: Modifier = Modifier, artColor: Int = 0) {
     Box(modifier.fillMaxWidth().height(cfg.lyricsBlockDp().dp), contentAlignment = Alignment.CenterStart) {
         when (state) {
-            is LyricsState.Ready -> LyricTransition(frame.index.value, cfg, Modifier.fillMaxWidth()) { i ->
-                LyricLineText(lineText(state, i), i, frame, cfg, cfg.lyricsPanelSizeSp, cfg.lyricsPanelLines, false, TextAlign.Start, Modifier.fillMaxWidth(), artColor = artColor)
+            is LyricsState.Ready -> {
+                if (cfg.more.moodLyrics) LyricCue(state, frame.index.value)      // ada olayları söze tepki versin
+                LyricTransition(frame.index.value, cfg, Modifier.fillMaxWidth()) { i ->
+                    LyricLineText(lineText(state, i), i, frame, cfg, cfg.lyricsPanelSizeSp, cfg.lyricsPanelLines, false, TextAlign.Start, Modifier.fillMaxWidth(), artColor = artColor)
+                }
             }
             LyricsState.Loading -> StatusText("Şarkı sözü aranıyor…")
             LyricsState.NotFound -> StatusText("Şarkı sözü bulunamadı")
@@ -502,6 +505,7 @@ fun SideLyrics(cfg: IslandSettings, state: LyricsState, frame: LyricFrame, modif
     Box(modifier, contentAlignment = Alignment.CenterStart) {
         when (state) {
             is LyricsState.Ready -> {
+                if (cfg.more.moodLyrics) LyricCue(state, frame.index.value)
                 val sizeSp = cfg.lyricsPanelSizeSp.coerceIn(11f, 17f)
                 val base = if (cfg.lyricsDynamicColor) lyricColorFromArt(artColor, Color(cfg.lyricsColorArgb)) else Color(cfg.lyricsColorArgb)
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -297,9 +297,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.ShazamListening -> shazam.onListening()
             is IslandEvent.ShazamFound -> shazam.onFound(e)
             is IslandEvent.ShazamGone -> shazam.onGone()
-            is IslandEvent.NotifTrashed -> if (settings.value.more.trashIsland) scope.launch {
+            is IslandEvent.NotifTrashed -> {
+                val st = settings.value
                 // Çöp kutusu ada: silinen bildirimin simgesi adaya uçar, ada yutar (efekt penceresinde çizilir)
-                PlayFx.emit(PlayEvent.Trashed(iconFor(e.pkg)))
+                if (st.more.trashIsland) scope.launch { PlayFx.emit(PlayEvent.Trashed(iconFor(e.pkg))) }
+                // Silinen bildirim dökülsün: yazısı harf harf parçalanıp adaya çekilir
+                if (st.more.notifShatter && e.text.isNotBlank()) PlayFx.emit(PlayEvent.Shatter(e.text, shatterStyleFor(st.fxWeather)))
             }
             is IslandEvent.LiveUpdate -> scope.launch { onLive(e.live) }
             is IslandEvent.LiveGone -> if (liveContent?.key == e.key) endLive()
@@ -866,10 +869,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Kamuflaj: boştaki adanın yanındaki rengi düzenli aralıklarla oku
         scope.launch { while (true) { delay(1_500L); runCatching { sampleCamo() } } }
         // Canlı etkinlik: bildirim dinleyicisi ayarları buradan okur
-        scope.launch { settings.collect { LiveFlags.nav = it.more.navIsland; LiveFlags.delivery = it.more.deliveryIsland } }
-        scope.launch { settings.map { it.more.navIsland to it.more.deliveryIsland }.distinctUntilChanged().collect { (n, d) ->
+        scope.launch { settings.collect {
+            LiveFlags.nav = it.more.navIsland; LiveFlags.delivery = it.more.deliveryIsland
+            LiveFlags.progress = it.more.progressIsland; LiveFlags.score = it.more.scoreIsland
+        } }
+        scope.launch { settings.map { listOf(it.more.navIsland, it.more.deliveryIsland, it.more.progressIsland, it.more.scoreIsland) }.distinctUntilChanged().collect { f ->
             val lv = liveContent ?: return@collect
-            if ((lv.kind == LiveKind.Nav && !n) || (lv.kind == LiveKind.Delivery && !d)) endLive()
+            val on = when (lv.kind) { LiveKind.Nav -> f[0]; LiveKind.Delivery -> f[1]; LiveKind.Progress -> f[2]; LiveKind.Score -> f[3] }
+            if (!on) endLive()
         } }
         // Kulaklık kartı
         runCatching { startHeadphones() }
@@ -962,22 +969,70 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var liveJob: Job? = null
     private var liveEndJob: Job? = null
     private val liveAppIcons = HashMap<String, ImageBitmap?>()
+    private var liveGoalJob: Job? = null
+    private var liveLastAt = 0L
 
     private suspend fun onLive(raw: IslandContent.Live) {
         val s = settings.value
-        val on = if (raw.kind == LiveKind.Nav) s.more.navIsland else s.more.deliveryIsland
+        val on = when (raw.kind) {
+            LiveKind.Nav -> s.more.navIsland
+            LiveKind.Delivery -> s.more.deliveryIsland
+            LiveKind.Progress -> s.more.progressIsland
+            LiveKind.Score -> s.more.scoreIsland
+        }
         if (!on || appHide.hidden) return
         val app = if (liveAppIcons.containsKey(raw.pkg)) liveAppIcons[raw.pkg] else iconFor(raw.pkg).also { liveAppIcons[raw.pkg] = it }
-        val c = raw.copy(appIcon = app)
+        var c = raw.copy(appIcon = app)
         val prev = liveContent
-        // Navigasyon siparişten önceliklidir: navigasyon sürerken gelen sipariş bildirimi onu değiştirmez
-        if (prev != null && prev.key != c.key && prev.kind == LiveKind.Nav && c.kind == LiveKind.Delivery) return
-        val first = prev == null || prev.key != c.key
+        // Öncelik: navigasyon > maç > sipariş > indirme. Düşük öncelikli yeni etkinlik, sürenin yerini almaz
+        fun rank(k: LiveKind) = when (k) { LiveKind.Nav -> 3; LiveKind.Score -> 2; LiveKind.Delivery -> 1; LiveKind.Progress -> 0 }
+        // Maç: spor uygulamaları her gol için ayrı bildirim atabilir; aynı takımlarsa aynı etkinlik sayılır
+        val sameMatch = prev != null && prev.kind == LiveKind.Score && c.kind == LiveKind.Score &&
+            prev.teamA.equals(c.teamA, true) && prev.teamB.equals(c.teamB, true)
+        if (prev != null && prev.key != c.key && !sameMatch && rank(c.kind) < rank(prev.kind)) return
+        val goalNow = sameMatch && prev != null && c.scoreA + c.scoreB > prev.scoreA + prev.scoreB
+        if (c.kind == LiveKind.Score) c = c.copy(goal = goalNow, sub = if (goalNow) "GOL!" else c.minute)
+        val first = prev == null || (prev.key != c.key && !sameMatch)
         if (!first && prev == c) return
+        // İndirme bildirimleri çok sık güncellenir: %1'den küçük değişiklik yarım saniyede bir yansıtılır
+        if (!first && prev != null && c.kind == LiveKind.Progress && prev.kind == LiveKind.Progress &&
+            kotlin.math.abs(c.progress - prev.progress) < 0.01f && c.title == prev.title &&
+            android.os.SystemClock.uptimeMillis() - liveLastAt < 500L) return
+        liveLastAt = android.os.SystemClock.uptimeMillis()
         liveContent = c
         // Bildirim kaldırılmadan kalırsa (ör. tek seferlik sipariş bildirimi) belirli bir süre sonra kendiliğinden biter
         liveJob?.cancel()
-        liveJob = scope.launch { delay(if (c.kind == LiveKind.Nav) 15 * 60_000L else 90 * 60_000L); endLive() }
+        liveJob = scope.launch {
+            delay(when (c.kind) { LiveKind.Nav -> 15 * 60_000L; LiveKind.Progress -> 20 * 60_000L; LiveKind.Score -> 150 * 60_000L; else -> 90 * 60_000L })
+            endLive()
+        }
+        // İndirme bitti: kısa süre "Tamam" görünür, sonra biter
+        if (c.kind == LiveKind.Progress && c.progress >= 0.999f && (prev == null || prev.progress < 0.999f)) {
+            liveEndJob?.cancel()
+            liveEndJob = scope.launch { delay(3_000L); endLive() }
+        }
+        // Maç bitti: kart kısa süre açık görünür, sonra biter
+        if (c.kind == LiveKind.Score && c.phase == 2 && prev?.phase != 2) {
+            liveEndJob?.cancel()
+            liveEndJob = scope.launch { delay(8_000L); endLive() }
+            if (!assistantActive && !call.active) { syncBgOrder(); collapseJob?.cancel(); update { IslandUiState(c, expanded = true) } }
+            return
+        }
+        // Gol: ada birkaç saniye açılıp skoru gösterir, sonra kapalı skora döner
+        if (goalNow && !assistantActive && !call.active) {
+            syncBgOrder(); collapseJob?.cancel()
+            update { IslandUiState(c, expanded = true) }
+            liveGoalJob?.cancel()
+            liveGoalJob = scope.launch {
+                delay(5_000L)
+                val cur = ui.value.content
+                if (cur is IslandContent.Live && cur.kind == LiveKind.Score) {
+                    liveContent = liveContent?.copy(goal = false, sub = liveContent?.minute.orEmpty())
+                    liveContent?.let { lc -> update { it.copy(content = lc, expanded = false) } }
+                }
+            }
+            return
+        }
         if (c.kind == LiveKind.Delivery && c.stage == 3 && prev?.stage != 3) {
             // Teslim edildi: kart kısa süre açık görünür, sonra canlı etkinlik biter
             liveEndJob?.cancel()
@@ -1111,7 +1166,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override fun onReceive(c: Context?, i: Intent?) {
             if (i?.action != Intent.ACTION_POWER_CONNECTED) return
             val s = settings.value
-            if (!s.more.chargeRing || landscape.active || appHide.hidden || assistantActive || call.active) return
+            if (!(s.more.chargeRing || s.more.chargeArcs) || landscape.active || appHide.hidden || assistantActive || call.active) return
             if (ui.value.content !is IslandContent.Idle && ui.value.content !is IslandContent.Media) return
             if (getSystemService(android.os.PowerManager::class.java)?.isInteractive != true) return
             val pct = getSystemService(android.os.BatteryManager::class.java)
@@ -1126,6 +1181,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     inverted = s.invertedIsland,
                 ),
                 pct,
+                withArcs = s.more.chargeArcs,
             )
         }
     }
@@ -1488,6 +1544,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun dismissNotif(n: IslandContent.Notif) {
         IslandNotificationListener.dismiss(n.key)
         if (settings.value.more.trashIsland) PlayFx.emit(PlayEvent.Trashed(n.icon))     // çöp kutusu ada
+        if (settings.value.more.notifShatter) PlayFx.emit(PlayEvent.Shatter(n.title.ifBlank { n.text }, shatterStyleFor(settings.value.fxWeather)))
         notif.clear(); notif.finish()
     }
 
