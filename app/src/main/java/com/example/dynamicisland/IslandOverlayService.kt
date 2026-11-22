@@ -104,7 +104,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var resizeListener: View.OnLayoutChangeListener? = null
     private var dotWin = false     // nokta modu açık mı (pencere küçülürken gizleme eşiği için)
 
-    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0, val stackW: Int = 0, val stackH: Int = 0, val extraH: Int = 0)
+    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0, val stackW: Int = 0, val stackH: Int = 0, val extraH: Int = 0, val gesture: Boolean = false)
 
     // ---- Çoklu olay: en yeni olay ortada, öncekiler sağ / sol baloncukta
     private enum class Bg { Media, Rec, Call, Shazam, Timer, Notif, Privacy }   // Notif: yalnızca nokta modunda; Shazam / Timer: 4 ya da 5 nokta modunda   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
@@ -181,7 +181,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
-            combine(ui, settings, TranslateSession.bodyDp) { u, s, _ -> winKey(u, s) }
+            combine(ui, settings, TranslateSession.bodyDp, GestureStore.flow(applicationContext)) { u, s, _, _ -> winKey(u, s) }
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
         }
@@ -343,6 +343,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             stackW = if (stacked) kotlin.math.ceil(stackWidthDp(u.stack, s, screenWDp)).toInt() else 0,
             stackH = if (stacked) kotlin.math.ceil(stackHeightDp(u.stack, s)).toInt() else 0,
             extraH = if (u.content is IslandContent.Translate) TranslateSession.bodyDp.value else 0,
+            gesture = GestureStore.flow(applicationContext).value.enabled,
         )
     }
 
@@ -1965,7 +1966,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
         val playTouch = k.kind == 0 && s.showIdle &&
             (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant || s.playVisitors || s.playBreath)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady())) || playTouch) && !appHide.hidden)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden)
         when {
             k.stackH > 0 -> {
                 // Yığın görünümü: pencere kartların toplam boyutunda
