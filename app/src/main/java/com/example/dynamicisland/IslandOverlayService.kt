@@ -108,7 +108,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0, val stackW: Int = 0, val stackH: Int = 0, val extraH: Int = 0, val gesture: Boolean = false)
 
     // ---- Çoklu olay: en yeni olay ortada, öncekiler sağ / sol baloncukta
-    private enum class Bg { Media, Rec, Call, Shazam, Timer, Notif, Privacy }   // Notif: yalnızca nokta modunda; Shazam / Timer: 4 ya da 5 nokta modunda   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
+    private enum class Bg { Media, Rec, Call, Shazam, Timer, Notif, Privacy, Live }   // Notif: yalnızca nokta modunda; Shazam / Timer: 4 ya da 5 nokta modunda   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
     private val bgOrder = ArrayList<Bg>()      // başlama sırası: en eski başta, en yeni sonda
     private var winSide = 0                    // pencerenin şu an yan baloncuklar için ayırdığı pay (px)
     private var mediaBgUntil = 0L              // parça geçişinde "durdu" bildirimi gelse de baloncuk kısa süre kalır
@@ -239,13 +239,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Status -> when {
             c.kind == StatusKind.Ringer -> 13
             c.isSysPill() -> 14                                   // ağ / uçak / zil sesi / ince düşük pil: geniş iOS hapı
-            c.kind == StatusKind.LowBatteryCard -> 15            // düşük pil kartı
+            c.isCard() -> 15                                     // düşük pil kartı / kulaklık kartı
             c.isPill() -> 8
             else -> 7
         }
         IslandContent.Photo -> 16                                // özel tasarım fotoğrafı (genişlemiş)
         is IslandContent.Capsule -> if (c.photo.isNotEmpty()) 18 else 17   // zaman kapsülü (fotoğraflı / fotoğrafsız)
         IslandContent.Drawer -> 19                               // ada çekmecesi
+        is IslandContent.Live -> 20                              // navigasyon / sipariş takibi
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
         is IslandContent.Shazam -> 11
     }
@@ -300,6 +301,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 // Çöp kutusu ada: silinen bildirimin simgesi adaya uçar, ada yutar (efekt penceresinde çizilir)
                 PlayFx.emit(PlayEvent.Trashed(iconFor(e.pkg)))
             }
+            is IslandEvent.LiveUpdate -> scope.launch { onLive(e.live) }
+            is IslandEvent.LiveGone -> if (liveContent?.key == e.key) endLive()
             is IslandEvent.ShowFavorites -> if (!assistantActive && !call.active && ui.value.content is IslandContent.Idle) favorites.open()
         }
     }
@@ -455,6 +458,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
         Bg.Notif -> settings.value.dotMode && notif.bg != null
         Bg.Privacy -> privacy.content != null
+        Bg.Live -> liveContent != null
     }
 
     /** Biten olayları listeden çıkarır, yeni başlayanı sona (= en yeni) ekler. */
@@ -471,6 +475,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Notif -> notif.bg
         Bg.Privacy -> privacy.content
         Bg.Call -> call.content()
+        Bg.Live -> liveContent
     }
 
     /** Ortadaki içerik hangi arka plan olayına ait? (bildirim, durum, favoriler vb. için null) */
@@ -480,6 +485,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Call -> if (!c.isIncoming) Bg.Call else null
         is IslandContent.Shazam -> if (extraBg() && c.phase == ShazamPhase.Listening) Bg.Shazam else null
         is IslandContent.Notif -> if (settings.value.dotMode && notif.bg == c) Bg.Notif else null
+        is IslandContent.Live -> if (liveContent?.key == c.key) Bg.Live else null
         is IslandContent.Status -> when {
             extraBg() && c.kind == StatusKind.Timer && c.endsAt > System.currentTimeMillis() && timerContent?.endsAt == c.endsAt -> Bg.Timer
             (c.kind == StatusKind.Camera || c.kind == StatusKind.Mic) && privacy.content == c -> Bg.Privacy
@@ -601,7 +607,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 mediaGraceJob?.cancel(); collapseJob?.cancel()
                 update { IslandUiState(m, false) }
             }
-            cc is IslandContent.Call || cc is IslandContent.ScreenRec -> update { it }   // müzik zaten yan baloncukta (ya da yok)
+            cc is IslandContent.Call || cc is IslandContent.ScreenRec || cc is IslandContent.Live -> update { it }   // müzik zaten yan baloncukta (ya da yok)
             m == null || (!m.playing && !cur.expanded) -> {
                 val showing = cur.content as? IslandContent.Media
                 // Parça geçişinde oynatıcı kısa süre "durdu" / "yükleniyor" ya da boş bildirir (çoğu zaman ESKİ başlıkla):
@@ -770,6 +776,20 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (android.os.SystemClock.elapsedRealtime() - drawerOpenedAt < 400L) return
                 collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
             }
+            is IslandContent.Live -> {
+                // Kapalıyken dokununca kart açılır; açıkken dokununca uygulama (Haritalar / sipariş ekranı) açılır
+                val lv = cur.content as IslandContent.Live
+                if (cur.expanded) {
+                    call.send(lv.intent ?: packageManager.getLaunchIntentForPackage(lv.pkg)?.let {
+                        android.app.PendingIntent.getActivity(this, 0, it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), android.app.PendingIntent.FLAG_IMMUTABLE)
+                    })
+                    collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+                } else {
+                    collapseJob?.cancel()
+                    update { it.copy(expanded = true) }
+                    scheduleCollapse(8_000)
+                }
+            }
             IslandContent.Photo -> {
                 // Açılır açılmaz gelen titreşimli ikinci dokunuş fotoğrafı hemen kapatmasın
                 if (android.os.SystemClock.elapsedRealtime() - photoOpenedAt < 400L) return
@@ -845,6 +865,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { while (true) { delay(10_000L); runCatching { checkCapsule() } } }
         // Kamuflaj: boştaki adanın yanındaki rengi düzenli aralıklarla oku
         scope.launch { while (true) { delay(1_500L); runCatching { sampleCamo() } } }
+        // Canlı etkinlik: bildirim dinleyicisi ayarları buradan okur
+        scope.launch { settings.collect { LiveFlags.nav = it.more.navIsland; LiveFlags.delivery = it.more.deliveryIsland } }
+        scope.launch { settings.map { it.more.navIsland to it.more.deliveryIsland }.distinctUntilChanged().collect { (n, d) ->
+            val lv = liveContent ?: return@collect
+            if ((lv.kind == LiveKind.Nav && !n) || (lv.kind == LiveKind.Delivery && !d)) endLive()
+        } }
+        // Kulaklık kartı
+        runCatching { startHeadphones() }
         // Şarj halkası: şarja takılınca
         runCatching {
             val f = android.content.IntentFilter(Intent.ACTION_POWER_CONNECTED)
@@ -928,6 +956,120 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             )
         )
     }
+
+    // ---------------------------------------------------------------- Canlı etkinlik: navigasyon / sipariş takibi
+    private var liveContent: IslandContent.Live? = null
+    private var liveJob: Job? = null
+    private var liveEndJob: Job? = null
+    private val liveAppIcons = HashMap<String, ImageBitmap?>()
+
+    private suspend fun onLive(raw: IslandContent.Live) {
+        val s = settings.value
+        val on = if (raw.kind == LiveKind.Nav) s.more.navIsland else s.more.deliveryIsland
+        if (!on || appHide.hidden) return
+        val app = if (liveAppIcons.containsKey(raw.pkg)) liveAppIcons[raw.pkg] else iconFor(raw.pkg).also { liveAppIcons[raw.pkg] = it }
+        val c = raw.copy(appIcon = app)
+        val prev = liveContent
+        // Navigasyon siparişten önceliklidir: navigasyon sürerken gelen sipariş bildirimi onu değiştirmez
+        if (prev != null && prev.key != c.key && prev.kind == LiveKind.Nav && c.kind == LiveKind.Delivery) return
+        val first = prev == null || prev.key != c.key
+        if (!first && prev == c) return
+        liveContent = c
+        // Bildirim kaldırılmadan kalırsa (ör. tek seferlik sipariş bildirimi) belirli bir süre sonra kendiliğinden biter
+        liveJob?.cancel()
+        liveJob = scope.launch { delay(if (c.kind == LiveKind.Nav) 15 * 60_000L else 90 * 60_000L); endLive() }
+        if (c.kind == LiveKind.Delivery && c.stage == 3 && prev?.stage != 3) {
+            // Teslim edildi: kart kısa süre açık görünür, sonra canlı etkinlik biter
+            liveEndJob?.cancel()
+            liveEndJob = scope.launch { delay(6_000L); endLive() }
+            if (!assistantActive && !call.active) { syncBgOrder(); collapseJob?.cancel(); update { IslandUiState(c, expanded = true) } }
+            return
+        }
+        if (assistantActive || call.ringing) return
+        syncBgOrder()
+        val cur = ui.value
+        when {
+            cur.content is IslandContent.Live -> update { it.copy(content = c) }          // güncelleme: açık / kapalı hali korunur
+            first && !cur.expanded && (cur.content is IslandContent.Idle || centerBg(cur.content) != null) &&
+                bgOrder.lastOrNull() == Bg.Live -> { collapseJob?.cancel(); update { IslandUiState(c, expanded = false) } }
+            else -> update { it }                                                       // yan baloncuk yenilenir
+        }
+    }
+
+    private fun endLive() {
+        if (liveContent == null) return
+        liveContent = null
+        liveJob?.cancel(); liveEndJob?.cancel()
+        if (ui.value.content is IslandContent.Live) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+        else update { it }
+    }
+
+    // ---------------------------------------------------------------- Kulaklık kartı
+    private var hpStartedAt = 0L
+    private var hpLast = ""
+    private var hpLastAt = 0L
+    private val hpTypes = setOf(
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES, android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+        23 /* TYPE_HEARING_AID */, 26 /* TYPE_BLE_HEADSET (API 31) */,
+    )
+    private val hpWired = setOf(
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET, android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+    )
+    private val hpCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>?) {
+            // Kayıt sırasında mevcut cihazlar da bildirilir: servis başlarken bağlı olan kulaklık için kart açılmaz
+            if (android.os.SystemClock.elapsedRealtime() - hpStartedAt < 3_000L) return
+            val d = added?.firstOrNull { it.isSink && it.type in hpTypes } ?: return
+            runCatching { onHeadphones(d) }
+        }
+    }
+
+    private fun startHeadphones() {
+        hpStartedAt = android.os.SystemClock.elapsedRealtime()
+        getSystemService(android.media.AudioManager::class.java)
+            ?.registerAudioDeviceCallback(hpCallback, android.os.Handler(android.os.Looper.getMainLooper()))
+    }
+
+    private fun onHeadphones(d: android.media.AudioDeviceInfo) {
+        val s = settings.value
+        if (!s.more.headphoneCard) return
+        val wired = d.type in hpWired
+        val pn = d.productName?.toString()?.trim().orEmpty()
+        val name = if (pn.isBlank() || pn == Build.MODEL) (if (wired) "Kablolu kulaklık" else "Kulaklık") else pn
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (name == hpLast && now - hpLastAt < 15_000L) return          // aynı kulaklık birden çok ses yolu bildirir
+        hpLast = name; hpLastAt = now
+        scope.launch {
+            delay(1_200L)                                                  // pil bilgisi bağlantıdan biraz sonra gelir
+            val pct = if (!wired && s.more.headphoneBattery) withContext(Dispatchers.Default) { btBattery(name, d) } else -1
+            if (assistantActive || call.active || appHide.hidden || landscape.active) return@launch
+            val cur = ui.value
+            if (cur.expanded && cur.content !is IslandContent.Status) return@launch    // açık panel varken araya girmez
+            showTemporarily(
+                IslandContent.Status(
+                    StatusKind.Headphones, title = name, subtitle = "Bağlandı",
+                    value = if (pct >= 0) "%$pct" else "", progress = if (pct >= 0) pct / 100f else -1f, extra = if (wired) 1 else 0,
+                ),
+                3_500L,
+            )
+        }
+    }
+
+    /** Bluetooth kulaklığın pil yüzdesi (Yakındaki cihazlar izni verildiyse); bilinmiyorsa -1. */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun btBattery(name: String, d: android.media.AudioDeviceInfo): Int = runCatching {
+        if (Build.VERSION.SDK_INT >= 31 &&
+            checkSelfPermission("android.permission.BLUETOOTH_CONNECT") != android.content.pm.PackageManager.PERMISSION_GRANTED) return -1
+        val bm = getSystemService(android.bluetooth.BluetoothManager::class.java) ?: return -1
+        val devs = bm.adapter?.bondedDevices ?: return -1
+        val addr = d.address.orEmpty()
+        val dev = devs.firstOrNull { addr.isNotBlank() && it.address.equals(addr, ignoreCase = true) }
+            ?: devs.firstOrNull { it.name == name } ?: return -1
+        val lvl = dev.javaClass.getMethod("getBatteryLevel").invoke(dev) as? Int ?: -1
+        if (lvl in 0..100) lvl else -1
+    }.getOrDefault(-1)
 
     // ---------------------------------------------------------------- Bildirim kuşları
     private var perchedNotif: IslandContent.Notif? = null
@@ -1369,6 +1511,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 else -> return
             }
             is IslandContent.Notif -> Bg.Notif
+            is IslandContent.Live -> Bg.Live
             else -> return      // Shazam dinleme noktası dokununca açılmaz
         }
         // 0 = sağ iç, 1 = sol iç, 2 = sağ dış, 3 = sol dış (dış yuvalar ±2: animasyon dış noktadan başlar)
@@ -2235,6 +2378,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 17 -> 142f                   // zaman kapsülü (fotoğrafsız)
                 k.kind == 18 -> 252f                   // zaman kapsülü (fotoğraflı)
                 k.kind == 19 -> s.drawerHeightDp()     // ada çekmecesi
+                k.kind == 20 -> LIVE_H_DP              // navigasyon / sipariş
                 k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
                 k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
@@ -2477,6 +2621,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { faceFlash.release() }
         runCatching { chargeRing.release() }
         runCatching { unregisterReceiver(chargeReceiver) }
+        runCatching { getSystemService(android.media.AudioManager::class.java)?.unregisterAudioDeviceCallback(hpCallback) }
         runCatching { thumb.detach() }
         TranslateSession.closeRequest = null
         TranslateSession.onLangsChanged = null

@@ -390,6 +390,18 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
             else -> RecDot(true, 10.dp)
         }
         is IslandContent.Call -> PhoneIcon(0f, Modifier.size(14.dp), CallGreen)
+        is IslandContent.Live -> {
+            val sz = ch * 0.62f
+            val ic = if (c.kind == LiveKind.Nav) c.icon ?: c.appIcon else c.appIcon ?: c.icon
+            if (ic != null) {
+                Image(
+                    bitmap = ic, contentDescription = null, contentScale = ContentScale.Fit, filterQuality = FilterQuality.Medium,
+                    modifier = Modifier.size(sz).clip(RoundedCornerShape(sz * 0.28f)),
+                )
+            } else {
+                Text(if (c.kind == LiveKind.Nav) "↑" else "📦", color = Pal.c("side_text"), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        }
         // Aşağıdakiler üç nokta modunda ortadaki noktada görünür (kapalı ada daire olduğu için)
         is IslandContent.Notif -> {
             val sz = ch * 0.62f

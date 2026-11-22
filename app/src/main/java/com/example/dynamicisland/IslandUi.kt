@@ -283,12 +283,13 @@ internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float =
     is IslandContent.Call -> if (c.isIncoming) 74f else 88f
     is IslandContent.Status -> when {
         c.isSysPill() -> sysPillHeightDp(cfg)
-        c.kind == StatusKind.LowBatteryCard -> LOWBATT_CARD_H_DP
+        c.isCard() -> LOWBATT_CARD_H_DP
         c.isPill() -> if (c.kind == StatusKind.Ringer) ringerPillHeightDp(cfg) else chargePillHeightDp(cfg)
         else -> cfg.expandedHeightDp
     }
     IslandContent.Photo -> cfg.more.designPhotoHDp
     is IslandContent.Capsule -> capsuleHeightDp(c)
+    is IslandContent.Live -> LIVE_H_DP
     IslandContent.Drawer -> cfg.drawerHeightDp()
     is IslandContent.ScreenRec -> REC_PILL_H_DP
     is IslandContent.Shazam -> SHAZAM_PILL_H_DP
@@ -458,7 +459,8 @@ fun IslandRoot(
                 val swDp = LocalConfiguration.current.screenWidthDp.toFloat()
                 geo = geo.copy(ew = sysPillWidthDp(cfg, swDp).dp, eh = sysPillHeightDp(cfg).dp)
             }
-            if (content is IslandContent.Status && content.kind == StatusKind.LowBatteryCard) geo = geo.copy(eh = LOWBATT_CARD_H_DP.dp)
+            if (content is IslandContent.Status && content.isCard()) geo = geo.copy(eh = LOWBATT_CARD_H_DP.dp)
+            if (content is IslandContent.Live) geo = geo.copy(eh = LIVE_H_DP.dp)
             // Özel tasarım fotoğrafı: ada çentiksiz, fotoğrafın tamamını gösteren büyük bir karta açılır
             if (content is IslandContent.Capsule) geo = geo.copy(eh = capsuleHeightDp(content).dp)
             if (content is IslandContent.Drawer) geo = geo.copy(eh = cfg.drawerHeightDp().dp)
@@ -986,7 +988,8 @@ fun IslandPill(
                             StatusKind.Charging -> ChargeContent(content, rb)
                             StatusKind.Ringer -> RingerContent(content, rb, !cfg.ringerExpand, ringerPillHeightDp(cfg))
                             StatusKind.Volume -> VolumeContent(content, rb)
-                            StatusKind.Network, StatusKind.Airplane -> SysPillContent(content, geo.eh.value, rb)
+                            StatusKind.Network, StatusKind.Airplane, StatusKind.Focus, StatusKind.Hotspot -> SysPillContent(content, geo.eh.value, rb)
+                            StatusKind.Headphones -> HeadphoneCardContent(content, rb)
                             StatusKind.RingVolume -> RingVolumeContent(content, geo.eh.value, rb)
                             StatusKind.LowBattery -> LowBatteryPillContent(content, geo.eh.value, rb)
                             StatusKind.LowBatteryCard -> LowBatteryCardContent(content, rb)
@@ -1000,6 +1003,7 @@ fun IslandPill(
                     is IslandContent.Shazam -> ShazamContent(content, onShazamStop)
                     IslandContent.Photo -> Unit      // fotoğraf arka planda (DesignFill) çizilir; üstünde çentik / içerik yok
                     is IslandContent.Capsule -> CapsuleContent(content)
+                    is IslandContent.Live -> LivePanel(content, rb)
                     IslandContent.Drawer -> DrawerPanel(cfg.compactHeightDp.dp) { k -> DrawerBridge.onKey?.invoke(k) }
                     IslandContent.Idle -> Unit
                 }
@@ -1126,6 +1130,13 @@ fun IslandPill(
                         }
                     }
                 }
+            }
+        }
+
+        if (content is IslandContent.Live && compactVisible && !cfg.dotMode) {
+            // Canlı etkinlik (navigasyon / sipariş): solda ok ya da uygulama simgesi, sağda mesafe / kalan süre
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                LiveCompact(content, Modifier.fillMaxSize().graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) })
             }
         }
 

@@ -562,6 +562,7 @@ class IslandNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (liveKeys.remove(sbn.key)) IslandBus.post(IslandEvent.LiveGone(sbn.key))
         if (sbn.packageName in shazamPkgs) {
             // Dinleme bildirimi kalktı: sonuç gelmezse ada kapanır (servis kısa bir tolerans bekler)
             val kind = runCatching { classifyShazam(sbn, SystemClock.elapsedRealtime()) }.getOrNull()
@@ -578,6 +579,24 @@ class IslandNotificationListener : NotificationListenerService() {
         }
     }
 
+    // ---------------------------------------------------------------- Canlı etkinlik (navigasyon / sipariş)
+    private val liveKeys = HashSet<String>()
+
+    private fun handleLive(sbn: StatusBarNotification): Boolean {
+        val n = sbn.notification ?: return false
+        val icon = runCatching { n.getLargeIcon()?.loadDrawable(this)?.toBitmap(128, 128)?.asImageBitmap() }.getOrNull()
+        val live = (if (LiveFlags.nav) LiveParse.nav(sbn, icon) else null)
+            ?: (if (LiveFlags.delivery) LiveParse.delivery(sbn, icon) else null)
+        if (live == null) {
+            // Önceden canlı olan bildirim artık uymuyor (ör. navigasyon bitti): adadan kalksın
+            if (liveKeys.remove(sbn.key)) IslandBus.post(IslandEvent.LiveGone(sbn.key))
+            return false
+        }
+        liveKeys.add(sbn.key)
+        IslandBus.post(IslandEvent.LiveUpdate(live))
+        return true
+    }
+
     private fun handleNotification(sbn: StatusBarNotification) {
         val n = sbn.notification
         // Shazam: dinleme / sonuç bildirimleri adada özel animasyonla gösterilir
@@ -589,6 +608,8 @@ class IslandNotificationListener : NotificationListenerService() {
             handleCall(sbn)
             return
         }
+        // Navigasyon / sipariş takibi: adada canlı etkinlik olarak kalır (özellik kapalıysa normal yoldan gider)
+        if (sbn.packageName != packageName && (LiveFlags.nav || LiveFlags.delivery) && handleLive(sbn)) return
         if (sbn.packageName == packageName || sbn.isOngoing ||
             n.flags and Notification.FLAG_GROUP_SUMMARY != 0 ||
             n.category == Notification.CATEGORY_TRANSPORT ||

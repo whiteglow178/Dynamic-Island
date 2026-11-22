@@ -18,11 +18,21 @@ enum class StatusKind {
     RingVolume,       // zil sesi seviyesi (geniş iOS hapı: zil simgesi + "Zil" + ince seviye çubuğu)
     LowBattery,       // düşük pil: ince geniş hap (ada genişlemez)
     LowBatteryCard,   // düşük pil: büyük kart (Düşük Güç Modu düğmesi)
+    Focus,            // Rahatsız Etmeyin açıldı / kapandı (geniş iOS hapı)
+    Hotspot,          // kişisel erişim noktası açıldı / kapandı (geniş iOS hapı)
+    Headphones,       // kulaklık bağlandı: kart (ad + simge + varsa pil)
 }
+
+/** Açık ada genişliğinde kart olarak açılan durumlar: düşük pil kartı ve kulaklık kartı. */
+fun IslandContent.Status.isCard(): Boolean = kind == StatusKind.LowBatteryCard || kind == StatusKind.Headphones
+
+/** Canlı etkinlik türü: navigasyon ya da sipariş / kargo takibi. */
+enum class LiveKind { Nav, Delivery }
 
 /** Geniş, tek satırlık iOS hapları: ağ, uçak modu, zil sesi seviyesi ve ince düşük pil hapı. */
 fun IslandContent.Status.isSysPill(): Boolean =
-    kind == StatusKind.Network || kind == StatusKind.Airplane || kind == StatusKind.RingVolume || kind == StatusKind.LowBattery
+    kind == StatusKind.Network || kind == StatusKind.Airplane || kind == StatusKind.RingVolume || kind == StatusKind.LowBattery ||
+        kind == StatusKind.Focus || kind == StatusKind.Hotspot
 
 /** Dar "hap" şeklinde açılan durumlar: şarj ve zil modu (Zil / Sessiz / Titreşim). */
 fun IslandContent.Status.isPill(): Boolean = kind == StatusKind.Charging || kind == StatusKind.Ringer || kind == StatusKind.Volume
@@ -48,6 +58,25 @@ sealed interface IslandContent {
 
     /** Zaman kapsülü: geçmişte bırakılan not / fotoğraf, zamanı gelince adada açılır. */
     data class Capsule(val id: Long, val text: String, val photo: String, val createdAt: Long) : IslandContent
+
+    /**
+     * Canlı etkinlik (iOS Live Activity benzeri): navigasyonda dönüş oku + mesafe, siparişte uygulama + kalan süre.
+     * Bildirim kalkana (ya da teslim edilene) kadar adada kalır. [big] kapalı adanın sağındaki kısa yazı.
+     */
+    data class Live(
+        val kind: LiveKind,
+        val pkg: String,
+        val key: String,
+        val big: String,                                  // "250 m" / "12 dk" / "Yolda"
+        val title: String,                                // navigasyon: talimat; sipariş: başlık
+        val text: String,                                 // ikinci satır
+        val sub: String = "",                             // navigasyon: varış / kalan süre; sipariş: ek bilgi
+        val icon: ImageBitmap? = null,                    // dönüş oku (bildirimin büyük simgesi)
+        val appIcon: ImageBitmap? = null,                 // uygulama simgesi (servis ekler)
+        val stage: Int = -1,                              // sipariş aşaması: 0 alındı, 1 hazırlanıyor, 2 yolda, 3 teslim edildi
+        val progress: Float = -1f,                        // bildirimdeki ilerleme 0..1 (-1 = yok)
+        val intent: android.app.PendingIntent? = null,
+    ) : IslandContent
 
     /** Özel ada tasarımı (fotoğraf): boştaki adaya dokununca ada genişleyip fotoğrafı tamamen gösterir. */
     data object Photo : IslandContent
@@ -200,6 +229,10 @@ sealed interface IslandEvent {
     data class NotifTrashed(val pkg: String) : IslandEvent
     /** Shazam'ın dinleme bildirimi kalktı ya da "eşleşme yok" bildirimi geldi. */
     data object ShazamGone : IslandEvent
+    /** Navigasyon / sipariş bildirimi geldi ya da güncellendi. */
+    data class LiveUpdate(val live: IslandContent.Live) : IslandEvent
+    /** Canlı etkinliğin bildirimi kalktı. */
+    data class LiveGone(val key: String) : IslandEvent
     /** Ana Sayfa > Dene: favori uygulamalar panelini aç (ayarlarda favoriler açık ve en az bir uygulama seçili olmalı). */
     data object ShowFavorites : IslandEvent
 }

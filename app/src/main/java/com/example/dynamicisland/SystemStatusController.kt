@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.app.NotificationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -24,6 +25,8 @@ import kotlin.math.roundToInt
  *  - Uçak modu: açılınca / kapanınca geniş hap.
  * Zil sesi seviyesi göstergesi VolumeController'dadır.
  */
+private const val HOTSPOT_ACTION = "android.net.wifi.WIFI_AP_STATE_CHANGED"
+
 class SystemStatusController(private val host: IslandHost) {
 
     private var receiver: BroadcastReceiver? = null
@@ -52,6 +55,8 @@ class SystemStatusController(private val host: IslandHost) {
                         Intent.ACTION_BATTERY_CHANGED -> onBattery(intent)
                         PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> onPowerSave()
                         Intent.ACTION_AIRPLANE_MODE_CHANGED -> onAirplane(intent.getBooleanExtra("state", false))
+                        NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED -> onZen()
+                        HOTSPOT_ACTION -> if (!isInitialStickyBroadcast) onHotspot(intent.getIntExtra("wifi_state", -1))
                     }
                 }
             }
@@ -62,10 +67,13 @@ class SystemStatusController(private val host: IslandHost) {
                 addAction(Intent.ACTION_BATTERY_CHANGED)
                 addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
                 addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+                addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+                addAction(HOTSPOT_ACTION)
             }
             ContextCompat.registerReceiver(ctx, r, f, ContextCompat.RECEIVER_NOT_EXPORTED)
         }
         runCatching { startNetwork(ctx) }
+        zenOn = runCatching { zenActive() }.getOrNull()
     }
 
     fun stop() {
@@ -137,6 +145,39 @@ class SystemStatusController(private val host: IslandHost) {
             runCatching { ctx.startActivity(Intent(Intent.ACTION_POWER_USAGE_SUMMARY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
         return false
+    }
+
+    // ================================================================ Rahatsız Etmeyin / erişim noktası
+    private var zenOn: Boolean? = null
+    private var apOn: Boolean? = null
+
+    private fun zenActive(): Boolean {
+        val f = host.context.getSystemService(NotificationManager::class.java)?.currentInterruptionFilter
+            ?: NotificationManager.INTERRUPTION_FILTER_ALL
+        return f != NotificationManager.INTERRUPTION_FILTER_ALL && f != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
+    }
+
+    private fun onZen() {
+        val on = zenActive()
+        if (zenOn == on) return
+        zenOn = on
+        if (!host.settings.more.focusIndicator || !canShow() || warmingUp()) return
+        host.showTemporarily(
+            IslandContent.Status(StatusKind.Focus, title = "Rahatsız Etmeyin", value = if (on) "Açık" else "Kapalı", extra = if (on) 1 else 0),
+            2_200L,
+        )
+    }
+
+    /** 13 = açık, 11 = kapalı (WifiManager.WIFI_AP_STATE_*). Ara durumlar (açılıyor / kapanıyor) yok sayılır. */
+    private fun onHotspot(state: Int) {
+        val on = when (state) { 13 -> true; 11 -> false; else -> return }
+        if (apOn == on) return
+        apOn = on
+        if (!host.settings.more.hotspotIndicator || !canShow() || warmingUp()) return
+        host.showTemporarily(
+            IslandContent.Status(StatusKind.Hotspot, title = "Erişim Noktası", value = if (on) "Açık" else "Kapalı", extra = if (on) 1 else 0),
+            2_200L,
+        )
     }
 
     // ================================================================ Uçak modu

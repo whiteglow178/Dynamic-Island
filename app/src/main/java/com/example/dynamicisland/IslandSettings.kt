@@ -560,6 +560,13 @@ data class MoreSettings(
     val coverPortal: Boolean = false,       // küçük müzik adasında albüm kapağı eğimle kayan derinlikli zemin olur
     val chargeRing: Boolean = false,        // şarja takınca adada dolan yeşil şarj halkası
     val notifBirds: Boolean = false,        // bildirim gelince uygulamanın ziyaretçisi adaya konar; dokununca bildirim açılır
+    // ---- iOS turu
+    val headphoneCard: Boolean = false,     // kulaklık bağlanınca adı + simgesiyle kart
+    val headphoneBattery: Boolean = false,  // kartta pil yüzdesi (Yakındaki cihazlar izni ister)
+    val navIsland: Boolean = false,         // navigasyon (Haritalar, Yandex, Waze...): adada dönüş oku + mesafe
+    val focusIndicator: Boolean = false,    // Rahatsız Etmeyin açılınca / kapanınca geniş hap
+    val hotspotIndicator: Boolean = false,  // kişisel erişim noktası açılınca / kapanınca geniş hap
+    val deliveryIsland: Boolean = false,    // sipariş / kargo bildirimleri adada canlı takip olarak kalır
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -678,6 +685,8 @@ class SettingsRepository(context: Context) {
         val TRASH = booleanPreferencesKey("trash"); val AL_ON = booleanPreferencesKey("al_on"); val AL_PKGS = stringPreferencesKey("al_pkgs")
         val NFLOW = booleanPreferencesKey("nflow"); val TFAN = booleanPreferencesKey("tfan"); val ISHAPE = intPreferencesKey("ishape")
         val CPORTAL = booleanPreferencesKey("cportal"); val CRING = booleanPreferencesKey("cring"); val NBIRD = booleanPreferencesKey("nbird")
+        val HPCARD = booleanPreferencesKey("hp_card"); val HPBATT = booleanPreferencesKey("hp_batt"); val NAVI = booleanPreferencesKey("nav_island")
+        val FOCUSI = booleanPreferencesKey("focus_ind"); val HOTSPOT = booleanPreferencesKey("hotspot_ind"); val DELIV = booleanPreferencesKey("deliv_island")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -949,6 +958,12 @@ class SettingsRepository(context: Context) {
                 coverPortal = p[K.CPORTAL] ?: d.more.coverPortal,
                 chargeRing = p[K.CRING] ?: d.more.chargeRing,
                 notifBirds = p[K.NBIRD] ?: d.more.notifBirds,
+                headphoneCard = p[K.HPCARD] ?: d.more.headphoneCard,
+                headphoneBattery = p[K.HPBATT] ?: d.more.headphoneBattery,
+                navIsland = p[K.NAVI] ?: d.more.navIsland,
+                focusIndicator = p[K.FOCUSI] ?: d.more.focusIndicator,
+                hotspotIndicator = p[K.HOTSPOT] ?: d.more.hotspotIndicator,
+                deliveryIsland = p[K.DELIV] ?: d.more.deliveryIsland,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1066,6 +1081,8 @@ class SettingsRepository(context: Context) {
             it[K.TRASH] = m.trashIsland; it[K.AL_ON] = m.appLockEnabled; it[K.AL_PKGS] = m.appLockPkgs
             it[K.NFLOW] = m.notifFlow; it[K.TFAN] = m.thumbFan; it[K.ISHAPE] = m.islandShape
             it[K.CPORTAL] = m.coverPortal; it[K.CRING] = m.chargeRing; it[K.NBIRD] = m.notifBirds
+            it[K.HPCARD] = m.headphoneCard; it[K.HPBATT] = m.headphoneBattery; it[K.NAVI] = m.navIsland
+            it[K.FOCUSI] = m.focusIndicator; it[K.HOTSPOT] = m.hotspotIndicator; it[K.DELIV] = m.deliveryIsland
         }
     }
 

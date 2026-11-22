@@ -128,6 +128,7 @@ fun ExtrasSections() {
     // ---------------------------------------------------------------- Mevcut özelliklerden türetilenler
     RemixSections()
     CreativeSections()
+    IosSections()
 }
 
 /** Bildirim çevirisi, şarkının havası, ada çekmecesi, çöp kutusu ada, uygulama kilidi. */
@@ -240,6 +241,69 @@ private fun CreativeSections() {
         SwitchRow("Yelpaze menü", "Başparmak modundaki aşağıdaki adaya basılı tutunca favori uygulamalar adanın çevresinde yay şeklinde açılır. Parmağını kaldırmadan bir simgeye kaydırıp bırakınca uygulama açılır; boşta bırakırsan kapanır",
             cur.thumbFan) { set(cur.copy(thumbFan = it)) }
         Text("Başparmak modu açık olmalı. Uygulamalar Favori uygulamalar listesinden gelir.", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+}
+
+/** Kulaklık kartı, navigasyon, Rahatsız Etmeyin, erişim noktası, sipariş takibi. */
+@Composable
+private fun IosSections() {
+    val ctx = LocalContext.current
+    val repo = remember { SettingsRepository(ctx.applicationContext) }
+    var m by remember { mutableStateOf<MoreSettings?>(null) }
+    LaunchedEffect(Unit) { m = repo.flow.first().more }
+    LaunchedEffect(m) {
+        val v = m ?: return@LaunchedEffect
+        delay(250)
+        repo.update { s ->
+            s.copy(more = s.more.copy(
+                headphoneCard = v.headphoneCard, headphoneBattery = v.headphoneBattery, navIsland = v.navIsland,
+                focusIndicator = v.focusIndicator, hotspotIndicator = v.hotspotIndicator, deliveryIsland = v.deliveryIsland,
+            ))
+        }
+    }
+    val btPerm = "android.permission.BLUETOOTH_CONNECT"
+    val btLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        val c = m ?: return@rememberLauncherForActivityResult
+        m = c.copy(headphoneBattery = ok)
+        if (!ok) Toast.makeText(ctx, "İzin verilmedi; kartta pil yüzdesi gösterilmeyecek", Toast.LENGTH_SHORT).show()
+    }
+    val cur = m ?: return
+    val set: (MoreSettings) -> Unit = { m = it }
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant
+
+    SectionCard("Kulaklık kartı", "Kulaklık bağlanınca adada adı ve simgesiyle kart") {
+        SwitchRow("Kulaklık kartı", "Bluetooth ya da kablolu kulaklık bağlanınca ada kısa süre kart olarak açılır: kulaklığın adı, simgesi ve \"Bağlandı\". İzin gerekmez",
+            cur.headphoneCard) { set(cur.copy(headphoneCard = it)) }
+        if (cur.headphoneCard) {
+            SwitchRow("Pil yüzdesi", "Kartın sağında kulaklığın pil yüzdesi halka olarak görünür. Bunun için Android \"Yakındaki cihazlar\" iznini ister; izin yalnızca pil yüzdesini okumak için kullanılır",
+                cur.headphoneBattery) { on ->
+                val granted = android.os.Build.VERSION.SDK_INT < 31 ||
+                    androidx.core.content.ContextCompat.checkSelfPermission(ctx, btPerm) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (on && !granted) btLauncher.launch(btPerm) else set(cur.copy(headphoneBattery = on))
+            }
+            Text("Her kulaklık pil bilgisini paylaşmaz; paylaşmayanlarda kart yüzdesiz görünür.", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+    }
+
+    SectionCard("Navigasyon", "Yol tarifinde adada dönüş oku ve mesafe") {
+        SwitchRow("Navigasyon adası", "Google Haritalar, Yandex, Waze gibi uygulamalarda yol tarifi başlayınca kapalı adanın solunda dönüş oku, sağında bir sonraki dönüşe kalan mesafe görünür. Dokununca talimat ve varış süresi açılır, bir daha dokununca harita açılır. Bildirim erişimiyle çalışır, ek izin yok",
+            cur.navIsland) { set(cur.copy(navIsland = it)) }
+    }
+
+    SectionCard("Sipariş takibi", "Yemek, market ve kargo siparişi adada canlı kalır") {
+        SwitchRow("Sipariş takibi", "Trendyol, Getir, Yemeksepeti, Migros, Hepsiburada, Amazon, kargo uygulamaları gibi uygulamaların sipariş bildirimleri adada canlı takibe dönüşür: kapalı adada kalan süre ya da aşama, açınca Alındı → Hazırlanıyor → Yolda → Teslim edildi çubuğu. Teslim edilince kendiliğinden kapanır. Kampanya ve indirim bildirimleri alınmaz",
+            cur.deliveryIsland) { set(cur.copy(deliveryIsland = it)) }
+        Text("Android 16'daki \"canlı güncelleme\" bildirimleri (ör. taksi, yemek) hangi uygulamadan gelirse gelsin burada görünür.", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+
+    SectionCard("Rahatsız Etmeyin", "Odak modu açılınca / kapanınca geniş hap") {
+        SwitchRow("Rahatsız Etmeyin göstergesi", "Rahatsız Etmeyin (ya da uyku / odak modları) açılınca adada mor hilalli \"Rahatsız Etmeyin · Açık\" hapı, kapanınca \"Kapalı\" görünür. İzin gerekmez",
+            cur.focusIndicator) { set(cur.copy(focusIndicator = it)) }
+    }
+
+    SectionCard("Erişim noktası", "Hotspot açılınca / kapanınca geniş hap") {
+        SwitchRow("Erişim noktası göstergesi", "Kişisel erişim noktası (hotspot) açılınca adada yeşil \"Erişim Noktası · Açık\" hapı, kapanınca \"Kapalı\" görünür. İzin penceresi açılmaz",
+            cur.hotspotIndicator) { set(cur.copy(hotspotIndicator = it)) }
     }
 }
 

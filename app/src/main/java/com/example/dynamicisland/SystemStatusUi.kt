@@ -95,6 +95,49 @@ internal fun DrawScope.drawBatteryGlyph(color: Color, fill: Color, frac: Float) 
     drawRoundRect(color, Offset(21f, 10f), Size(1.8f, 4f), CornerRadius(0.9f, 0.9f))
 }
 
+internal val FOCUS_PURPLE = Color(0xFF7D7AFF)
+internal val HOTSPOT_GREEN = Color(0xFF34C759)
+
+/** Hilal (Rahatsız Etmeyin). */
+internal fun DrawScope.drawMoonGlyph(color: Color) {
+    val moon = Path().apply {
+        moveTo(14.5f, 2.5f)
+        cubicTo(8.6f, 2.8f, 4f, 7.6f, 4f, 13.5f)
+        cubicTo(4f, 19.6f, 8.9f, 22f, 13.5f, 22f)
+        cubicTo(17.2f, 22f, 20.2f, 20.1f, 21.5f, 17.3f)
+        cubicTo(15.6f, 18.3f, 10.6f, 14.2f, 10.6f, 9.2f)
+        cubicTo(10.6f, 6.6f, 12.1f, 4.1f, 14.5f, 2.5f)
+        close()
+    }
+    drawPath(moon, color)
+}
+
+/** Kişisel erişim noktası: ortada nokta, iki yanda yayılan dalgalar. */
+internal fun DrawScope.drawHotspotGlyph(color: Color) {
+    val c = Offset(12f, 12f)
+    drawCircle(color, radius = 2.4f, center = c)
+    val st = Stroke(width = 2.2f, cap = StrokeCap.Round)
+    for (r in floatArrayOf(5.5f, 9.5f)) {
+        drawArc(color, -40f, 80f, false, Offset(c.x - r, c.y - r), Size(2 * r, 2 * r), style = st)
+        drawArc(color, 140f, 80f, false, Offset(c.x - r, c.y - r), Size(2 * r, 2 * r), style = st)
+    }
+}
+
+/** Kulaklık: [wired] = kafa bantlı kulaklık, değilse iki kablosuz kulak içi. */
+internal fun DrawScope.drawHeadphoneGlyph(color: Color, wired: Boolean) {
+    if (wired) {
+        drawArc(color, 180f, 180f, false, Offset(3.5f, 3.5f), Size(17f, 17f), style = Stroke(width = 2.2f, cap = StrokeCap.Round))
+        drawRoundRect(color, Offset(2.5f, 12f), Size(5f, 8.5f), CornerRadius(2f, 2f))
+        drawRoundRect(color, Offset(16.5f, 12f), Size(5f, 8.5f), CornerRadius(2f, 2f))
+    } else {
+        for (dir in floatArrayOf(-1f, 1f)) {
+            val x = 12f + dir * 5f
+            drawCircle(color, radius = 3.6f, center = Offset(x, 7.5f))
+            drawRoundRect(color, Offset(x - 1.3f + dir * 1.2f, 8f), Size(2.6f, 12.5f), CornerRadius(1.3f, 1.3f))
+        }
+    }
+}
+
 /** Yeni durum türleri için küçük simge (yan baloncuk / yatay mod / StatusIcon). */
 internal fun DrawScope.drawSysGlyph(c: IslandContent.Status, w: Color) {
     when (c.kind) {
@@ -109,6 +152,9 @@ internal fun DrawScope.drawSysGlyph(c: IslandContent.Status, w: Color) {
             if (c.progress <= 0f) drawLine(w, Offset(3.5f, 3.5f), Offset(20.5f, 20.5f), strokeWidth = 2.4f, cap = StrokeCap.Round)
         }
         StatusKind.LowBattery, StatusKind.LowBatteryCard -> drawBatteryGlyph(w, w, c.progress)
+        StatusKind.Focus -> drawMoonGlyph(w)
+        StatusKind.Hotspot -> drawHotspotGlyph(w)
+        StatusKind.Headphones -> drawHeadphoneGlyph(w, c.extra == 1)
         else -> Unit
     }
 }
@@ -118,6 +164,9 @@ internal fun sysColor(c: IslandContent.Status): Color = when (c.kind) {
     StatusKind.Airplane -> Pal.c("status_airplane")
     StatusKind.RingVolume -> Pal.c("status_text")
     StatusKind.LowBattery, StatusKind.LowBatteryCard -> if (c.extra == 1) Pal.c("status_power_save") else Pal.c("status_low_batt")
+    StatusKind.Focus -> if (c.value == "Açık") FOCUS_PURPLE else Pal.c("status_text_dim")
+    StatusKind.Hotspot -> if (c.value == "Açık") HOTSPOT_GREEN else Pal.c("status_text_dim")
+    StatusKind.Headphones -> Pal.c("status_text")
     else -> Pal.c("status_text")
 }
 
@@ -385,5 +434,48 @@ private fun DrawScope.drawMosaic(w: Float, h: Float) {
         val x = r.next() * w; val y = r.next() * h
         val rad = (1.4f + r.next() * 3.2f).dp.toPx()
         drawCircle(Color(cols[(r.next() * cols.size).toInt().coerceIn(0, cols.size - 1)]), radius = rad, center = Offset(x, y))
+    }
+}
+
+// ================================================================ Kulaklık kartı
+/**
+ * Kulaklık bağlandı kartı (AirPods kartı benzeri): solda kulaklık simgesi, ortada adı ve "Bağlandı",
+ * sağda (izin verildiyse ve kulaklık bildiriyorsa) pil yüzdesi halkası.
+ */
+@Composable
+internal fun HeadphoneCardContent(c: IslandContent.Status, rb: RainbowStyle?) {
+    val pct = c.progress
+    Row(
+        Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(52.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(30.dp)) {
+                val sc = size.width / 24f
+                withTransform({ scale(sc, sc, Offset.Zero) }) { drawHeadphoneGlyph(Color.White, c.extra == 1) }
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(c.title, color = Pal.c("status_text"), fontWeight = FontWeight.SemiBold, fontSize = 17.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+            Text(c.subtitle, color = Pal.c("status_text_dim"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (pct >= 0f) {
+            val ring = if (pct <= 0.2f) Color(0xFFFF453A) else HOTSPOT_GREEN
+            Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val sw = 4.dp.toPx()
+                    val r = size.minDimension / 2f - sw / 2f
+                    val tl = Offset(size.width / 2f - r, size.height / 2f - r)
+                    drawCircle(ring.copy(alpha = 0.25f), r, style = Stroke(sw))
+                    drawArc(ring, -90f, 360f * pct.coerceIn(0f, 1f), false, tl, Size(r * 2f, r * 2f), style = Stroke(sw, cap = StrokeCap.Round))
+                }
+                Text(c.value, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+            }
+        }
     }
 }
