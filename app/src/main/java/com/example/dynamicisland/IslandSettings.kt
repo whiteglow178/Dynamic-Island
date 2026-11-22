@@ -356,7 +356,7 @@ data class IslandSettings(
         if (animEnabled && animStyle == 3) BOUNCE_PAD_DP else 0f,
         if (neonStyle != 0) NEON_PAD_DP else 0f,
         if (playPhysics) playPhysicsRangeDp + 8f else 0f,          // kayan / titreyen ada kesilmesin
-        if (playMagnet || playPocket || playPuff || playEater) 8f else 0f,
+        if (playMagnet || playPocket || playPuff || playEater || more.trashIsland) 8f else 0f,
         if (playPull) 24f else 0f,                                  // çekilen ada aşağı uzayabilsin
     )
 
@@ -543,6 +543,16 @@ data class MoreSettings(
     // ---- Kamuflaj: boştaki ada yanındaki ekran rengini alıp kaybolur
     val camoEnabled: Boolean = false,
     val camoSkipPkgs: String = "",          // kamuflajın tamamen durduğu uygulamalar (virgülle ayrılmış paket adları)
+    // ---- Mevcut özelliklerden türetilenler
+    val notifTranslate: Boolean = false,    // yabancı dildeki bildirim adada çevrilmiş görünsün (cihazda çeviri)
+    val notifTranslateTgt: String = "tr",   // çeviri hedef dili
+    val contrastEnabled: Boolean = false,   // kamuflajın tersi: boştaki ada çevresinin zıt rengini alır
+    val musicMood: Boolean = false,         // müzik adasındaki hava efekti şarkının kapak rengine göre kendiliğinden seçilir
+    val drawerEnabled: Boolean = false,     // ada çekmecesi: hızlı düğmeler paneli
+    val drawerTrigger: Int = 1,             // 0 dokununca, 1 basılı tutunca
+    val trashIsland: Boolean = false,       // silinen bildirim adaya uçar, ada yutar
+    val appLockEnabled: Boolean = false,    // seçili uygulamalar açılınca adada Face ID animasyonu (yalnızca görsel; doğrulama yok)
+    val appLockPkgs: String = "",
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -550,6 +560,9 @@ fun IslandSettings.designPhotoReady(): Boolean =
     more.designEnabled && more.designStyle == DESIGN_PHOTO && more.designPhotoUri.isNotEmpty() && more.designPhotoExpand && showIdle
 
 const val DESIGN_PHOTO = 6
+
+/** Uygulama kilidiyle korunan uygulamaların paket adları. */
+fun MoreSettings.appLockList(): List<String> = appLockPkgs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
 /** Kamuflajın tamamen durduğu uygulamaların paket adları. */
 fun MoreSettings.camoSkipList(): List<String> = camoSkipPkgs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
@@ -653,6 +666,9 @@ class SettingsRepository(context: Context) {
         val FAV_STAR = booleanPreferencesKey("fav_star"); val LY_SIDE = booleanPreferencesKey("ly_side")
         val PT_ON = booleanPreferencesKey("pt_on"); val PT_SCENE = intPreferencesKey("pt_scene"); val PT_DEPTH = floatPreferencesKey("pt_depth")
         val TH_ON = booleanPreferencesKey("th_on"); val CAMO_ON = booleanPreferencesKey("camo_on"); val CAMO_SKIP = stringPreferencesKey("camo_skip")
+        val NT_TR = booleanPreferencesKey("nt_tr"); val NT_TR_TGT = stringPreferencesKey("nt_tr_tgt"); val CONTRAST = booleanPreferencesKey("contrast")
+        val MOOD = booleanPreferencesKey("mood"); val DRW_ON = booleanPreferencesKey("drw_on"); val DRW_TRIG = intPreferencesKey("drw_trig")
+        val TRASH = booleanPreferencesKey("trash"); val AL_ON = booleanPreferencesKey("al_on"); val AL_PKGS = stringPreferencesKey("al_pkgs")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -909,6 +925,15 @@ class SettingsRepository(context: Context) {
                 thumbEnabled = p[K.TH_ON] ?: d.more.thumbEnabled,
                 camoEnabled = p[K.CAMO_ON] ?: d.more.camoEnabled,
                 camoSkipPkgs = p[K.CAMO_SKIP] ?: d.more.camoSkipPkgs,
+                notifTranslate = p[K.NT_TR] ?: d.more.notifTranslate,
+                notifTranslateTgt = p[K.NT_TR_TGT] ?: d.more.notifTranslateTgt,
+                contrastEnabled = p[K.CONTRAST] ?: d.more.contrastEnabled,
+                musicMood = p[K.MOOD] ?: d.more.musicMood,
+                drawerEnabled = p[K.DRW_ON] ?: d.more.drawerEnabled,
+                drawerTrigger = (p[K.DRW_TRIG] ?: d.more.drawerTrigger).coerceIn(0, 1),
+                trashIsland = p[K.TRASH] ?: d.more.trashIsland,
+                appLockEnabled = p[K.AL_ON] ?: d.more.appLockEnabled,
+                appLockPkgs = p[K.AL_PKGS] ?: d.more.appLockPkgs,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1021,6 +1046,9 @@ class SettingsRepository(context: Context) {
             it[K.FAV_STAR] = m.favStar; it[K.LY_SIDE] = m.lyricsSide
             it[K.PT_ON] = m.portalEnabled; it[K.PT_SCENE] = m.portalScene; it[K.PT_DEPTH] = m.portalDepth
             it[K.TH_ON] = m.thumbEnabled; it[K.CAMO_ON] = m.camoEnabled; it[K.CAMO_SKIP] = m.camoSkipPkgs
+            it[K.NT_TR] = m.notifTranslate; it[K.NT_TR_TGT] = m.notifTranslateTgt; it[K.CONTRAST] = m.contrastEnabled
+            it[K.MOOD] = m.musicMood; it[K.DRW_ON] = m.drawerEnabled; it[K.DRW_TRIG] = m.drawerTrigger
+            it[K.TRASH] = m.trashIsland; it[K.AL_ON] = m.appLockEnabled; it[K.AL_PKGS] = m.appLockPkgs
         }
     }
 

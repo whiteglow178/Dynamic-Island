@@ -622,7 +622,8 @@ private fun BannerContent(n: IslandContent.Notif) {
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(nowLabel, color = Pal.c("banner_time"), fontSize = 13.sp, maxLines = 1)
+                Text(if (n.translatedFrom.isNotEmpty()) "${langNameTr(n.translatedFrom)} · çevrildi" else nowLabel,
+                    color = Pal.c("banner_time"), fontSize = 13.sp, maxLines = 1)
             }
             if (bodyText.isNotBlank()) {
                 Text(

@@ -149,6 +149,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { volume.start() }
         runCatching { sysStatus.start() }       // düşük pil, internet, uçak modu
         startExtras()                           // başparmak modu, zaman kapsülü, kamuflaj
+        DrawerBridge.onKey = { k -> runCatching { onDrawerKey(k) } }
+        startAppLock()                          // uygulama açılış animasyonu (ek kurulum gerekmez)
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
         runCatching { torch.start() }           // fener açılınca ada göstergesi + ışık kartı
@@ -243,6 +245,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         IslandContent.Photo -> 16                                // özel tasarım fotoğrafı (genişlemiş)
         is IslandContent.Capsule -> if (c.photo.isNotEmpty()) 18 else 17   // zaman kapsülü (fotoğraflı / fotoğrafsız)
+        IslandContent.Drawer -> 19                               // ada çekmecesi
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
         is IslandContent.Shazam -> 11
     }
@@ -255,6 +258,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if ((swallowSlot.shown || stretchSlot.shown) && isPlayingMediaApp(e.to)) abortExit()   // müzik uygulamasına geri dönüldü
                 val wasMusic = inMusicApp
                 appHide.update(e.to)           // seçili uygulamada ada gizlenir
+                runCatching { appLockOnSwitch(e.from, e.to) }   // uygulama kilidi
                 runCatching { privacy.onForeground(e.to) }   // kamera uygulaması açık: fotoğraf modunda da yeşil nokta
                 updateInMusicApp(e.to)          // önce "müzik uygulamasında mıyım" güncellenir
                 val started = onAppSwitched(e.from)   // çıkış animasyonu varsa ada yutma durumuna geçer (gizleme atlanır)
@@ -275,7 +279,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val st = settings.value
                 // Bildirimde renkli ışık: uygulama simgesinin rengi (ayar kapalıysa 0 = ışık yok)
                 val accent = if (st.notifBottomFx && icon != null) accentFor(e.pkg, icon) else 0
-                val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar, e.messaging, accent)
+                // Bildirim çevirisi: yabancı dildeyse cihazda çevrilir (en çok ~1,5 sn beklenir; olmazsa orijinali gösterilir)
+                val tr = if (st.more.notifTranslate) runCatching { NotifTranslator.translate(e.title, e.text, st.more.notifTranslateTgt) }.getOrNull() else null
+                val n = IslandContent.Notif(
+                    e.pkg, tr?.first ?: e.title, tr?.second ?: e.text, icon, e.intent, e.key, e.avatar, e.messaging, accent,
+                    translatedFrom = tr?.third.orEmpty(),
+                )
                 // iOS tarzı banner açıksa bildirim adada değil cam banner olarak gösterilir; pencere eklenemezse adaya düşer
                 if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
             }
@@ -283,6 +292,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.ShazamListening -> shazam.onListening()
             is IslandEvent.ShazamFound -> shazam.onFound(e)
             is IslandEvent.ShazamGone -> shazam.onGone()
+            is IslandEvent.NotifTrashed -> if (settings.value.more.trashIsland) scope.launch {
+                // Çöp kutusu ada: silinen bildirimin simgesi adaya uçar, ada yutar (efekt penceresinde çizilir)
+                PlayFx.emit(PlayEvent.Trashed(iconFor(e.pkg)))
+            }
             is IslandEvent.ShowFavorites -> if (!assistantActive && !call.active && ui.value.content is IslandContent.Idle) favorites.open()
         }
     }
@@ -575,6 +588,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cc is IslandContent.Favorites -> update { it }              // favori paneli açıkken müzik paneline geçme
             cc is IslandContent.Photo -> update { it }                  // fotoğraf açıkken müzik ortayı almaz (kapanınca gelir)
             cc is IslandContent.Capsule -> update { it }                // zaman kapsülü okunurken müzik araya girmez
+            cc is IslandContent.Drawer -> update { it }                 // çekmece açıkken müzik araya girmez
             cc is IslandContent.Translate -> update { it }              // çeviri yazılırken müzik paneline geçme
             cc is IslandContent.Shazam -> update { it }                 // Shazam dinlerken / sonucu gösterirken müzik ortayı almaz
             cc is IslandContent.ScreenRec && cc.phase == RecPhase.Saved -> update { it }   // "kaydedildi" görünümü bozulmasın
@@ -747,6 +761,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandContent.Favorites -> favorites.onTap()
             IslandContent.Translate -> Unit      // panelin içi kendi dokunuşlarını işler (yazı alanı, dil, kapat)
             is IslandContent.Capsule -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            IslandContent.Drawer -> {
+                // Düğmelerin dışına dokununca çekmece kapanır (açılır açılmaz gelen ikinci dokunuş hariç)
+                if (android.os.SystemClock.elapsedRealtime() - drawerOpenedAt < 400L) return
+                collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+            }
             IslandContent.Photo -> {
                 // Açılır açılmaz gelen titreşimli ikinci dokunuş fotoğrafı hemen kapatmasın
                 if (android.os.SystemClock.elapsedRealtime() - photoOpenedAt < 400L) return
@@ -755,6 +774,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             IslandContent.Idle -> {
                 val s = settings.value
                 if (s.designPhotoReady() && s.more.designPhotoTrigger == 0) openPhoto()
+                else if (s.more.drawerEnabled && s.showIdle && s.more.drawerTrigger == 0) openDrawer()
                 else if (s.translateReady() && s.translateTrigger == 0) openTranslate()
                 else if (s.favoritesReady() && s.favoritesTrigger == 0) favorites.open()
             }
@@ -841,7 +861,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var camoBusy = false
     private fun sampleCamo() {
         val s = settings.value
-        if (!s.more.camoEnabled || s.more.portalEnabled || camoBusy) return
+        if (!(s.more.camoEnabled || s.more.contrastEnabled) || s.more.portalEnabled || camoBusy) return
         val u = ui.value
         if (u.content !is IslandContent.Idle || u.expanded || mainHidden || thumbHidden || appHide.hidden) return
         if (getSystemService(android.os.PowerManager::class.java)?.isInteractive != true) return
@@ -861,6 +881,64 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (now != null && now in settings.value.more.camoSkipList()) { CamoState.color = null; return@launch }
                 if (c != null && !CamoState.close(CamoState.color, c)) CamoState.color = c
             }
+        }
+    }
+
+    // ---------------------------------------------------------------- Uygulama açılış animasyonu
+    private var faceFlashHidden = false
+    private var faceFlashAt = 0L
+    private val faceFlash by lazy {
+        FaceIdFlash(this, this, this, wm, settings) { on ->
+            faceFlashHidden = on
+            applyMainHidden()
+        }
+    }
+
+    private fun startAppLock() = Unit
+
+    /** Seçili bir uygulama öne gelince adanın yerinde Face ID animasyonu bir kez oynar (doğrulama yok, kilit yok). */
+    private fun appLockOnSwitch(from: String, to: String) {
+        val s = settings.value
+        if (!s.more.appLockEnabled || from == to || to !in s.more.appLockList()) return
+        if (landscape.active || appHide.hidden) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - faceFlashAt < 1_500L) return
+        faceFlashAt = now
+        val sw = wm.currentWindowMetrics.bounds.width()
+        faceFlash.play(
+            FaceIdAnchor(
+                cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+                cy = islandCenterYPx(s).toFloat(),
+                pillW = dp(compactWidthFor(s, false)).toFloat(),
+                pillH = dp(s.compactHeightDp).toFloat(),
+                inverted = s.invertedIsland,
+            )
+        )
+    }
+
+    // ---------------------------------------------------------------- Ada çekmecesi
+    private var drawerOpenedAt = 0L
+
+    private fun openDrawer() {
+        if (assistantActive || call.active) return
+        drawerOpenedAt = android.os.SystemClock.elapsedRealtime()
+        FlashToggle.warmUp(this)
+        showTemporarily(IslandContent.Drawer, 6_000L)
+    }
+
+    private fun onDrawerKey(k: DrawerKey) {
+        playSfx(SoundEvent.Tap)
+        if (DrawerActions.closesPanel(k)) {
+            collapseJob?.cancel()
+            collapseJob = scope.launch {
+                collapseAndRest()
+                // Ekran görüntüsünde çekmece görünmesin: ada küçüldükten sonra çekilir
+                if (k == DrawerKey.Shot) delay(250L)
+                DrawerActions.run(this@IslandOverlayService, k)
+            }
+        } else {
+            DrawerActions.run(this, k)
+            scheduleCollapse(5_000L)
         }
     }
 
@@ -975,7 +1053,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         applyMainHidden()
     }
     private fun applyMainHidden() {
-        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden || thumbHidden) View.INVISIBLE else View.VISIBLE }
+        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden || thumbHidden || faceFlashHidden) View.INVISIBLE else View.VISIBLE }
         refreshDecor()
     }
 
@@ -1159,6 +1237,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 else android.widget.Toast.makeText(this, "Çizerek komut için erişilebilirlik ya da 'üstte göster' izni gerekli", android.widget.Toast.LENGTH_LONG).show()
             }
             else if (s.designPhotoReady() && s.more.designPhotoTrigger == 1) openPhoto()
+            else if (s.more.drawerEnabled && s.showIdle && s.more.drawerTrigger == 1) openDrawer()
             else if (s.translateReady() && s.translateTrigger == 1) openTranslate()
             else if (s.favoritesReady()) favorites.open()
             else if (s.playDoodle) IslandDoodleActivity.open(this)          // karalama tahtası
@@ -1194,6 +1273,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Bildirimi sistemden de siler ve adayı kapatır. */
     private fun dismissNotif(n: IslandContent.Notif) {
         IslandNotificationListener.dismiss(n.key)
+        if (settings.value.more.trashIsland) PlayFx.emit(PlayEvent.Trashed(n.icon))     // çöp kutusu ada
         notif.clear(); notif.finish()
     }
 
@@ -2081,6 +2161,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 16 -> s.more.designPhotoHDp  // özel tasarım fotoğrafı
                 k.kind == 17 -> 142f                   // zaman kapsülü (fotoğrafsız)
                 k.kind == 18 -> 252f                   // zaman kapsülü (fotoğraflı)
+                k.kind == 19 -> s.drawerHeightDp()     // ada çekmecesi
                 k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
                 k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
@@ -2106,7 +2187,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
         val playTouch = k.kind == 0 && s.showIdle &&
             (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant || s.playVisitors || s.playBreath)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && s.more.thumbEnabled) || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden && !thumbHidden)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && (s.more.thumbEnabled || s.more.drawerEnabled)) || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden && !thumbHidden)
         when {
             k.stackH > 0 -> {
                 // Yığın görünümü: pencere kartların toplam boyutunda
@@ -2319,6 +2400,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     override fun onDestroy() {
         IslandAccessibilityService.onChanged = null
+        DrawerBridge.onKey = null
+        runCatching { faceFlash.release() }
         runCatching { thumb.detach() }
         TranslateSession.closeRequest = null
         TranslateSession.onLangsChanged = null

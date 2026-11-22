@@ -547,6 +547,20 @@ class IslandNotificationListener : NotificationListenerService() {
         IslandBus.post(IslandEvent.ScreenRec(phase, sbn.key, started, count, stop, n.contentIntent, thumb))
     }
 
+    /** Kullanıcı bildirimi kaydırarak sildiyse (ya da tümünü temizlediyse) çöp kutusu ada animasyonu için haber verilir. */
+    override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: NotificationListenerService.RankingMap, reason: Int) {
+        super.onNotificationRemoved(sbn, rankingMap, reason)
+        runCatching {
+            val n = sbn.notification
+            val userGone = reason == NotificationListenerService.REASON_CANCEL || reason == NotificationListenerService.REASON_CANCEL_ALL
+            val ongoing = (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
+            val summary = (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0
+            if (userGone && !ongoing && !summary && sbn.packageName != packageName) {
+                IslandBus.post(IslandEvent.NotifTrashed(sbn.packageName))
+            }
+        }
+    }
+
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (sbn.packageName in shazamPkgs) {
             // Dinleme bildirimi kalktı: sonuç gelmezse ada kapanır (servis kısa bir tolerans bekler)

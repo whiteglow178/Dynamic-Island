@@ -221,6 +221,9 @@ object FlashToggle {
         if (runCatching { m.registerTorchCallback(c, Handler(Looper.getMainLooper())) }.isSuccess) cb = c
     }
 
+    /** Fener şu an açık mı (bilinmiyorsa false). */
+    fun isOn(): Boolean = state.values.any { it }
+
     fun toggle(ctx: Context) {
         val m = cm(ctx) ?: return
         val id = flashId(m) ?: return

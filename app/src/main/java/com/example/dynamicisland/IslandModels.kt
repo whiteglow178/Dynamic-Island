@@ -43,6 +43,9 @@ sealed interface IslandContent {
     /** Boştayken adaya dokununca/basılı tutunca açılan favori uygulamalar paneli. */
     data class Favorites(val apps: List<FavApp>) : IslandContent
 
+    /** Ada çekmecesi: hızlı düğmeler paneli (fener, ekran görüntüsü, kilit...). */
+    data object Drawer : IslandContent
+
     /** Zaman kapsülü: geçmişte bırakılan not / fotoğraf, zamanı gelince adada açılır. */
     data class Capsule(val id: Long, val text: String, val photo: String, val createdAt: Long) : IslandContent
 
@@ -60,6 +63,7 @@ sealed interface IslandContent {
         val avatar: ImageBitmap? = null,                 // gönderenin fotoğrafı (bildirimin büyük simgesi); banner görünümünde kullanılır
         val messaging: Boolean = false,                  // sohbet bildirimi (MessagingStyle / mesaj kategorisi): bannerda kişi fotoğrafı + köşede uygulama simgesi
         val accent: Int = 0,                             // uygulama simgesinin baskın rengi (ARGB); 0 = renkli ışık yok
+        val translatedFrom: String = "",                 // bildirim çevirisi: kaynak dil kodu ("en"); boş = çevrilmedi
     ) : IslandContent
 
     /** Telefon araması: gelen (Cevapla / Reddet) ya da aktif (süre + Kapat). */
@@ -192,6 +196,8 @@ sealed interface IslandEvent {
         val title: String, val artist: String, val cover: ImageBitmap?,
         val open: android.app.PendingIntent?, val key: String,
     ) : IslandEvent
+    /** Kullanıcı bir bildirimi sildi (kaydırarak ya da "Tümünü temizle"): çöp kutusu ada animasyonu için. */
+    data class NotifTrashed(val pkg: String) : IslandEvent
     /** Shazam'ın dinleme bildirimi kalktı ya da "eşleşme yok" bildirimi geldi. */
     data object ShazamGone : IslandEvent
     /** Ana Sayfa > Dene: favori uygulamalar panelini aç (ayarlarda favoriler açık ve en az bir uygulama seçili olmalı). */

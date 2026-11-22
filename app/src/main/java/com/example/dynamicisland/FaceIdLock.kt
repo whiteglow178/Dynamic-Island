@@ -391,7 +391,7 @@ private fun rememberFaceIdClock(
 }
 
 @Composable
-private fun rememberFaceIdSprite(): ImageBitmap? {
+internal fun rememberFaceIdSprite(): ImageBitmap? {
     val ctx = LocalContext.current
     return remember {
         runCatching {

@@ -289,6 +289,7 @@ internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float =
     }
     IslandContent.Photo -> cfg.more.designPhotoHDp
     is IslandContent.Capsule -> capsuleHeightDp(c)
+    IslandContent.Drawer -> cfg.drawerHeightDp()
     is IslandContent.ScreenRec -> REC_PILL_H_DP
     is IslandContent.Shazam -> SHAZAM_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
@@ -460,6 +461,7 @@ fun IslandRoot(
             if (content is IslandContent.Status && content.kind == StatusKind.LowBatteryCard) geo = geo.copy(eh = LOWBATT_CARD_H_DP.dp)
             // Özel tasarım fotoğrafı: ada çentiksiz, fotoğrafın tamamını gösteren büyük bir karta açılır
             if (content is IslandContent.Capsule) geo = geo.copy(eh = capsuleHeightDp(content).dp)
+            if (content is IslandContent.Drawer) geo = geo.copy(eh = cfg.drawerHeightDp().dp)
             if (content is IslandContent.Photo) {
                 val swDp = LocalConfiguration.current.screenWidthDp.toFloat()
                 geo = geo.copy(ew = designPhotoWidthDp(cfg, swDp).dp, eh = cfg.more.designPhotoHDp.dp)
@@ -764,7 +766,11 @@ fun IslandPill(
     val fromNow by rememberUpdatedState(fromX)
     // Ada olayları (yağmur / kar / asit / şimşek / kırılma)
     val fx = remember { IslandFxState() }
-    val fxActive = fxMode != 0 && content is IslandContent.Media && (cfg.fxWeather != 0 || cfg.fxBreak) && !swallow && !cfg.dotMode
+    // Şarkının havası: hava efekti ayardan değil, çalan şarkının kapak renginden seçilir (-1 = ayardaki efekt)
+    val moodArt = (content as? IslandContent.Media)?.artColor ?: 0
+    val moodWeather = if (cfg.more.musicMood && moodArt != 0) moodWeatherFor(moodArt) else -1
+    val effWeather = if (moodWeather >= 0) moodWeather else cfg.fxWeather
+    val fxActive = fxMode != 0 && content is IslandContent.Media && (effWeather != 0 || cfg.fxBreak) && !swallow && !cfg.dotMode
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
     val longPressNow by rememberUpdatedState(onLongPress)
@@ -773,7 +779,11 @@ fun IslandPill(
     val commandNow by rememberUpdatedState(onCommand)
     // Asistan modunda: kendi şekli; cam ve sıvı cam ayarları uygulanır. Çerçeve / dış parıltı kapalı (şekle uymaz).
     val assistant = content is IslandContent.Assistant
-    val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false, neonStyle = 0) else cfg
+    val cfg = when {
+        assistant -> cfg.copy(borderEnabled = false, glowEnabled = false, neonStyle = 0)
+        moodWeather >= 0 -> cfg.copy(fxWeather = moodWeather, fxLightning = moodWeather == 1 && isDarkArt(moodArt))
+        else -> cfg
+    }
     assistantGlassShape = assistant && cfg.assistantStyle == 1 && !cfg.assistantFullWidth   // oval stil: köşe yarıçapı tam yuvarlak
     val cornerT = if (assistant) progress.mean else -1f
     val cfgNow by rememberUpdatedState(cfg)
@@ -804,8 +814,9 @@ fun IslandPill(
     // Asistanda cam gövde en az %60 koyu kalır: renk bantları koyu zeminde okunur
     // Kamuflaj: boştaki ada yanındaki ekran rengini alır (portal açıksa kamuflaj uygulanmaz)
     val camo = CamoState.color
-    val camoOn = cfg.more.camoEnabled && !cfg.more.portalEnabled && content is IslandContent.Idle && camo != null
+    val camoOn = (cfg.more.camoEnabled || cfg.more.contrastEnabled) && !cfg.more.portalEnabled && content is IslandContent.Idle && camo != null
     val bodyTarget = when {
+        camoOn && cfg.more.contrastEnabled -> contrastOf(camo!!)     // kontrast ada: çevrenin zıt rengi
         camoOn -> Color(camo!!)
         assistant && cfg.glassEnabled -> Pal.c("island_assistant_body").copy(alpha = max(cfg.glassAlpha, 0.6f))
         else -> bodyColorFor(cfg, artColor, accent)
@@ -976,6 +987,7 @@ fun IslandPill(
                     is IslandContent.Shazam -> ShazamContent(content, onShazamStop)
                     IslandContent.Photo -> Unit      // fotoğraf arka planda (DesignFill) çizilir; üstünde çentik / içerik yok
                     is IslandContent.Capsule -> CapsuleContent(content)
+                    IslandContent.Drawer -> DrawerPanel(cfg.compactHeightDp.dp) { k -> DrawerBridge.onKey?.invoke(k) }
                     IslandContent.Idle -> Unit
                 }
             }
@@ -1316,9 +1328,13 @@ private fun NotifContent(c: IslandContent.Notif, accent: Color, rb: RainbowStyle
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            if (c.title.isNotBlank()) {
+            if (c.title.isNotBlank() || c.translatedFrom.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(c.title, color = Pal.c("island_text"), fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).rainbowFill(rb))
+                if (c.translatedFrom.isNotEmpty()) {
+                    // Bildirim çevirisi: küçük "İngilizce → çevrildi" etiketi
+                    Text("  ${langNameTr(c.translatedFrom)} · çevrildi", color = Pal.c("island_text_dim"), fontSize = 11.sp, maxLines = 1)
+                }
             }
             if (c.text.isNotBlank()) {
                 Text(c.text, color = Pal.c("island_text_dim"), fontSize = 13.5.sp, lineHeight = 18.sp,
@@ -1356,3 +1372,37 @@ fun ringerPillWidthDp(cfg: IslandSettings, longText: Boolean, screenWDp: Float):
 fun ringerPillHeightDp(cfg: IslandSettings): Float =
     if (cfg.ringerExpand) cfg.compactHeightDp * cfg.ringerHeightPct / 100f else cfg.compactHeightDp
 
+
+// ---------------------------------------------------------------- Kontrast ada / şarkının havası
+/** Kontrast ada: çevrenin zıt rengi; orta tonlarda da belirgin olsun diye parlaklık uca itilir. */
+internal fun contrastOf(argb: Int): Color {
+    val r = 255 - ((argb shr 16) and 0xFF); val g = 255 - ((argb shr 8) and 0xFF); val b = 255 - (argb and 0xFF)
+    val hsv = FloatArray(3)
+    android.graphics.Color.RGBToHSV(r, g, b, hsv)
+    hsv[2] = if (hsv[2] >= 0.5f) maxOf(hsv[2], 0.92f) else minOf(hsv[2], 0.10f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
+/**
+ * Şarkının havası: kapak rengine göre hava efekti (0 yok, 1 yağmur, 2 kar, 3 asit yağmuru).
+ * Soluk / beyazımsı kapak → kar; mavi, mor ya da çok koyu kapak → yağmur (çok koyuysa şimşekli); canlı yeşil → asit yağmuru;
+ * sıcak renkler (kırmızı, turuncu, sarı) → güneşli, efekt yok.
+ */
+internal fun moodWeatherFor(argb: Int): Int {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(argb, hsv)
+    val h = hsv[0]; val s = hsv[1]; val v = hsv[2]
+    return when {
+        s < 0.18f && v > 0.70f -> 2
+        v < 0.22f -> 1
+        h in 75f..160f && s > 0.45f -> 3
+        h in 180f..290f -> 1
+        else -> 0
+    }
+}
+
+internal fun isDarkArt(argb: Int): Boolean {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(argb, hsv)
+    return hsv[2] < 0.35f
+}

@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
@@ -89,7 +90,7 @@ class PlayOverlay(
 
     fun wanted(s: IslandSettings) = s.playPet || s.playMagnet || s.playRipple || s.playPuff || s.playEater || s.playDaylight ||
         s.playFling || s.playPlant || s.playSeason || s.playParty ||
-        s.playVisitors || s.playDice || s.playBreath || s.playNightLight || s.playShadow
+        s.playVisitors || s.playDice || s.playBreath || s.playNightLight || s.playShadow || s.more.trashIsland
 
     fun attach() {
         if (view != null || !wanted(settings.value)) return
@@ -176,6 +177,7 @@ internal fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlo
         if (s.playSeason) SeasonFx(anchor, seasonOf(s.playSeasonMode))
         if (s.playPlant) PlantFx(anchor)
         if (s.playEater) EaterFx(anchor)
+        if (s.more.trashIsland) TrashFx(anchor)
         if (s.playRipple) RippleFx(anchor)
         if (s.playMagnet) MagnetFx(anchor)
         if (s.playPuff) PuffDustFx(anchor)
@@ -626,6 +628,74 @@ private fun EaterFx(a: PlayAnchor) {
     }
 }
 private const val EAT_MS = 750
+
+// ---------------------------------------------------------------- Çöp kutusu ada
+private class Trash(val start: Long, val icon: androidx.compose.ui.graphics.ImageBitmap?, val fromLeft: Boolean, val spin: Float)
+private const val TRASH_MS = 720
+
+/**
+ * Silinen bildirimin simgesi, bildirim panelindeki yerine yakın bir noktadan dönerek ve küçülerek adaya uçar;
+ * ada onu yutkunarak yer (Mevcut "bildirim yiyen ada" hareketinin tersi: gelen değil, silinen bildirim).
+ */
+@Composable
+private fun TrashFx(a: PlayAnchor) {
+    val bus = LocalPlayBus.current
+    val items = remember { mutableStateListOf<Trash>() }
+    var now by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        bus.events.collect {
+            if (it is PlayEvent.Trashed && items.size < 4) {
+                items.add(Trash(SystemClock.uptimeMillis() + items.size * 90L, it.icon, Random.nextBoolean(), if (Random.nextBoolean()) 540f else -540f))
+            }
+        }
+    }
+    val busy = items.isNotEmpty()
+    LaunchedEffect(busy) {
+        while (items.isNotEmpty()) {
+            withFrameNanos { now = SystemClock.uptimeMillis() }
+            val done = items.filter { now - it.start >= TRASH_MS }
+            if (done.isNotEmpty()) {
+                items.removeAll(done)
+                done.forEach { _ -> bus.emit(PlayEvent.Eaten) }      // ada yutkunur
+            }
+        }
+    }
+    if (!busy) return
+    Canvas(Modifier.fillMaxSize()) {
+        val d = density
+        val target = Offset(a.liveCx(), a.liveCy())
+        for (m in items) {
+            val t = ((now - m.start) / TRASH_MS.toFloat()).coerceIn(0f, 1f)
+            if (now < m.start) continue
+            val e = t * t * (3f - 2f * t)
+            val start = Offset(a.cx + (if (m.fromLeft) -1f else 1f) * a.screenW * 0.22f, a.top + a.dir() * a.screenH * 0.22f)
+            val ctrl = Offset((start.x + target.x) / 2f + (if (m.fromLeft) -1f else 1f) * a.screenW * 0.12f, (start.y + target.y) / 2f)
+            val u = 1f - e
+            val p = Offset(
+                u * u * start.x + 2f * u * e * ctrl.x + e * e * target.x,
+                u * u * start.y + 2f * u * e * ctrl.y + e * e * target.y,
+            )
+            val size = 40f * d * (1f - 0.8f * e)
+            val alpha = if (t > 0.85f) (1f - t) / 0.15f else 1f
+            withTransform({ rotate(m.spin * e, p) }) {
+                val ic = m.icon
+                if (ic != null) {
+                    drawImage(
+                        ic, dstOffset = androidx.compose.ui.unit.IntOffset((p.x - size / 2f).toInt(), (p.y - size / 2f).toInt()),
+                        dstSize = androidx.compose.ui.unit.IntSize(size.toInt().coerceAtLeast(1), size.toInt().coerceAtLeast(1)),
+                        alpha = alpha.coerceIn(0f, 1f),
+                    )
+                } else {
+                    drawCircle(Color(0xFFFF453A).copy(alpha = alpha.coerceIn(0f, 1f)), size / 2f, p)
+                }
+            }
+            // Adaya yaklaşınca adaya doğru uzayan sıvı köprü (ada onu çekiyormuş gibi)
+            val dist = (p - target).getDistance()
+            val reach = a.h * 2.4f
+            if (dist < reach) drawLine(a.color, target, p, size * 0.5f * (1f - dist / reach), StrokeCap.Round)
+        }
+    }
+}
 private val BITE_COLORS = listOf(Color(0xFF64D2FF), Color(0xFF30D158), Color(0xFFFF9F0A), Color(0xFFFF375F), Color(0xFFBF5AF2))
 
 // ================================================================ Gün ışığı rengi

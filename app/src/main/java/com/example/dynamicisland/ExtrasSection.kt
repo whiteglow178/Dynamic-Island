@@ -63,6 +63,7 @@ fun ExtrasSections() {
             s.copy(more = s.more.copy(
                 portalEnabled = v.portalEnabled, portalScene = v.portalScene, portalDepth = v.portalDepth,
                 thumbEnabled = v.thumbEnabled, camoEnabled = v.camoEnabled, camoSkipPkgs = v.camoSkipPkgs,
+                contrastEnabled = v.contrastEnabled,
             ))
         }
     }
@@ -83,7 +84,7 @@ fun ExtrasSections() {
             if (cur.portalScene == 3) " Gökyüzü saate göre değişir: sabah gün doğar, öğlen mavi gök, akşam gün batımı, gece yıldızlar ve gerçek evresinde ay. İnternet ve konum kullanılmaz." else "",
             color = dim, fontSize = 12.sp, lineHeight = 17.sp)
         SwitchRow("Portal ada", "Boştaki adanın içi pencere gibi olur; arkasında uzak ve yakın katmanlar farklı hızda kayar. Ekran kapalıyken sensör dinlenmez. Açıkken özel tasarım ve kamuflaj boştaki adada görünmez",
-            cur.portalEnabled) { set(cur.copy(portalEnabled = it, camoEnabled = if (it) false else cur.camoEnabled)) }
+            cur.portalEnabled) { set(cur.copy(portalEnabled = it, camoEnabled = if (it) false else cur.camoEnabled, contrastEnabled = if (it) false else cur.contrastEnabled)) }
         SegmentedTabs(PORTAL_NAMES, cur.portalScene) { set(cur.copy(portalScene = it)) }
         SliderRow("Derinlik", cur.portalDepth, 0.2f..2f, "%.1fx".format(cur.portalDepth)) { set(cur.copy(portalDepth = it)) }
     }
@@ -105,8 +106,10 @@ fun ExtrasSections() {
     // ---------------------------------------------------------------- Kamuflaj
     SectionCard("Kamuflaj", "Ada çevresinin rengini alıp gözden kaybolur") {
         SwitchRow("Kamuflaj", "Boştaki ada, hemen yanındaki ekran renginin aynısını alır (açık temalı uygulamada beyaz, koyu temada siyah...) ve neredeyse görünmez olur. Bildirim, müzik gibi bir olay gelince bukalemun gibi renk değiştirerek ortaya çıkar. Yalnızca adanın iki yanındaki birkaç nokta okunur; hiçbir görüntü kaydedilmez",
-            cur.camoEnabled) { set(cur.copy(camoEnabled = it, portalEnabled = if (it) false else cur.portalEnabled)) }
-        if (cur.camoEnabled) {
+            cur.camoEnabled) { set(cur.copy(camoEnabled = it, contrastEnabled = if (it) false else cur.contrastEnabled, portalEnabled = if (it) false else cur.portalEnabled)) }
+        SwitchRow("Kontrast ada", "Kamuflajın tersi: boştaki ada çevresine karışmak yerine hep zıt rengi alır. Açık temalı ekranda koyu, koyu ekranda parlak olur; ada her zaman göze çarpar. Renk aynı yöntemle okunur, aşağıdaki uygulama listesi bunun için de geçerli",
+            cur.contrastEnabled) { set(cur.copy(contrastEnabled = it, camoEnabled = if (it) false else cur.camoEnabled, portalEnabled = if (it) false else cur.portalEnabled)) }
+        if (cur.camoEnabled || cur.contrastEnabled) {
             SubHeader("Kamuflajın duracağı uygulamalar")
             Text("Bu uygulamalar açıkken ekran görüntüsü hiç alınmaz; ada normal rengine döner. Bankacılık, mesajlaşma, şifre yöneticisi gibi uygulamaları ekleyebilirsin.",
                 color = dim, fontSize = 12.sp, lineHeight = 17.sp)
@@ -121,6 +124,68 @@ fun ExtrasSections() {
 
     // ---------------------------------------------------------------- Zaman kapsülü
     TimeCapsuleSection()
+
+    // ---------------------------------------------------------------- Mevcut özelliklerden türetilenler
+    RemixSections()
+}
+
+/** Bildirim çevirisi, şarkının havası, ada çekmecesi, çöp kutusu ada, uygulama kilidi. */
+@Composable
+private fun RemixSections() {
+    val ctx = LocalContext.current
+    val repo = remember { SettingsRepository(ctx.applicationContext) }
+    var m by remember { mutableStateOf<MoreSettings?>(null) }
+    LaunchedEffect(Unit) { m = repo.flow.first().more }
+    LaunchedEffect(m) {
+        val v = m ?: return@LaunchedEffect
+        delay(250)
+        repo.update { s ->
+            s.copy(more = s.more.copy(
+                notifTranslate = v.notifTranslate, musicMood = v.musicMood,
+                drawerEnabled = v.drawerEnabled, drawerTrigger = v.drawerTrigger,
+                trashIsland = v.trashIsland, appLockEnabled = v.appLockEnabled, appLockPkgs = v.appLockPkgs,
+            ))
+        }
+    }
+    val cur = m ?: return
+    val set: (MoreSettings) -> Unit = { m = it }
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant
+
+    SectionCard("Bildirim çevirisi", "Yabancı dildeki bildirim adada Türkçe görünür") {
+        SwitchRow("Bildirimleri çevir", "Gelen bildirimin dili telefonda tanınır; Türkçe değilse telefonda çevrilir ve adada (ya da cam bannerda) çevrilmiş haliyle, küçük \"İngilizce · çevrildi\" etiketiyle görünür. Metin hiçbir sunucuya gönderilmez",
+            cur.notifTranslate) { set(cur.copy(notifTranslate = it)) }
+        Text("Bir dilden ilk bildirim geldiğinde o dilin çeviri paketi (yaklaşık 30 MB) bir kez indirilir; o bildirim orijinal haliyle görünür, sonrakiler çevrilir. Kişi adı gibi kısa başlıklar çevrilmez.",
+            color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+
+    SectionCard("Şarkının havası", "Müzik adasındaki hava efektini şarkının kapağı seçsin") {
+        SwitchRow("Şarkının havası", "Açık müzik adasındaki hava efekti ayardan değil kapağın renginden gelir: mavi, mor ya da çok koyu kapakta yağmur (çok koyuysa şimşekli), beyazımsı kapakta kar, canlı yeşilde asit yağmuru; sıcak renkli (kırmızı, turuncu, sarı) kapakta hava açık, efekt yok. Şarkı değişince hava da değişir",
+            cur.musicMood) { set(cur.copy(musicMood = it)) }
+    }
+
+    SectionCard("Ada çekmecesi", "Favori paneli gibi açılır, uygulama yerine hızlı düğmeler") {
+        SwitchRow("Ada çekmecesi", "Boştaki adadan fener, ekran görüntüsü, kilitle, kamera, zil / titreşim, ses, internet ve hızlı ayarlar düğmelerinin olduğu bir panel açılır. Ek izin gerekmez; ekran görüntüsü, kilitle ve hızlı ayarlar erişilebilirlik servisiyle çalışır",
+            cur.drawerEnabled) { set(cur.copy(drawerEnabled = it)) }
+        if (cur.drawerEnabled) {
+            SegmentedTabs(listOf("Dokununca", "Basılı tutunca"), cur.drawerTrigger) { set(cur.copy(drawerTrigger = it)) }
+            Text("Aynı dokunuşa başka bir özellik de bağlıysa sıra: özel tasarım fotoğrafı, çekmece, çeviri, favoriler.",
+                color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+    }
+
+    SectionCard("Çöp kutusu ada", "Silinen bildirim adaya uçar, ada yutar") {
+        SwitchRow("Çöp kutusu ada", "Bir bildirimi kaydırarak silince (ya da tümünü temizleyince) uygulamanın simgesi dönerek adaya uçar, ada onu yutkunur. Adadaki bildirimi kaydırıp silince de çalışır",
+            cur.trashIsland) { set(cur.copy(trashIsland = it)) }
+    }
+
+    SectionCard("Uygulama açılış animasyonu", "Seçtiğin uygulamalar açılınca adada Face ID animasyonu oynar") {
+        SwitchRow("Face ID animasyonu", "Seçili bir uygulama açılınca adanın yerinde Face ID taraması bir kez oynar ve onay işaretiyle biter. Yalnızca görsel bir efekttir: yüz ya da parmak izi istemez, uygulamayı kilitlemez. Rengi, boyutu ve hızı Face ID ayarlarından gelir (burada biraz daha hızlı oynar)",
+            cur.appLockEnabled) { set(cur.copy(appLockEnabled = it)) }
+        if (cur.appLockEnabled) {
+            HiddenAppsPicker(cur.appLockList(), title = "Animasyon oynayacak uygulamalar") { list -> set(cur.copy(appLockPkgs = list.joinToString(","))) }
+        }
+        Text("Hangi uygulamanın açıldığını erişilebilirlik servisi bildirir; servis açık olmalı.", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+    }
 }
 
 @Composable

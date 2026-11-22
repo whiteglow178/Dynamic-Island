@@ -173,9 +173,9 @@ fun PlayIslandHost(
     // ---------------------------------------------------------------- Bildirim yiyen ada
     LaunchedEffect(Unit) {
         PlayFx.events.collect { e ->
-            if (e == PlayEvent.Eaten && cfg.playEater) {
+            if (e == PlayEvent.Eaten && (cfg.playEater || cfg.more.trashIsland)) {
                 PlayFx.kick(-3.2f)                                          // yutkunma: önce uzar, sonra yayvanlaşır
-                if (cfg.playEaterFull) PlayFx.fullness = (PlayFx.fullness + 1f).coerceAtMost(4f)
+                if (cfg.playEater && cfg.playEaterFull) PlayFx.fullness = (PlayFx.fullness + 1f).coerceAtMost(4f)
             }
         }
     }
@@ -246,7 +246,7 @@ fun PlayIslandHost(
     // Ada savrulmuşken açılırsa / gizlenirse uçuş takılı kalmasın
     LaunchedEffect(PlayFx.flying) { if (PlayFx.flying) { delay(4_000L); PlayFx.flying = false } }
 
-    val anyTransform = s.playPhysics || s.playPocket || s.playPuff || s.playMagnet || s.playEater || s.playPull
+    val anyTransform = s.playPhysics || s.playPocket || s.playPuff || s.playMagnet || s.playEater || s.playPull || s.more.trashIsland
     Box(
         Modifier
             .fillMaxSize()
