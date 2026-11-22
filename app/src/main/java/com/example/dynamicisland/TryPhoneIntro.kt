@@ -850,9 +850,7 @@ private fun roundedPts(x0: Float, y0: Float, x1: Float, y1: Float, r: Float): Li
 /** Kesit halkası: y (telefon ekseni boyunca), yarı genişlik a, yarı kalınlık b (a = b: silindir, a > b: stadyum). */
 private class Ring(val y: Float, val a: Float, val b: Float)
 
-private class Face3(val pts: FloatArray, val depth: Float, val color: Color)
-
-private const val CABLE_SEG = 24                      // kesit çevresindeki yüzey sayısı
+private const val CABLE_SEG = 48                      // kesit çevresindeki örnek sayısı (gölge geçişi için)
 
 private val CABLE_LIGHT: V3 = run {
     val l = sqrt(LX * LX + LY * LY + LZ * LZ)
@@ -887,39 +885,78 @@ private fun shadeColor(base: Color, nCam: V3, metal: Boolean): Color {
     )
 }
 
-/** Halka dizisini yan yüzeylere böler ve [out]'a ekler (yalnızca kameraya bakan yüzeyler). */
-private fun tube(cam: PhoneCam, rings: List<Ring>, base: Color, metal: Boolean, out: MutableList<Face3>) {
+/**
+ * Halka dizisini kesintisiz bir gövde olarak çizer. Her bant (iki halka arası) tek parça: ekrandaki sol / sağ sınırı
+ * halkaların en uç noktalarıdır, rengi ise kameraya bakan noktaların ışığa göre hesaplanan tonlarından oluşan yumuşak
+ * bir geçiştir. Böylece küçük yüzeylerin köşeleri (tırtık) görünmez, gölge pürüzsüz olur.
+ */
+private fun DrawScope.drawTube(cam: PhoneCam, rings: List<Ring>, base: Color, metal: Boolean, path: Path) {
+    val n = CABLE_SEG
+    val x0 = FloatArray(n); val y0 = FloatArray(n); val x1 = FloatArray(n); val y1 = FloatArray(n)
+    val sxs = ArrayList<Float>(n); val cols = ArrayList<Color>(n)
     for (i in 0 until rings.size - 1) {
         val r0 = rings[i]; val r1 = rings[i + 1]
         val dy = (r1.y - r0.y).let { if (abs(it) < 1e-4f) 1e-4f else it }
-        val slope = -(r1.b - r0.b) / dy                  // daralan kısımda yüzey biraz yukarı/aşağı bakar
-        for (k in 0 until CABLE_SEG) {
-            val p00 = ringPoint(r0, k); val p01 = ringPoint(r0, k + 1)
-            val p10 = ringPoint(r1, k); val p11 = ringPoint(r1, k + 1)
-            val mx = (p00[2] + p01[2]) / 2f; val mz = (p00[3] + p01[3]) / 2f
-            val nCam = cam.dir(mx, slope, mz)
-            val c0 = cam.pt(p00[0], r0.y, p00[1])
-            if (!cam.visible(nCam, c0) && !cam.visible(nCam, cam.pt(p11[0], r1.y, p11[1]))) continue
-            val a0 = cam.scr(p00[0], r0.y, p00[1]); val a1 = cam.scr(p01[0], r0.y, p01[1])
-            val b1 = cam.scr(p11[0], r1.y, p11[1]); val b0 = cam.scr(p10[0], r1.y, p10[1])
-            val depth = (c0.z + cam.pt(p11[0], r1.y, p11[1]).z) / 2f
-            out.add(Face3(floatArrayOf(a0.x, a0.y, a1.x, a1.y, b1.x, b1.y, b0.x, b0.y), depth, shadeColor(base, nCam, metal)))
+        val slope = -(r1.b - r0.b) / dy
+        sxs.clear(); cols.clear()
+        var lo0 = 0; var hi0 = 0; var lo1 = 0; var hi1 = 0
+        for (k in 0 until n) {
+            val p0 = ringPoint(r0, k); val p1 = ringPoint(r1, k)
+            val a0 = cam.scr(p0[0], r0.y, p0[1]); val a1 = cam.scr(p1[0], r1.y, p1[1])
+            x0[k] = a0.x; y0[k] = a0.y; x1[k] = a1.x; y1[k] = a1.y
+            if (a0.x < x0[lo0]) lo0 = k
+            if (a0.x > x0[hi0]) hi0 = k
+            if (a1.x < x1[lo1]) lo1 = k
+            if (a1.x > x1[hi1]) hi1 = k
+            val nCam = cam.dir(p0[2], slope, p0[3])
+            if (cam.visible(nCam, cam.pt((p0[0] + p1[0]) / 2f, (r0.y + r1.y) / 2f, (p0[1] + p1[1]) / 2f))) {
+                sxs.add((a0.x + a1.x) / 2f); cols.add(shadeColor(base, nCam, metal))
+            }
         }
+        val minX = min(x0[lo0], x1[lo1]); val maxX = max(x0[hi0], x1[hi1])
+        if (maxX - minX < 0.5f) continue
+        // Ton geçişi: soldan sağa sıralı, aynı yere düşen örnekler atlanır
+        val order = sxs.indices.sortedBy { sxs[it] }
+        val stops = ArrayList<Pair<Float, Color>>()
+        var lastF = -1f
+        for (j in order) {
+            val f = ((sxs[j] - minX) / (maxX - minX)).coerceIn(0f, 1f)
+            if (f - lastF < 0.004f) continue
+            stops.add(f to cols[j]); lastF = f
+        }
+        val brush = when {
+            stops.isEmpty() -> null
+            stops.size == 1 -> null
+            else -> {
+                if (stops.first().first > 0f) stops.add(0, 0f to stops.first().second)
+                if (stops.last().first < 1f) stops.add(1f to stops.last().second)
+                Brush.horizontalGradient(colorStops = stops.toTypedArray(), startX = minX, endX = maxX)
+            }
+        }
+        // Bantlar birbirine 0,8 px biner: aralarında ince çizgi kalmaz
+        val ext = 0.8f * (if (y1[lo1] >= y0[lo0]) 1f else -1f)
+        path.reset()
+        path.moveTo(x0[lo0], y0[lo0])
+        path.lineTo(x0[hi0], y0[hi0])
+        path.lineTo(x1[hi1], y1[hi1] + ext)
+        path.lineTo(x1[lo1], y1[lo1] + ext)
+        path.close()
+        if (brush != null) drawPath(path, brush) else drawPath(path, stops.firstOrNull()?.second ?: base)
     }
 }
 
-/** Halkanın düz kapağı ([dirY] = -1 telefona bakan uç). */
-private fun cap(cam: PhoneCam, r: Ring, dirY: Float, base: Color, metal: Boolean, out: MutableList<Face3>) {
+/** Halkanın düz kapağı ([dirY] = -1 telefona bakan uç); düz yüzey olduğu için tek ton. */
+private fun DrawScope.drawCap(cam: PhoneCam, r: Ring, dirY: Float, base: Color, metal: Boolean, path: Path) {
     val nCam = cam.dir(0f, dirY, 0f)
-    val c = cam.pt(0f, r.y, 0f)
-    if (!cam.visible(nCam, c)) return
-    val pts = FloatArray(CABLE_SEG * 2)
+    if (!cam.visible(nCam, cam.pt(0f, r.y, 0f))) return
+    path.reset()
     for (k in 0 until CABLE_SEG) {
         val p = ringPoint(r, k)
         val o = cam.scr(p[0], r.y, p[1])
-        pts[2 * k] = o.x; pts[2 * k + 1] = o.y
+        if (k == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y)
     }
-    out.add(Face3(pts, c.z, shadeColor(base, nCam, metal)))
+    path.close()
+    drawPath(path, shadeColor(base, nCam, metal))
 }
 
 /** Kablo + konnektör. Telefondan sonra çizilir (kablo telefonun alt kenarının altında kalır). */
@@ -928,56 +965,40 @@ private fun DrawScope.drawCable(cam: PhoneCam, e: Float, path: Path) {
     val hd = HOUSING_D / 2f
     val yTop = plugTopY(e)
     val yBot = yTop + HOUSING_LEN
-    val faces = ArrayList<Face3>(400)
 
     val white = Color(0xFFF2F2F5)
-    val rubber = Color(0xFFE6E6EA)
     val metal = Color(0xFFC4C6CC)
 
-    // 1) Kablo: silindir; perspektif düzgün olsun diye boyunca parçalara bölünür
+    // 1) Kablo (en arkada; üst ucu boğazın içinde kalır)
+    val bootEnd = yBot + BOOT_LEN
     val cable = ArrayList<Ring>()
-    val n = 8
-    for (i in 0..n) cable.add(Ring(yBot + BOOT_LEN - 1f + CABLE_LEN * i / n, CABLE_R, CABLE_R))
-    tube(cam, cable, white, false, faces)
+    for (i in 0..6) cable.add(Ring(bootEnd - 0.5f + CABLE_LEN * i / 6, CABLE_R, CABLE_R))
+    drawTube(cam, cable, white, false, path)
 
-    // 2) Kauçuk boğaz: gövdeden kabloya incelen yumuşak geçiş
-    tube(cam, listOf(
-        Ring(yBot - 1f, BOOT_R * 1.25f, BOOT_R * 1.15f),
-        Ring(yBot + 1.5f, BOOT_R, BOOT_R),
-        Ring(yBot + BOOT_LEN * 0.6f, BOOT_R * 0.86f, BOOT_R * 0.86f),
-        Ring(yBot + BOOT_LEN, CABLE_R * 1.08f, CABLE_R * 1.08f),
-    ), rubber, false, faces)
-
-    // 3) Konnektör gövdesi: stadyum kesitli, uçları pahlı (yuvarlatılmış)
-    val housing = listOf(
-        Ring(yTop, hw * 0.90f, hd * 0.84f),
-        Ring(yTop + 0.6f, hw * 0.98f, hd * 0.96f),
-        Ring(yTop + 1.4f, hw, hd),
-        Ring(yBot - 3.5f, hw, hd),
-        Ring(yBot - 1.2f, hw * 0.93f, hd * 0.90f),
-        Ring(yBot, hw * 0.74f, hd * 0.70f),
-    )
-    tube(cam, housing, white, false, faces)
-    cap(cam, housing.first(), -1f, white, false, faces)
-
-    // 4) USB-C metal uç: yalnızca telefonun dışında kalan kısmı
+    // 2) USB-C metal uç: yalnızca telefonun dışında kalan kısmı
     val yM0 = max(PORT_Y, yTop - METAL_LEN)
     if (yTop - yM0 > 0.02f) {
-        tube(cam, listOf(Ring(yM0, METAL_W / 2f, METAL_D / 2f), Ring(yTop, METAL_W / 2f, METAL_D / 2f)), metal, true, faces)
+        drawTube(cam, listOf(Ring(yM0, METAL_W / 2f, METAL_D / 2f), Ring(yTop + 0.3f, METAL_W / 2f, METAL_D / 2f)), metal, true, path)
     }
 
-    // Uzaktan yakına çiz (z büyüdükçe kameraya yakın)
-    faces.sortBy { it.depth }
-    for (f in faces) {
-        path.reset()
-        val p = f.pts
-        path.moveTo(p[0], p[1])
-        var i = 2
-        while (i < p.size) { path.lineTo(p[i], p[i + 1]); i += 2 }
-        path.close()
-        drawPath(path, f.color)
-        drawPath(path, f.color, style = Stroke(0.7f))     // komşu yüzeyler arasında ince çatlak kalmasın
-    }
+    // 3) Konnektör gövdesi + boğaz TEK PARÇA: yassı (stadyum) kesit, alt uçta yumuşakça yuvarlaklaşıp kabloya incelir.
+    //    Eskiden gövde ile boğaz ayrı parçalardı; birleşim yerinde basamak oluşuyordu.
+    val body = listOf(
+        Ring(yTop, hw * 0.90f, hd * 0.84f),
+        Ring(yTop + 0.5f, hw * 0.97f, hd * 0.95f),
+        Ring(yTop + 1.3f, hw, hd),
+        Ring(yBot - 4.0f, hw, hd),
+        Ring(yBot - 2.2f, hw * 0.96f, hd * 0.95f),
+        Ring(yBot - 1.0f, hw * 0.86f, hd * 0.88f),
+        Ring(yBot - 0.2f, hw * 0.66f, hd * 0.78f),
+        Ring(yBot + 0.6f, BOOT_R * 1.30f, BOOT_R * 1.02f),
+        Ring(yBot + 2.0f, BOOT_R * 1.05f, BOOT_R * 0.98f),
+        Ring(yBot + BOOT_LEN * 0.55f, BOOT_R * 0.88f, BOOT_R * 0.88f),
+        Ring(yBot + BOOT_LEN * 0.85f, CABLE_R * 1.22f, CABLE_R * 1.22f),
+        Ring(bootEnd, CABLE_R * 1.04f, CABLE_R * 1.04f),
+    )
+    drawTube(cam, body, white, false, path)
+    drawCap(cam, body.first(), -1f, white, false, path)
 }
 
 @Composable
