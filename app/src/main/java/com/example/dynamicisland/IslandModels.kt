@@ -43,6 +43,9 @@ sealed interface IslandContent {
     /** Boştayken adaya dokununca/basılı tutunca açılan favori uygulamalar paneli. */
     data class Favorites(val apps: List<FavApp>) : IslandContent
 
+    /** Zaman kapsülü: geçmişte bırakılan not / fotoğraf, zamanı gelince adada açılır. */
+    data class Capsule(val id: Long, val text: String, val photo: String, val createdAt: Long) : IslandContent
+
     /** Özel ada tasarımı (fotoğraf): boştaki adaya dokununca ada genişleyip fotoğrafı tamamen gösterir. */
     data object Photo : IslandContent
 

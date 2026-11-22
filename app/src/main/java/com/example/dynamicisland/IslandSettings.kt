@@ -534,6 +534,15 @@ data class MoreSettings(
     // ---- Müzik paneli
     val favStar: Boolean = false,           // beğeni düğmesi kalp yerine yıldız
     val lyricsSide: Boolean = false,        // açık müzik adası: kontroller solda, şarkı sözleri sağda
+    // ---- Portal ada: boştaki adanın içinde, telefonu eğdikçe kayan derinlikli sahne
+    val portalEnabled: Boolean = false,
+    val portalScene: Int = 0,               // 0 uzay, 1 akvaryum, 2 gece şehri
+    val portalDepth: Float = 1f,            // eğime tepki (derinlik) çarpanı
+    // ---- Başparmak modu: boştaki ada aşağı çekilince başparmağın altına iner
+    val thumbEnabled: Boolean = false,
+    // ---- Kamuflaj: boştaki ada yanındaki ekran rengini alıp kaybolur
+    val camoEnabled: Boolean = false,
+    val camoSkipPkgs: String = "",          // kamuflajın tamamen durduğu uygulamalar (virgülle ayrılmış paket adları)
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -541,6 +550,9 @@ fun IslandSettings.designPhotoReady(): Boolean =
     more.designEnabled && more.designStyle == DESIGN_PHOTO && more.designPhotoUri.isNotEmpty() && more.designPhotoExpand && showIdle
 
 const val DESIGN_PHOTO = 6
+
+/** Kamuflajın tamamen durduğu uygulamaların paket adları. */
+fun MoreSettings.camoSkipList(): List<String> = camoSkipPkgs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
 class SettingsRepository(context: Context) {
     private val store = context.applicationContext.islandStore
@@ -639,6 +651,8 @@ class SettingsRepository(context: Context) {
         val LB_ON = booleanPreferencesKey("lb_on"); val LB_EXP = booleanPreferencesKey("lb_exp")
         val NET_ON = booleanPreferencesKey("net_on"); val AIR_ON = booleanPreferencesKey("air_on"); val RVOL_ON = booleanPreferencesKey("rvol_on")
         val FAV_STAR = booleanPreferencesKey("fav_star"); val LY_SIDE = booleanPreferencesKey("ly_side")
+        val PT_ON = booleanPreferencesKey("pt_on"); val PT_SCENE = intPreferencesKey("pt_scene"); val PT_DEPTH = floatPreferencesKey("pt_depth")
+        val TH_ON = booleanPreferencesKey("th_on"); val CAMO_ON = booleanPreferencesKey("camo_on"); val CAMO_SKIP = stringPreferencesKey("camo_skip")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -889,6 +903,12 @@ class SettingsRepository(context: Context) {
                 ringVolIndicator = p[K.RVOL_ON] ?: d.more.ringVolIndicator,
                 favStar = p[K.FAV_STAR] ?: d.more.favStar,
                 lyricsSide = p[K.LY_SIDE] ?: d.more.lyricsSide,
+                portalEnabled = p[K.PT_ON] ?: d.more.portalEnabled,
+                portalScene = (p[K.PT_SCENE] ?: d.more.portalScene).coerceIn(0, 2),
+                portalDepth = (p[K.PT_DEPTH] ?: d.more.portalDepth).coerceIn(0.2f, 2f),
+                thumbEnabled = p[K.TH_ON] ?: d.more.thumbEnabled,
+                camoEnabled = p[K.CAMO_ON] ?: d.more.camoEnabled,
+                camoSkipPkgs = p[K.CAMO_SKIP] ?: d.more.camoSkipPkgs,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -999,6 +1019,8 @@ class SettingsRepository(context: Context) {
             it[K.LB_ON] = m.lowBattIndicator; it[K.LB_EXP] = m.lowBattExpand
             it[K.NET_ON] = m.netIndicator; it[K.AIR_ON] = m.airplaneIndicator; it[K.RVOL_ON] = m.ringVolIndicator
             it[K.FAV_STAR] = m.favStar; it[K.LY_SIDE] = m.lyricsSide
+            it[K.PT_ON] = m.portalEnabled; it[K.PT_SCENE] = m.portalScene; it[K.PT_DEPTH] = m.portalDepth
+            it[K.TH_ON] = m.thumbEnabled; it[K.CAMO_ON] = m.camoEnabled; it[K.CAMO_SKIP] = m.camoSkipPkgs
         }
     }
 

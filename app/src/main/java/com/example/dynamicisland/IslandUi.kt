@@ -288,6 +288,7 @@ internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float =
         else -> cfg.expandedHeightDp
     }
     IslandContent.Photo -> cfg.more.designPhotoHDp
+    is IslandContent.Capsule -> capsuleHeightDp(c)
     is IslandContent.ScreenRec -> REC_PILL_H_DP
     is IslandContent.Shazam -> SHAZAM_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
@@ -458,6 +459,7 @@ fun IslandRoot(
             }
             if (content is IslandContent.Status && content.kind == StatusKind.LowBatteryCard) geo = geo.copy(eh = LOWBATT_CARD_H_DP.dp)
             // Özel tasarım fotoğrafı: ada çentiksiz, fotoğrafın tamamını gösteren büyük bir karta açılır
+            if (content is IslandContent.Capsule) geo = geo.copy(eh = capsuleHeightDp(content).dp)
             if (content is IslandContent.Photo) {
                 val swDp = LocalConfiguration.current.screenWidthDp.toFloat()
                 geo = geo.copy(ew = designPhotoWidthDp(cfg, swDp).dp, eh = cfg.more.designPhotoHDp.dp)
@@ -800,7 +802,14 @@ fun IslandPill(
     val customArt = rememberCustomImage(CustomImages.Slot.ART, if (cfg.customArtEnabled) cfg.customArtUri else "")
 
     // Asistanda cam gövde en az %60 koyu kalır: renk bantları koyu zeminde okunur
-    val bodyTarget = if (assistant && cfg.glassEnabled) Pal.c("island_assistant_body").copy(alpha = max(cfg.glassAlpha, 0.6f)) else bodyColorFor(cfg, artColor, accent)
+    // Kamuflaj: boştaki ada yanındaki ekran rengini alır (portal açıksa kamuflaj uygulanmaz)
+    val camo = CamoState.color
+    val camoOn = cfg.more.camoEnabled && !cfg.more.portalEnabled && content is IslandContent.Idle && camo != null
+    val bodyTarget = when {
+        camoOn -> Color(camo!!)
+        assistant && cfg.glassEnabled -> Pal.c("island_assistant_body").copy(alpha = max(cfg.glassAlpha, 0.6f))
+        else -> bodyColorFor(cfg, artColor, accent)
+    }
     // Yutma efektinde ada rengi anında hedef renge geçer: panel animasyonuyla (aynı renk) uyumlu olsun
     val bodyAnim = animateColorAsState(bodyTarget, if (swallow) snap() else tween(450), label = "body")
     val body = remember(swallow, bodyTarget, bodyAnim) { derivedStateOf { if (swallow) bodyTarget else bodyAnim.value } }
@@ -913,7 +922,11 @@ fun IslandPill(
         val dsOn = cfg.more.designEnabled && !assistant && (!cfg.dotMode || content is IslandContent.Photo)
         val dsPhoto = rememberCustomImage(CustomImages.Slot.DESIGN, if (dsOn && cfg.more.designStyle == DESIGN_PHOTO) cfg.more.designPhotoUri else "")
         val dsFull = content is IslandContent.Idle || content is IslandContent.Photo
-        if (dsOn && !swallow && (dsFull || cfg.more.designAlways)) {
+        val portalIdle = cfg.more.portalEnabled && content is IslandContent.Idle && !cfg.dotMode
+        if (portalIdle && !swallow) {
+            // Portal ada: boştaki adanın içinde eğimle kayan derinlikli sahne
+            PortalScene(cfg.more.portalScene, cfg.more.portalDepth, Modifier.fillMaxSize())
+        } else if (dsOn && !swallow && !camoOn && (dsFull || cfg.more.designAlways)) {
             DesignFill(
                 cfg.more.designStyle, dsPhoto,
                 Modifier.fillMaxSize().graphicsLayer { alpha = if (dsFull) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f) },
@@ -962,6 +975,7 @@ fun IslandPill(
                     is IslandContent.ScreenRec -> ScreenRecContent(content, onRecStop)
                     is IslandContent.Shazam -> ShazamContent(content, onShazamStop)
                     IslandContent.Photo -> Unit      // fotoğraf arka planda (DesignFill) çizilir; üstünde çentik / içerik yok
+                    is IslandContent.Capsule -> CapsuleContent(content)
                     IslandContent.Idle -> Unit
                 }
             }

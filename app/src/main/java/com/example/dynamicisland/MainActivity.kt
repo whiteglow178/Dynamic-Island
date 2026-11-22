@@ -469,6 +469,7 @@ private fun HomeScreen() {
             IslandActionButton("Dene", { tryOpen = true }, tonal = false)
         }
         CustomDesignSection()      // özel ada tasarımı: desen / fotoğraf (DesignSection.kt)
+        ExtrasSections()           // portal ada, başparmak modu, kamuflaj, zaman kapsülü (ExtrasSection.kt)
         SectionCard("Ada yenileme hızı", "Adanın animasyonları saniyede kaç kare çizilsin") {
             val hz by RefreshRateStore.flow(ctx).collectAsState()
             val supported = remember { RefreshRate.supported(ctx) }

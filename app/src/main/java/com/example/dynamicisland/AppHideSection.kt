@@ -60,7 +60,7 @@ private suspend fun loadInstalledApps(ctx: android.content.Context): List<Instal
  * Seçili uygulamalar ön plandayken ada gizlenir.
  */
 @Composable
-fun HiddenAppsPicker(selected: List<String>, onChange: (List<String>) -> Unit) {
+fun HiddenAppsPicker(selected: List<String>, onChange: (List<String>) -> Unit, title: String = "Ada gizlenecek uygulamalar") {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var open by remember { mutableStateOf(false) }
@@ -86,7 +86,7 @@ fun HiddenAppsPicker(selected: List<String>, onChange: (List<String>) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Ada gizlenecek uygulamalar", color = cs.onSurface, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(title, color = cs.onSurface, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     Text("Bitti", color = cs.primary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { open = false }.padding(horizontal = 8.dp, vertical = 6.dp))
                 }

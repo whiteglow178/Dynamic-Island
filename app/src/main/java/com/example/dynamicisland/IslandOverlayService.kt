@@ -142,12 +142,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { play.attach() }             // oyuncak ada efektleri de adanın ALTINDA kalır
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
-        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() }; runCatching { landscape.rehost() } }
+        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() }; runCatching { landscape.rehost() }; runCatching { thumb.rehost() } }
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
         runCatching { volume.start() }
         runCatching { sysStatus.start() }       // düşük pil, internet, uçak modu
+        startExtras()                           // başparmak modu, zaman kapsülü, kamuflaj
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
         runCatching { torch.start() }           // fener açılınca ada göstergesi + ışık kartı
@@ -241,6 +242,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             else -> 7
         }
         IslandContent.Photo -> 16                                // özel tasarım fotoğrafı (genişlemiş)
+        is IslandContent.Capsule -> if (c.photo.isNotEmpty()) 18 else 17   // zaman kapsülü (fotoğraflı / fotoğrafsız)
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
         is IslandContent.Shazam -> 11
     }
@@ -572,6 +574,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cc is IslandContent.Status -> update { it }
             cc is IslandContent.Favorites -> update { it }              // favori paneli açıkken müzik paneline geçme
             cc is IslandContent.Photo -> update { it }                  // fotoğraf açıkken müzik ortayı almaz (kapanınca gelir)
+            cc is IslandContent.Capsule -> update { it }                // zaman kapsülü okunurken müzik araya girmez
             cc is IslandContent.Translate -> update { it }              // çeviri yazılırken müzik paneline geçme
             cc is IslandContent.Shazam -> update { it }                 // Shazam dinlerken / sonucu gösterirken müzik ortayı almaz
             cc is IslandContent.ScreenRec && cc.phase == RecPhase.Saved -> update { it }   // "kaydedildi" görünümü bozulmasın
@@ -743,6 +746,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandContent.Favorites -> favorites.onTap()
             IslandContent.Translate -> Unit      // panelin içi kendi dokunuşlarını işler (yazı alanı, dil, kapat)
+            is IslandContent.Capsule -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
             IslandContent.Photo -> {
                 // Açılır açılmaz gelen titreşimli ikinci dokunuş fotoğrafı hemen kapatmasın
                 if (android.os.SystemClock.elapsedRealtime() - photoOpenedAt < 400L) return
@@ -783,6 +787,79 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     RecPhase.Saved -> { call.send(rec.open); rec.end() }   // kaydı galeride aç
                     else -> Unit
                 }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- Başparmak modu / zaman kapsülü / kamuflaj
+    private var thumbHidden = false          // başparmak modunda ada aşağıda: kameranın yanındaki ada gizli
+    private val thumb by lazy {
+        ThumbIsland(this, this, this, wm, settings, ui,
+            onTap = { onPillTap() },
+            onReturn = { ThumbStore.set(this, false) })
+    }
+
+    private fun startExtras() {
+        ThumbStore.load(this)
+        // Başparmak modu: ada boşken (ya da müzik küçükken) aşağıdaki yüzen ada görünür, kameranın yanındaki gizlenir.
+        // Bir olay açılınca hemen yukarıda görünür; ada kapanınca küçülme animasyonu bittikten sonra aşağı iner.
+        scope.launch {
+            combine(ui, settings, ThumbStore.active) { u, s, a ->
+                a && s.more.thumbEnabled && u.stack.isEmpty() && !u.expanded && !u.swallow && u.fromSide == 0 &&
+                    ((u.content is IslandContent.Idle && s.showIdle) || u.content is IslandContent.Media)
+            }.distinctUntilChanged().collectLatest { on ->
+                val show = on && !landscape.active
+                if (show) delay(settings.value.settleMs() + 150L)
+                setThumb(show)
+            }
+        }
+        // Zaman kapsülü: zamanı gelen kapsül, telefon açık ve kilitsizken, ada boştayken açılır
+        scope.launch { while (true) { delay(10_000L); runCatching { checkCapsule() } } }
+        // Kamuflaj: boştaki adanın yanındaki rengi düzenli aralıklarla oku
+        scope.launch { while (true) { delay(1_500L); runCatching { sampleCamo() } } }
+    }
+
+    private fun setThumb(on: Boolean) {
+        if (on == thumbHidden) { if (on) runCatching { thumb.setShown(true) }; return }
+        thumbHidden = on
+        runCatching { thumb.setShown(on) }
+        applyMainHidden()
+        scope.launch { syncWindow(winKey(ui.value)) }
+    }
+
+    private fun checkCapsule() {
+        val u = ui.value
+        if (u.content !is IslandContent.Idle || u.expanded || assistantActive || call.active) return
+        if (getSystemService(android.os.PowerManager::class.java)?.isInteractive != true) return
+        if (getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true) return
+        val c = CapsuleStore.nextDue(this, System.currentTimeMillis()) ?: return
+        CapsuleStore.markDelivered(this, c.id)
+        playSfx(SoundEvent.Notif)
+        showTemporarily(IslandContent.Capsule(c.id, c.text, c.photo, c.createdAt), 15_000L)
+    }
+
+    private var camoBusy = false
+    private fun sampleCamo() {
+        val s = settings.value
+        if (!s.more.camoEnabled || s.more.portalEnabled || camoBusy) return
+        val u = ui.value
+        if (u.content !is IslandContent.Idle || u.expanded || mainHidden || thumbHidden || appHide.hidden) return
+        if (getSystemService(android.os.PowerManager::class.java)?.isInteractive != true) return
+        val a11y = IslandAccessibilityService.instance ?: return
+        // Seçilen uygulamalar (bankacılık, mesajlaşma...) açıkken ekran görüntüsü HİÇ alınmaz; ada normal rengine döner
+        val fg = IslandAccessibilityService.currentFg
+        if (fg != null && fg in s.more.camoSkipList()) { CamoState.color = null; return }
+        val sw = wm.currentWindowMetrics.bounds.width()
+        val cx = sw / 2 + cutCenterXOffsetPx + dp(s.offsetXDp)
+        val half = dp(compactWidthFor(s, false)) / 2
+        camoBusy = true
+        CamoState.sample(a11y, cx - half, cx + half, islandCenterYPx(s), dp(8f + s.windowPadDp())) { c ->
+            scope.launch {
+                camoBusy = false
+                // Okuma sürerken seçili bir uygulamaya geçildiyse renk uygulanmaz
+                val now = IslandAccessibilityService.currentFg
+                if (now != null && now in settings.value.more.camoSkipList()) { CamoState.color = null; return@launch }
+                if (c != null && !CamoState.close(CamoState.color, c)) CamoState.color = c
             }
         }
     }
@@ -898,7 +975,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         applyMainHidden()
     }
     private fun applyMainHidden() {
-        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden) View.INVISIBLE else View.VISIBLE }
+        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden || thumbHidden) View.INVISIBLE else View.VISIBLE }
         refreshDecor()
     }
 
@@ -965,7 +1042,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         val hPx = dp(pill?.second ?: s.compactHeightDp)
         val sw = wm.currentWindowMetrics.bounds.width()
-        val visible = !u.expanded && !u.swallow && u.stack.isEmpty() && !mainHidden && !appHide.hidden &&
+        val visible = !u.expanded && !u.swallow && u.stack.isEmpty() && !mainHidden && !thumbHidden && !appHide.hidden &&
             c !is IslandContent.Assistant && (s.showIdle || c !is IslandContent.Idle) && !s.dotMode
         val anchor = DecorAnchor(
             cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
@@ -978,7 +1055,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         playAnchor.value = if (!pOn) null else PlayAnchor(
             cx = anchor.cx, top = anchor.top, w = anchor.w, h = anchor.h,
             inverted = anchor.inverted, compactVisible = visible,
-            shown = !mainHidden && !appHide.hidden && !landscape.active,
+            shown = !mainHidden && !thumbHidden && !appHide.hidden && !landscape.active,
             screenW = sw.toFloat(), screenH = anchor.screenH,
             color = islandPanelColor(s, (c as? IslandContent.Media)?.artColor ?: lastMedia?.artColor ?: 0, opaque = true),
         )
@@ -1262,6 +1339,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (cur.swallow) return
         if (dir > 0 && !landscape.active && openStack()) return
         when (val c = cur.content) {
+            // Başparmak modu: boştaki adayı aşağı kaydırınca ada başparmağın altına iner
+            IslandContent.Idle -> if (dir > 0 && s.more.thumbEnabled && s.showIdle && !landscape.active) ThumbStore.set(this, true)
             // Yukarı kaydırma yalnızca yazı yokken kapatır (yazarken kazara kaydırınca yazdığın kaybolmasın)
             IslandContent.Translate -> { if (dir < 0 && cur.expanded && TranslateSession.state.value.input.isBlank()) closeTranslate() }
             is IslandContent.Media -> {
@@ -2000,6 +2079,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 14 -> sysPillHeightDp(s)     // geniş iOS hapı
                 k.kind == 15 -> LOWBATT_CARD_H_DP      // düşük pil kartı
                 k.kind == 16 -> s.more.designPhotoHDp  // özel tasarım fotoğrafı
+                k.kind == 17 -> 142f                   // zaman kapsülü (fotoğrafsız)
+                k.kind == 18 -> 252f                   // zaman kapsülü (fotoğraflı)
                 k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
                 k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
@@ -2025,7 +2106,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
         val playTouch = k.kind == 0 && s.showIdle &&
             (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant || s.playVisitors || s.playBreath)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && s.more.thumbEnabled) || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden && !thumbHidden)
         when {
             k.stackH > 0 -> {
                 // Yığın görünümü: pencere kartların toplam boyutunda
@@ -2238,6 +2319,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     override fun onDestroy() {
         IslandAccessibilityService.onChanged = null
+        runCatching { thumb.detach() }
         TranslateSession.closeRequest = null
         TranslateSession.onLangsChanged = null
         runCatching { TranslateSession.release() }

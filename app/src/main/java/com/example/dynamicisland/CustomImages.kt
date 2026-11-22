@@ -36,6 +36,7 @@ object CustomImages {
         BG_EXPANDED(1280),  // yalnızca açık ada
         ART(512),           // albüm kapağı yerine
         DESIGN(1280),       // Ana Sayfa > Özel ada tasarımı: fotoğraf
+        CAPSULE(1024),      // Ana Sayfa > Zaman kapsülü: açılan kapsülün fotoğrafı (adres CapsuleStore'da)
     }
 
     // Her slot için tek giriş: (uri, bitmap). Yalnızca bellekte.
@@ -54,7 +55,8 @@ object CustomImages {
     /** Fotoğraf kaldırılınca/değişince, başka yerde kullanılmıyorsa verilen izni geri bırakır. */
     fun releaseUnused(ctx: Context, old: String, now: IslandSettings) {
         if (old.isEmpty()) return
-        val used = Slot.values().any { now.imageUri(it) == old } || now.customBgVideoUri == old || now.customArtVideoUri == old
+        val used = Slot.values().any { now.imageUri(it) == old } || now.customBgVideoUri == old || now.customArtVideoUri == old ||
+            CapsuleStore.uris(ctx).contains(old)      // bekleyen zaman kapsülünün fotoğrafı da kullanımda sayılır
         if (used) return
         try {
             ctx.applicationContext.contentResolver.releasePersistableUriPermission(Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -128,6 +130,7 @@ fun IslandSettings.imageUri(slot: CustomImages.Slot): String = when (slot) {
     CustomImages.Slot.BG_EXPANDED -> customBgExpandedUri
     CustomImages.Slot.ART -> customArtUri
     CustomImages.Slot.DESIGN -> more.designPhotoUri
+    CustomImages.Slot.CAPSULE -> ""
 }
 
 fun IslandSettings.withImageUri(slot: CustomImages.Slot, v: String): IslandSettings = when (slot) {
@@ -136,6 +139,7 @@ fun IslandSettings.withImageUri(slot: CustomImages.Slot, v: String): IslandSetti
     CustomImages.Slot.BG_EXPANDED -> copy(customBgExpandedUri = v)
     CustomImages.Slot.ART -> copy(customArtUri = v)
     CustomImages.Slot.DESIGN -> copy(more = more.copy(designPhotoUri = v))
+    CustomImages.Slot.CAPSULE -> this
 }
 
 /** Adres boşsa null; değilse galeriden (arka planda) okunmuş görsel. Adres değişince yeniden yüklenir. */
