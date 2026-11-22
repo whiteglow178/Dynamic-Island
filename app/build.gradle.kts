@@ -66,4 +66,6 @@ dependencies {
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     // Çeviri paneli: cihazda çalışan ML Kit çeviri (ücretsiz, API anahtarı yok; dil modeli ilk kullanımda iner)
     implementation("com.google.mlkit:translate:17.0.3")
+    // Bildirim çevirisi: bildirimin dilini cihazda tanır (internet gerekmez)
+    implementation("com.google.mlkit:language-id:17.0.5")
 }
