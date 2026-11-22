@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
@@ -53,7 +54,9 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -101,6 +104,53 @@ class FxTarget(val id: String) {
     var pileKind = 0
     val scorches = ArrayList<FxScorch>()
     var glow = 0f
+    var marksOn = false
+    var fxTick by mutableIntStateOf(0)             // iz / parıltı varken öğenin her karede yeniden çizilmesi için
+
+    // ---- Gerçek şekil: öğenin pikselleri taranır; her dar sütunda içeriğin üst ve alt kenarı (yerel px, NaN = boş).
+    // Yerleşim kutusu yazının kendisinden çok büyük olabildiği için çarpışmalar kutuya değil bu şekle göre yapılır.
+    var shapeTop: FloatArray? = null
+    var shapeBot: FloatArray? = null
+    var shapeTight = Rect.Zero                     // içeriğin sıkı sınırı (yerel)
+    var shapeForW = -1f
+    var shapeForH = -1f
+    var shapeAt = 0L
+
+    val shapeOk: Boolean get() = shapeTop != null && abs(shapeForW - rect.width) < 1f && abs(shapeForH - rect.height) < 1f
+    fun cols(): Int { val st = shapeTop; return if (st != null && shapeOk) st.size else max(1, (rect.width / (2f * dens)).toInt()) }
+    fun colW(): Float = rect.width / cols()
+    fun colIndex(xAbs: Float): Int {
+        val r = rect
+        if (r.width <= 0f || xAbs < r.left || xAbs > r.right) return -1
+        return ((xAbs - r.left) / colW()).toInt().coerceIn(0, cols() - 1)
+    }
+    fun colX(i: Int): Float = rect.left + (i + 0.5f) * colW()
+    /** Sütundaki içeriğin üst kenarı (ekran-ada koordinatı); sütun boşsa null. Şekil henüz taranmadıysa kutunun üstü. */
+    fun colTop(i: Int): Float? {
+        val st = shapeTop
+        if (st == null || !shapeOk) return rect.top
+        val v = st.getOrNull(i) ?: return null
+        return if (v.isNaN()) null else rect.top + v
+    }
+    fun colBot(i: Int): Float? {
+        val sb = shapeBot
+        if (sb == null || !shapeOk) return rect.bottom
+        val v = sb.getOrNull(i) ?: return null
+        return if (v.isNaN()) null else rect.top + v
+    }
+    fun topAt(xAbs: Float): Float? { val i = colIndex(xAbs); return if (i < 0) null else colTop(i) }
+    fun botAt(xAbs: Float): Float? { val i = colIndex(xAbs); return if (i < 0) null else colBot(i) }
+    /** Nokta öğenin gerçek içeriğinin (boş alan değil) içinde mi? */
+    fun solid(xAbs: Float, y: Float): Boolean {
+        val i = colIndex(xAbs)
+        if (i < 0) return false
+        val t = colTop(i) ?: return false
+        val b = colBot(i) ?: return false
+        return y >= t && y <= b
+    }
+    val tight: Rect get() = if (shapeOk && shapeTight.width > 0f) shapeTight.translate(rect.left, rect.top) else rect
+    /** Damla / kar için yüzey: erime cephesi ile içeriğin üst kenarından alçakta olanı. */
+    fun surfaceY(xAbs: Float): Float = max(frontY(xAbs), topAt(xAbs) ?: rect.bottom)
     private val seed = id.hashCode()
 
     /** Asit öğeyi üstten aşağı doğru yer: erime cephesinin üst kenardan uzaklığı (öğe içi px), tırtıklı. */
@@ -271,6 +321,8 @@ fun Modifier.fxTarget(id: String): Modifier {
         .drawWithContent {
             layer.record { this@drawWithContent.drawContent() }
             drawLayer(layer)
+            @Suppress("UNUSED_VARIABLE") val tk = t.fxTick
+            if (!t.away) drawFxMarks(t)
             val m = t.melt.coerceIn(0f, 1f)
             if (m > 0.001f && !t.away) {
                 val d = t.dens
@@ -529,7 +581,7 @@ private class FxSim {
         for (t in targets) {
             if (t.gone) continue
             val r = t.rect
-            if (x >= r.left && x <= r.right && y >= t.frontY(x) && y <= r.bottom) {
+            if (x >= r.left && x <= r.right && y >= t.frontY(x) && t.solid(x, y)) {
                 if (best == null || t.visualTop < best.visualTop) best = t
             }
         }
@@ -603,10 +655,10 @@ private class FxSim {
                         val t = hit(targets, p.x, p.y)
                         if (t != null) {
                             dead = true
-                            splash(p.x, t.frontY(p.x), d, if (p.kind == K_RAIN) 3 else 2)
+                            splash(p.x, t.surfaceY(p.x), d, if (p.kind == K_RAIN) 3 else 2)
                             if (p.kind == K_ACID) {
                                 if (t.blobs < 14) {
-                                    val b = P(K_BLOB, p.x, t.frontY(p.x), 0f, 0f, 0f, (2.2f + f() * 2.6f) * d)
+                                    val b = P(K_BLOB, p.x, t.surfaceY(p.x), 0f, 0f, 0f, (2.2f + f() * 2.6f) * d)
                                     b.tid = t.id
                                     b.ox = ((p.x - t.rect.left) / max(1f, t.rect.width)).coerceIn(0.03f, 0.97f)
                                     ps.add(b); t.blobs++
@@ -641,7 +693,7 @@ private class FxSim {
                     } else {
                         t.blobs++
                         p.x = t.rect.left + p.ox * t.rect.width
-                        p.y = t.frontY(p.x) + 1f * d
+                        p.y = t.surfaceY(p.x) + 1f * d
                         if (t.melt < 1f) {
                             t.melt = (t.melt + dt * 0.045f * cfg.fxMeltSpeed).coerceAtMost(1f)
                             if (t.melt >= 1f) t.meltRestoreAt = now + restoreMs
@@ -697,9 +749,10 @@ private class FxSim {
                 var tgt: FxTarget? = null
                 for (t in targets) {
                     if (t.gone || t.frozen) continue
-                    if (x >= t.rect.left && x <= t.rect.right && (tgt == null || t.rect.top < tgt.rect.top)) tgt = t
+                    val tr = t.tight
+                    if (x >= tr.left && x <= tr.right && t.topAt(x) != null && (tgt == null || tr.top < tgt.tight.top)) tgt = t
                 }
-                val endY = tgt?.rect?.center?.y ?: (H * 0.92f)
+                val endY = tgt?.topAt(x) ?: (H * 0.92f)
                 bolt = makeBolt(x, endY, d); flash = 1f
                 if (tgt != null) strike(tgt)
             }
@@ -710,36 +763,43 @@ private class FxSim {
 }
 
 // ---------------------------------------------------------------- Kar yığını ve buz çizimi
-/** Öğenin üstünde biriken yumuşak, tümsek şeklinde kar. */
+/** Öğenin içeriğinin üstünde (harflerin, simgelerin, çubuğun tepesinde) biriken yumuşak kar. Boş alanda kar tutmaz. */
 private fun DrawScope.drawSnowMound(t: FxTarget, d: Float) {
-    val r = t.rect
     val s = t.snow.coerceIn(0f, 1f)
-    val l = r.left + 2f * d
-    val rt = r.right - 2f * d
-    val w = rt - l
-    if (w <= 0f) return
-    val h = s * 8f * d
-    val y0 = t.visualTop + 1f * d
+    val n = t.cols()
+    val cw = t.colW()
+    val maxH = s * 8f * d
     val sd = t.id.hashCode()
     val a1 = (sd and 7).toFloat(); val a2 = ((sd shr 4) and 7).toFloat()
-    val path = Path()
-    path.moveTo(l, y0)
-    val n = 28
-    for (i in 0..n) {
-        val u = i.toFloat() / n
-        val dome = sin(PI.toFloat() * u).pow(0.55f)
-        val bump = 1f + 0.18f * sin(u * 17f + a1) + 0.10f * sin(u * 41f + a2)
-        path.lineTo(l + w * u, y0 - h * dome * bump)
+    val brush = Brush.verticalGradient(listOf(Pal.c("fx_white").copy(alpha = 0.97f), Pal.c("fx_ice_d").copy(alpha = 0.95f)),
+        startY = t.tight.top - maxH, endY = t.tight.bottom)
+    var i = 0
+    while (i < n) {
+        if (t.colTop(i) == null) { i++; continue }
+        var j = i
+        while (j < n && t.colTop(j) != null) j++
+        val runW = (j - i) * cw
+        val k = (runW / (16f * d)).coerceIn(0.25f, 1f)          // dar yüzeyde (ince harf) daha az kar tutunur
+        val path = Path()
+        path.moveTo(t.rect.left + i * cw, t.colTop(i)!! + 1f * d)
+        for (c in i until j) {
+            val u = (c - i + 0.5f) / (j - i)
+            val dome = sin(PI.toFloat() * u).pow(0.55f)
+            val bump = 1f + 0.18f * sin(c * 0.7f + a1) + 0.10f * sin(c * 1.9f + a2)
+            path.lineTo(t.rect.left + (c + 0.5f) * cw, t.colTop(c)!! - maxH * k * dome * bump)
+        }
+        path.lineTo(t.rect.left + j * cw, t.colTop(j - 1)!! + 1f * d)
+        for (c in j - 1 downTo i) path.lineTo(t.rect.left + (c + 0.5f) * cw, t.colTop(c)!! + 1.5f * d)
+        path.close()
+        drawPath(path, brush)
+        i = j
     }
-    path.lineTo(rt, y0 + 2f * d)
-    path.lineTo(l, y0 + 2f * d)
-    path.close()
-    drawPath(path, Brush.verticalGradient(listOf(Pal.c("fx_white").copy(alpha = 0.97f), Pal.c("fx_ice_d").copy(alpha = 0.95f)), startY = y0 - h, endY = y0 + 2f * d))
 }
 
 /** Don: kenarlardan içeri doğru büyüyen kırağı kristalleri, tamamen donunca parlak buz tabakası, sarkıtlar ve çatlaklar. */
 private fun DrawScope.drawFrost(t: FxTarget, d: Float, thawTaps: Int) {
-    val r = t.rect
+    val r0 = t.tight                                  // yalnızca içeriğin kapladığı alan donar (boş kutu değil)
+    val r = Rect(r0.left - 3f * d, r0.top - 3f * d, r0.right + 3f * d, r0.bottom + 3f * d)
     val a = t.freeze.coerceIn(0f, 1f)
     val corner = 10f * d
     val clip = Path().apply { addRoundRect(RoundRect(r, CornerRadius(corner))) }
@@ -836,7 +896,39 @@ fun FxLayer(
     var tick by remember { mutableLongStateOf(0L) }
     var size by remember { mutableStateOf(IntSize.Zero) }
     val expandedFull by remember { derivedStateOf { progress.mean > 0.97f } }
+    val scanBusy = remember { BooleanArray(1) }
     SideEffect { fx.live = live }
+
+    /** Sıradaki öğenin piksellerini tarar ve gerçek şeklini çıkarır. */
+    fun scanNext(now: Long) {
+        if (scanBusy[0]) return
+        var tgt: FxTarget? = null
+        for (t in fx.targets.values) {
+            if (t.away || t.rect.width <= 0f || t.layer == null) continue
+            val wait = if (t.shapeOk) 1000L else 250L
+            if (now - t.shapeAt < wait) continue
+            if (tgt == null || t.shapeAt < tgt.shapeAt) tgt = t
+        }
+        val t = tgt ?: return
+        val layer = t.layer ?: return
+        val w = t.rect.width; val h = t.rect.height
+        t.shapeAt = now
+        scanBusy[0] = true
+        scope.launch {
+            try {
+                val bmp = runCatching { layer.toImageBitmap() }.getOrNull()
+                if (bmp != null) {
+                    val sh = withContext(Dispatchers.Default) { runCatching { scanFxShape(bmp, w, h, 2f * d) }.getOrNull() }
+                    if (sh != null) {
+                        t.shapeTop = sh.top; t.shapeBot = sh.bot; t.shapeTight = sh.tight
+                        t.shapeForW = w; t.shapeForH = h
+                    }
+                }
+            } finally {
+                scanBusy[0] = false
+            }
+        }
+    }
 
     fun resetAll() {
         for (t in fx.targets.values) t.reset()
@@ -951,6 +1043,7 @@ fun FxLayer(
                 val c = cfgNow
                 val W = size.width.toFloat(); val H = size.height.toFloat()
                 if (W > 0f && H > 0f) {
+                    scanNext(now)
                     if (fx.live) fx.screenOrigin()?.let { FxBridge.originX = it.x; FxBridge.originY = it.y }
                     sim.step(dt, now, W, H, d, c, fx) { t -> detach(t) }
                     if (c.fxBreak) {
@@ -1131,3 +1224,48 @@ private fun polySigned(p: List<Offset>): Float {
 }
 
 internal fun polyArea(p: List<Offset>): Float = abs(polySigned(p))
+
+
+// ---------------------------------------------------------------- Gerçek şekil taraması
+internal class FxShape(val top: FloatArray, val bot: FloatArray, val tight: Rect)
+
+/**
+ * Öğenin görüntüsünü sütunlara böler; her sütunda saydam olmayan ilk ve son satırı bulur.
+ * Sonuç öğenin yerel px ölçüsündedir (w x h). Arka planı saydam yazılar, simgeler ve çubuklar gerçek biçimiyle çıkar.
+ */
+internal fun scanFxShape(bmp: ImageBitmap, w: Float, h: Float, colPx: Float): FxShape? {
+    val ab = bmp.asAndroidBitmap()
+    val src = if (ab.config == android.graphics.Bitmap.Config.HARDWARE) (ab.copy(android.graphics.Bitmap.Config.ARGB_8888, false) ?: return null) else ab
+    val bw = src.width
+    val bh = src.height
+    if (bw <= 0 || bh <= 0 || w <= 0f || h <= 0f) return null
+    val px = IntArray(bw * bh)
+    src.getPixels(px, 0, bw, 0, 0, bw, bh)
+    if (src !== ab) src.recycle()
+    val cols = max(1, (w / colPx).roundToInt())
+    val first = IntArray(cols) { -1 }
+    val last = IntArray(cols) { -1 }
+    for (y in 0 until bh) {
+        val row = y * bw
+        for (x in 0 until bw) {
+            if ((px[row + x] ushr 24) > 48) {
+                val c = (x * cols / bw).coerceIn(0, cols - 1)
+                if (first[c] < 0) first[c] = y
+                last[c] = y
+            }
+        }
+    }
+    val sy = h / bh
+    val top = FloatArray(cols) { if (first[it] < 0) Float.NaN else first[it] * sy }
+    val bot = FloatArray(cols) { if (last[it] < 0) Float.NaN else (last[it] + 1) * sy }
+    var l = -1; var r = -1
+    var tp = Float.MAX_VALUE; var bt = 0f
+    for (c in 0 until cols) if (first[c] >= 0) {
+        if (l < 0) l = c
+        r = c
+        tp = min(tp, top[c]); bt = max(bt, bot[c])
+    }
+    val cw = w / cols
+    val tight = if (l < 0) Rect.Zero else Rect(l * cw, tp, (r + 1) * cw, bt)
+    return FxShape(top, bot, tight)
+}

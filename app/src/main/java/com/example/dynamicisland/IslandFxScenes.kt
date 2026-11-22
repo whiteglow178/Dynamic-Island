@@ -168,13 +168,56 @@ internal class FxScenes {
         t.shake = 0f; t.shakeX = 0f; t.shakeY = 0f
     }
 
-    private fun hitAt(targets: Collection<FxTarget>, x: Float, y: Float, pad: Float = 0f): FxTarget? {
+    /** Noktada gerçek içerik (yazı, simge, çubuk, kapak) olan öğe; boş alan çarpışmaz. */
+    private fun solidAt(targets: Collection<FxTarget>, x: Float, y: Float): FxTarget? {
         for (t in targets) {
             if (t.gone) continue
-            val r = t.rect
+            if (t.solid(x, y)) return t
+        }
+        return null
+    }
+
+    /** İçeriğin sıkı sınırına (pay ile) giren öğe: balıkların kaçınması için. */
+    private fun tightAt(targets: Collection<FxTarget>, x: Float, y: Float, pad: Float): FxTarget? {
+        for (t in targets) {
+            if (t.gone) continue
+            val r = t.tight
             if (r.width > 0f && x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad) return t
         }
         return null
+    }
+
+    private var hx = 0f
+    private var hy = 0f
+
+    /**
+     * Önceki konumdan yeni konuma giden yolu ~2 dp adımlarla tarar (hızlı parçacık ince harften geçip gitmesin).
+     * Çarpınca [hx], [hy] çarpma noktasıdır; üstten geldiyse tam yüzeye oturtulur.
+     */
+    private fun sweep(targets: Collection<FxTarget>, x0: Float, y0: Float, x1: Float, y1: Float, d: Float): FxTarget? {
+        val dx = x1 - x0; val dy = y1 - y0
+        val n = (sqrt(dx * dx + dy * dy) / (2f * d)).toInt().coerceIn(1, 24)
+        var py = y0
+        for (k in 1..n) {
+            val u = k.toFloat() / n
+            val x = x0 + dx * u
+            val y = y0 + dy * u
+            val t = solidAt(targets, x, y)
+            if (t != null) {
+                hx = x; hy = y
+                val top = t.topAt(x)
+                if (top != null && py <= top + 0.5f * d) hy = top
+                return t
+            }
+            py = y
+        }
+        return null
+    }
+
+    /** Parçacık bu öğenin yüzeyine üstten mi geldi? */
+    private fun fromAbove(t: FxTarget, x: Float, prevY: Float, d: Float): Boolean {
+        val top = t.topAt(x) ?: return false
+        return prevY <= top + 2f * d
     }
 
     // ================================================================ Adım
@@ -260,6 +303,8 @@ internal class FxScenes {
             }
             if (t.glow > 0f) t.glow = (t.glow - dt * 2.2f).coerceAtLeast(0f)
             if (t.scorches.isNotEmpty()) t.scorches.removeAll { (now - it.born) / 1000f > SCORCH_LIFE }
+            val marks = t.glow > 0f || t.scorches.isNotEmpty()
+            if (marks || t.marksOn) { t.fxTick++; t.marksOn = marks }
         }
     }
 
@@ -282,14 +327,9 @@ internal class FxScenes {
                         e.color = if (f() < 0.5f) Color(0xFFFFB25C) else Color(0xFFFFE1A8)
                         ps.add(e)
                     }
-                    val t = if (p.y > 0f) hitAt(targets, p.x, p.y) else null
+                    val t = if (p.y > 0f) sweep(targets, p.px, p.py, p.x, p.y, d) else null
                     if (t != null) {
-                        var ix = p.x; var iy = p.y
-                        if (p.py < t.rect.top && p.y != p.py) {
-                            val k = (t.rect.top - p.py) / (p.y - p.py)
-                            ix = p.px + (p.x - p.px) * k; iy = t.rect.top
-                        }
-                        impact(t, ix, iy, p.a > 0f, d, p.color)
+                        impact(t, hx, hy, p.a > 0f, d, p.color)
                         dead = true
                     } else if (p.life <= 0f) {
                         flashes.add(FxFlash(p.x, p.y, p.size * 5f, 0.25f, p.color, false))
@@ -309,9 +349,9 @@ internal class FxScenes {
                     p.x += p.vx * dt; p.y += p.vy * dt
                     p.life -= dt
                     if (p.vy > 0f) {
-                        val t = hitAt(targets, p.x, p.y)
-                        if (t != null && p.py <= t.rect.top + 1.5f * d) {
-                            p.y = t.rect.top
+                        val t = sweep(targets, p.px, p.py, p.x, p.y, d)
+                        if (t != null && fromAbove(t, hx, p.py, d)) {
+                            p.x = hx; p.y = hy - 0.3f * d
                             p.vy = if (p.vy > 60f * d) -p.vy * 0.35f else 0f
                             p.vx *= 0.6f
                         }
@@ -326,16 +366,18 @@ internal class FxScenes {
                     p.a += dt * w
                     val vx = rr * 0.6f * d * cos(p.a) * w
                     p.x += vx * dt; p.y += p.vy * dt
-                    val t = hitAt(targets, p.x, p.y - p.size)
+                    val t = solidAt(targets, p.x, p.y - p.size)
                     if (t != null) {
-                        if (p.py - p.size >= t.rect.bottom - 3f * d) {
+                        val bot = t.botAt(p.x)
+                        if (bot != null && p.py - p.size >= bot - 3f * d) {
                             p.kind = S_BUBBLE_STUCK; p.tid = t.id
                             p.ox = (p.x - t.rect.left).coerceIn(0f, t.rect.width)
                             p.vx = 0f; p.vy = 0f
-                            p.b = if (p.ox < t.rect.width / 2f) -1f else 1f
-                            p.y = t.rect.bottom + p.size * 0.9f
+                            val tr = t.tight
+                            p.b = if (p.x < tr.center.x) -1f else 1f        // yakın kenara doğru kayar
+                            p.y = bot + p.size * 0.9f
                         } else {
-                            p.x = if (p.x < t.rect.center.x) t.rect.left - p.size else t.rect.right + p.size
+                            p.x = p.px                                      // yandan çarptı: yatay salınım engellenir
                         }
                     }
                     if (p.y < -p.size * 2f) dead = true
@@ -349,11 +391,12 @@ internal class FxScenes {
                         p.vx += 12f * d * dt * (0.5f + p.size / d * 0.3f)
                         p.ox += p.b * p.vx * dt
                         p.x = t.rect.left + p.ox
-                        p.y = t.rect.bottom + p.size * 0.9f
-                        if (p.ox < -p.size * 0.3f || p.ox > t.rect.width + p.size * 0.3f) {
-                            p.kind = S_BUBBLE; p.tid = null
-                            p.x = if (p.b < 0f) t.rect.left - p.size else t.rect.right + p.size
-                            p.vy = -15f * d
+                        val bot = t.botAt(p.x)
+                        if (bot == null) {
+                            // altında içerik kalmadı (harf / simge bitti): serbest kalıp yükselir
+                            p.kind = S_BUBBLE; p.tid = null; p.vy = -15f * d
+                        } else {
+                            p.y += (bot + p.size * 0.9f - p.y) * min(1f, 12f * dt)
                         }
                     }
                 }
@@ -387,11 +430,11 @@ internal class FxScenes {
                         if (p.b == 3f) ps.add(SP(S_GLITTER, p.x, p.y, 0f, 0f, 0.12f, 2.4f * d).also { it.color = Color.White })
                         dead = true
                     } else if (p.vy > 0f && p.life > 0.15f) {
-                        val t = hitAt(targets, p.x, p.y)
-                        if (t != null && p.py <= t.rect.top + 1.5f * d) {
+                        val t = sweep(targets, p.px, p.py, p.x, p.y, d)
+                        if (t != null && fromAbove(t, hx, p.py, d)) {
                             p.kind = S_LANDED; p.tid = t.id
-                            p.ox = ((p.x - t.rect.left) / max(1f, t.rect.width)).coerceIn(0f, 1f)
-                            p.y = t.rect.top; p.vx = 0f; p.vy = 0f
+                            p.ox = hx - t.rect.left
+                            p.x = hx; p.y = hy; p.vx = 0f; p.vy = 0f
                             p.life = min(p.life, 0.9f); p.max = p.life
                         }
                     }
@@ -404,8 +447,9 @@ internal class FxScenes {
                 }
                 S_LANDED -> {
                     val t = p.tid?.let { byId[it] }
-                    if (t == null || t.gone) { p.kind = S_SPARK; p.tid = null; p.vy = 0f }
-                    else { p.x = t.rect.left + p.ox * t.rect.width; p.y = t.rect.top }
+                    val top = if (t == null || t.gone) null else t.topAt(t.rect.left + p.ox)
+                    if (t == null || top == null) { p.kind = S_SPARK; p.tid = null; p.vy = 0f }
+                    else { p.x = t.rect.left + p.ox; p.y = top }
                     p.life -= dt
                     if (p.life <= 0f) dead = true
                 }
@@ -416,23 +460,19 @@ internal class FxScenes {
                     p.x += p.vx * dt; p.y += p.vy * dt
                     if (p.x > W + 10f * d || p.y > H + 10f * d || p.y < -20f * d) dead = true
                     else {
-                        val t = hitAt(targets, p.x, p.y)
+                        val t = sweep(targets, p.px, p.py, p.x, p.y, d)
                         if (t != null) {
-                            val fromLeft = p.px < t.rect.left
-                            val fromTop = p.py < t.rect.top
-                            if (fromTop || (!fromLeft && p.y - t.rect.top < 5f * d)) {
-                                if (f() < 0.55f) deposit(t, PILE_SAND, p.x, 0.16f * p.size, 10f * d, d)
+                            if (fromAbove(t, hx, p.py, d)) {
+                                if (f() < 0.55f) deposit(t, PILE_SAND, hx, 0.16f * p.size, 10f * d)
                                 dead = true
-                            } else if (fromLeft) {
-                                if (f() < 0.2f) {
-                                    deposit(t, PILE_SAND, t.rect.left + 3f * d, 0.16f * p.size, 10f * d, d); dead = true
-                                } else {
-                                    // rüzgâra bakan yüzeye çarpar, yukarı tırmanır
-                                    p.x = t.rect.left - 0.5f * d
-                                    p.vy = -abs(p.vx) * (0.25f + 0.3f * f())
-                                    p.vx *= 0.25f
-                                }
-                            } else dead = true
+                            } else if (f() < 0.15f) {
+                                dead = true
+                            } else {
+                                // rüzgâra bakan yüze (harfin, simgenin yanına) çarpar, yukarı tırmanır
+                                p.x = p.px
+                                p.vy = -abs(p.vx) * (0.25f + 0.3f * f())
+                                p.vx *= 0.25f
+                            }
                         }
                     }
                 }
@@ -455,10 +495,9 @@ internal class FxScenes {
                     p.x += p.vx * dt; p.y += p.vy * dt
                     if (p.x > W + 12f * d || p.y > H + 12f * d) dead = true
                     else if (p.z > 0.55f) {
-                        val t = hitAt(targets, p.x, p.y)
+                        val t = sweep(targets, p.px, p.py, p.x, p.y, d)
                         if (t != null) {
-                            if (p.py < t.rect.top || p.y - t.rect.top < 4f * d) deposit(t, PILE_SNOW, p.x, 0.10f * p.size, 8f * d, d)
-                            else if (p.px < t.rect.left) deposit(t, PILE_SNOW, t.rect.left + 3f * d, 0.06f * p.size, 8f * d, d)
+                            if (fromAbove(t, hx, p.py, d)) deposit(t, PILE_SNOW, hx, 0.10f * p.size, 8f * d)
                             dead = true
                         }
                     }
@@ -578,9 +617,10 @@ internal class FxScenes {
             // önündeki öğeden kaçın: üstünden ya da altından dolaş
             val lx = s.x + s.vx * 0.7f + dirX * s.size * 0.5f
             val ly = s.y + s.vy * 0.7f
-            val t = hitAt(targets, lx, ly, 4f * d)
+            val t = tightAt(targets, lx, ly, 4f * d)
             if (t != null) {
-                val up = (s.y < t.rect.center.y && t.rect.top > H * 0.12f) || t.rect.bottom > H * 0.88f
+                val tr = t.tight
+                val up = (s.y < tr.center.y && tr.top > H * 0.12f) || tr.bottom > H * 0.88f
                 dy += if (up) -s.speed * 1.6f else s.speed * 1.6f
                 dx *= 0.5f
             }
@@ -685,19 +725,20 @@ internal class FxScenes {
                     s.x += s.vx * dt; s.y += s.vy * dt
                     s.timer -= dt
                     if (s.timer <= 0f) {
-                        val live = targets.filter { !it.gone && it.rect.width > 8f * d }
-                        if (live.isNotEmpty() && f() < 0.6f) {
-                            val t = live[rnd.nextInt(live.size)]
-                            s.tid = t.id; s.ox = 0.15f + 0.7f * f(); s.state = 1
-                        } else s.timer = 2f + f() * 5f
+                        val live = targets.filter { !it.gone && it.tight.width > 6f * d }
+                        val t = if (live.isNotEmpty() && f() < 0.6f) live[rnd.nextInt(live.size)] else null
+                        val col = if (t != null) nearestCol(t, t.rect.left + f() * t.rect.width) else -1
+                        if (t != null && col >= 0) { s.tid = t.id; s.ox = col.toFloat(); s.state = 1 }
+                        else s.timer = 2f + f() * 5f
                     }
                 }
                 1 -> {
                     val t = s.tid?.let { byId[it] }
-                    if (t == null || t.gone) { s.state = 0; s.timer = 3f }
+                    val top = if (t == null || t.gone) null else t.colTop(s.ox.toInt())
+                    if (t == null || top == null) { s.state = 0; s.timer = 3f }
                     else {
-                        val tx = t.rect.left + s.ox * t.rect.width
-                        val ty = t.rect.top - 1.2f * d
+                        val tx = t.colX(s.ox.toInt())
+                        val ty = top - 1.2f * d
                         val dx = tx - s.x; val dy = ty - s.y
                         val dist = sqrt(dx * dx + dy * dy)
                         if (dist < 1.5f * d) { s.state = 2; s.timer = 3f + f() * 6f; s.vx = 0f; s.vy = 0f }
@@ -711,10 +752,11 @@ internal class FxScenes {
                 }
                 else -> {
                     val t = s.tid?.let { byId[it] }
-                    if (t == null || t.gone) { s.state = 0; s.timer = 3f }
+                    val top = if (t == null || t.gone) null else t.colTop(s.ox.toInt())
+                    if (t == null || top == null) { s.state = 0; s.timer = 3f }
                     else {
-                        s.x = t.rect.left + s.ox * t.rect.width
-                        s.y = t.rect.top - 1.2f * d
+                        s.x = t.colX(s.ox.toInt())
+                        s.y = top - 1.2f * d
                         s.timer -= dt
                         if (s.timer <= 0f) { s.state = 0; s.vy = -s.speed; s.heading = -PI.toFloat() / 2f; s.timer = 4f + f() * 8f }
                     }
@@ -752,56 +794,91 @@ internal class FxScenes {
     }
 
     // ---------------------------------------------------------------- Yığın (kum / kar)
-    private fun deposit(t: FxTarget, kind: Int, x: Float, amount: Float, maxH: Float, d: Float) {
-        val w = t.rect.width - 6f * d
-        if (w <= 0f) return
+    // Yığın öğenin şekil sütunlarıyla aynı çözünürlükte tutulur: her sütunun zemini içeriğin o noktadaki üst kenarıdır
+    // (harfin, simgenin, çubuğun tepesi). Boş sütuna düşen malzeme tutunmaz, aşağı dökülür.
+    private fun deposit(t: FxTarget, kind: Int, x: Float, amount: Float, maxH: Float) {
+        val i = t.colIndex(x)
+        if (i < 0 || t.colTop(i) == null) return
+        val n = t.cols()
         var p = t.pile
-        if (p == null || t.pileKind != kind) { p = FloatArray(PILE_BINS); t.pile = p; t.pileKind = kind }
-        val i = (((x - t.rect.left - 3f * d) / w) * (PILE_BINS - 1)).roundToInt().coerceIn(0, PILE_BINS - 1)
+        if (p == null || p.size != n || t.pileKind != kind) { p = FloatArray(n); t.pile = p; t.pileKind = kind }
         p[i] = (p[i] + amount).coerceAtMost(maxH)
     }
 
-    /** Yığılma açısını aşan eğim komşuya akar; rüzgâr yığını yavaşça yana iter; kenardan taşan dökülür. */
+    /**
+     * Yüzey eğimi yığılma açısını aşınca malzeme alçak komşuya akar (zemin yüksekliği farklı olsa da: harfin tepesinden
+     * yanındaki alçak harfe). Rüzgâr yüzeyi yavaşça iter. Boşluğa ya da kenara gelen fazlalık dökülür.
+     */
     private inline fun relaxPile(t: FxTarget, dt: Float, d: Float, repose: Float, creep: Float, erode: Float, spillAt: (Float, Float, Float) -> Unit) {
         val p = t.pile ?: return
-        val w = t.rect.width - 6f * d
-        if (w <= 0f) return
-        val binW = w / (PILE_BINS - 1)
-        val maxDiff = binW * repose
+        val n = p.size
+        if (n != t.cols()) { t.pile = null; t.pileKind = 0; return }
+        val cw = t.colW()
+        val maxDiff = cw * repose
+        // zemin yoksa (içerik değişti, sütun boşaldı) üstündeki dökülür
+        for (i in 0 until n) if (p[i] > 0f && t.colTop(i) == null) { spillAt(t.colX(i), t.tight.top, p[i]); p[i] = 0f }
         repeat(2) {
-            for (i in 0 until PILE_BINS - 1) {
-                val diff = p[i] - p[i + 1]
-                if (diff > maxDiff) { val m = (diff - maxDiff) * 0.5f; p[i] -= m; p[i + 1] += m }
-                else if (-diff > maxDiff) { val m = (-diff - maxDiff) * 0.5f; p[i + 1] -= m; p[i] += m }
+            for (i in 0 until n - 1) {
+                val bi = t.colTop(i) ?: continue
+                val bj = t.colTop(i + 1)
+                if (bj == null) {
+                    // sağ komşu boşluk: kenarda en çok bir eğim basamağı kalır
+                    if (p[i] > maxDiff) { val m = p[i] - maxDiff; p[i] = maxDiff; spillAt(t.colX(i) + cw * 0.5f, bi - maxDiff, m) }
+                    continue
+                }
+                val si = bi - p[i]
+                val sj = bj - p[i + 1]
+                val diff = sj - si                       // > 0: i daha yüksek
+                if (diff > maxDiff) { val m = min((diff - maxDiff) * 0.5f, p[i]); p[i] -= m; p[i + 1] += m }
+                else if (-diff > maxDiff) { val m = min((-diff - maxDiff) * 0.5f, p[i + 1]); p[i + 1] -= m; p[i] += m }
+            }
+            for (i in 1 until n) {
+                val bi = t.colTop(i) ?: continue
+                if (t.colTop(i - 1) == null && p[i] > maxDiff) {
+                    val m = p[i] - maxDiff; p[i] = maxDiff; spillAt(t.colX(i) - cw * 0.5f, bi - maxDiff, m)
+                }
             }
         }
-        if (creep > 0f) for (i in PILE_BINS - 2 downTo 0) { val m = p[i] * creep * dt; p[i] -= m; p[i + 1] += m }
-        val endMax = maxDiff
-        if (p[0] > endMax) { val m = p[0] - endMax; p[0] = endMax; spillAt(t.rect.left + 2f * d, t.rect.top, m) }
-        val last = PILE_BINS - 1
-        if (p[last] > endMax) { val m = p[last] - endMax; p[last] = endMax; spillAt(t.rect.right - 2f * d, t.rect.top, m) }
+        if (t.colTop(0) != null && p[0] > maxDiff) { val m = p[0] - maxDiff; p[0] = maxDiff; spillAt(t.rect.left, t.colTop(0)!! - maxDiff, m) }
+        if (t.colTop(n - 1) != null && p[n - 1] > maxDiff) { val m = p[n - 1] - maxDiff; p[n - 1] = maxDiff; spillAt(t.rect.right, t.colTop(n - 1)!! - maxDiff, m) }
+        if (creep > 0f) for (i in n - 2 downTo 0) {
+            if (p[i] <= 0f || t.colTop(i + 1) == null) continue
+            val m = p[i] * creep * dt; p[i] -= m; p[i + 1] += m
+        }
         var total = 0f
-        for (i in 0 until PILE_BINS) { p[i] = (p[i] - erode * dt).coerceAtLeast(0f); total += p[i] }
+        for (i in 0 until n) { p[i] = (p[i] - erode * dt).coerceAtLeast(0f); total += p[i] }
         if (total < 0.05f * d) { t.pile = null; t.pileKind = 0 }
     }
 
-    // ================================================================ 11 Elektrik
-    private fun boundaryToward(r: Rect, p: Offset): Offset {
-        var x = p.x.coerceIn(r.left, r.right)
-        var y = p.y.coerceIn(r.top, r.bottom)
-        if (x > r.left && x < r.right && y > r.top && y < r.bottom) {
-            // nokta içerdeyse en yakın kenara taşı
-            val dl = x - r.left; val dr = r.right - x; val dtp = y - r.top; val db = r.bottom - y
-            when (min(min(dl, dr), min(dtp, db))) {
-                dl -> x = r.left
-                dr -> x = r.right
-                dtp -> y = r.top
-                else -> y = r.bottom
-            }
+    /** Öğenin içeriğinde, verilen noktaya en yakın dolu sütun (yoksa -1). */
+    private fun nearestCol(t: FxTarget, x: Float): Int {
+        val n = t.cols()
+        val i0 = ((x - t.rect.left) / t.colW()).toInt().coerceIn(0, n - 1)
+        for (k in 0 until n) {
+            if (i0 - k >= 0 && t.colTop(i0 - k) != null) return i0 - k
+            if (i0 + k < n && t.colTop(i0 + k) != null) return i0 + k
+        }
+        return -1
+    }
+
+    /** İçeriğin, bir noktaya bakan kenarındaki gerçek nokta (ark uçları için). */
+    private fun edgePoint(t: FxTarget, toward: Offset): Offset? {
+        val tr = t.tight
+        val i = nearestCol(t, toward.x.coerceIn(tr.left, tr.right))
+        if (i < 0) return null
+        val top = t.colTop(i) ?: return null
+        val bot = t.colBot(i) ?: return null
+        val x = t.colX(i)
+        val y = when {
+            toward.y < top -> top
+            toward.y > bot -> bot
+            toward.y - top < bot - toward.y -> top
+            else -> bot
         }
         return Offset(x, y)
     }
 
+    // ================================================================ 11 Elektrik
     private fun boltPath(a: Offset, b: Offset, rough: Float, levels: Int): List<Offset> {
         var pts: List<Offset> = listOf(a, b)
         val dx0 = b.x - a.x; val dy0 = b.y - a.y
@@ -850,48 +927,53 @@ internal class FxScenes {
 
     private fun stepElectric(dt: Float, W: Float, H: Float, d: Float, targets: Collection<FxTarget>) {
         nextEvent -= dt
-        val live = targets.filter { !it.gone && it.rect.width > 4f * d }
+        val live = targets.filter { !it.gone && it.tight.width > 4f * d }
         if (nextEvent <= 0f && live.isNotEmpty()) {
             nextEvent = (0.4f + f() * 1.6f) / (0.3f + inten)
             val ta = live[rnd.nextInt(live.size)]
             var tb: FxTarget? = null
-            val pa: Offset
-            val pb: Offset
+            var pa: Offset? = null
+            var pb: Offset? = null
             if (live.size >= 2 && f() < 0.8f) {
                 var b = live[rnd.nextInt(live.size)]
                 if (b === ta) b = live[(live.indexOf(ta) + 1) % live.size]
                 tb = b
-                val raw = boundaryToward(ta.rect, b.rect.center)
-                pa = boundaryToward(ta.rect, Offset(raw.x + (f() - 0.5f) * 16f * d, raw.y + (f() - 0.5f) * 16f * d))
-                pb = boundaryToward(b.rect, pa)
+                val bc = b.tight.center
+                pa = edgePoint(ta, Offset(bc.x + (f() - 0.5f) * 24f * d, bc.y))
+                pb = pa?.let { edgePoint(b, it) }
             } else {
-                // panel kenarına (topraklama) atlayan ark
-                val r = ta.rect
-                val q = Offset(r.left + f() * r.width, r.top + f() * r.height)
-                pa = boundaryToward(r, Offset(q.x, if (f() < 0.5f) r.top - 1f else r.bottom + 1f))
-                pb = if (pa.y <= r.top + 0.5f) Offset(pa.x + (f() - 0.5f) * 30f * d, 0f) else Offset(pa.x + (f() - 0.5f) * 30f * d, H)
+                // panel kenarına (topraklama) atlayan ark: içeriğin üstünden yukarı ya da altından aşağı
+                val tr = ta.tight
+                val up = f() < 0.5f
+                pa = edgePoint(ta, Offset(tr.left + f() * tr.width, if (up) -1f else H + 1f))
+                pb = pa?.let { Offset(it.x + (f() - 0.5f) * 30f * d, if (up) 0f else H) }
             }
-            val arc = ZapArc(pa, pb, 0.18f + f() * 0.4f, false, ta.id, tb?.id)
-            regenArc(arc)
-            arcs.add(arc)
-            zapSparks(pa, 10, d); zapSparks(pb, 10, d)
-            ta.glow = 1f; ta.shake = min(ta.shake + 1.6f * d, 6f * d)
-            tb?.let { it.glow = 1f; it.shake = min(it.shake + 1.6f * d, 6f * d) }
-            flash = max(flash, 0.28f); flashColor = Color(0xFFBFEFFF)
+            if (pa != null && pb != null) {
+                val arc = ZapArc(pa, pb, 0.18f + f() * 0.4f, false, ta.id, tb?.id)
+                regenArc(arc)
+                arcs.add(arc)
+                zapSparks(pa, 10, d); zapSparks(pb, 10, d)
+                ta.glow = 1f; ta.shake = min(ta.shake + 1.6f * d, 6f * d)
+                tb?.let { it.glow = 1f; it.shake = min(it.shake + 1.6f * d, 6f * d) }
+                flash = max(flash, 0.28f); flashColor = Color(0xFFBFEFFF)
+            }
         }
-        // kenarlarda gezinen küçük deşarjlar (Aziz Elmo ateşi)
+        // içeriğin üst yüzeyinde gezinen küçük deşarjlar (Aziz Elmo ateşi): harflerin, simgelerin tepesinden atlar
         if (live.isNotEmpty() && f() < 3f * inten * dt) {
             val t = live[rnd.nextInt(live.size)]
-            val r = t.rect
-            val horiz = f() < 0.6f
-            val a = if (horiz) Offset(r.left + f() * r.width, if (f() < 0.5f) r.top else r.bottom)
-            else Offset(if (f() < 0.5f) r.left else r.right, r.top + f() * r.height)
-            val l = (6f + f() * 8f) * d
-            val b = if (horiz) Offset(a.x + l * (if (f() < 0.5f) 1f else -1f), a.y + (f() - 0.5f) * 4f * d)
-            else Offset(a.x + (f() - 0.5f) * 4f * d, a.y + l * (if (f() < 0.5f) 1f else -1f))
-            val arc = ZapArc(a, b, 0.08f + f() * 0.08f, true, t.id, null)
-            regenArc(arc)
-            arcs.add(arc)
+            val n = t.cols()
+            val i = nearestCol(t, t.rect.left + f() * t.rect.width)
+            if (i >= 0) {
+                val step = (3 + rnd.nextInt(5)) * (if (f() < 0.5f) 1 else -1)
+                val j = nearestCol(t, t.colX((i + step).coerceIn(0, n - 1)))
+                val ya = t.colTop(i)
+                val yb = if (j >= 0) t.colTop(j) else null
+                if (j >= 0 && j != i && ya != null && yb != null) {
+                    val arc = ZapArc(Offset(t.colX(i), ya), Offset(t.colX(j), yb), 0.08f + f() * 0.08f, true, t.id, null)
+                    regenArc(arc)
+                    arcs.add(arc)
+                }
+            }
         }
         var i = arcs.size - 1
         while (i >= 0) {
@@ -936,21 +1018,11 @@ internal class FxScenes {
             FXW_BLIZZARD -> drawWhiteout(W, H, d)
         }
 
-        // ---- 2) öğe üstü izler: yanık, yığın, parıltı
+        // ---- 2) içeriğin üstünde biriken kum / kar (yanık izi ve elektrik parıltısı öğenin kendi çiziminde: drawFxMarks)
         for (t in targets) {
-            val r = t.rect
-            if (r.width <= 0f || t.gone) continue
-            if (t.scorches.isNotEmpty()) drawScorches(t, d)
-            if (t.pile != null) {
-                if (t.pileKind == PILE_SAND) drawPile(t, d, Color(0xFFF0D3A0), Color(0xFFC08E4E), Color(0xFFFFEACB))
-                else drawPile(t, d, Color(0xFFFFFFFF), Color(0xFFCFDDF0), Color(0xFFFFFFFF))
-            }
-            if (t.glow > 0.01f) {
-                val g = t.glow
-                val cr = CornerRadius(min(10f * d, r.height / 2f))
-                drawRoundRect(Color(0xFF52D6FF).copy(alpha = 0.22f * g), r.topLeft, r.size, cr, style = Stroke(7f * d))
-                drawRoundRect(Color(0xFFBFF3FF).copy(alpha = 0.85f * g), r.topLeft, r.size, cr, style = Stroke(1.6f * d))
-            }
+            if (t.rect.width <= 0f || t.gone || t.pile == null) continue
+            if (t.pileKind == PILE_SAND) drawPile(t, d, Color(0xFFF0D3A0), Color(0xFFC08E4E), Color(0xFFFFEACB))
+            else drawPile(t, d, Color(0xFFFFFFFF), Color(0xFFCFDDF0), Color(0xFFFFFFFF))
         }
 
         // ---- 3) parçacıklar
@@ -1213,71 +1285,52 @@ internal class FxScenes {
     }
 
     // ---------------------------------------------------------------- Öğe üstü izler
-    private fun DrawScope.drawScorches(t: FxTarget, d: Float) {
-        val r = t.rect
-        val clip = Path().apply { addRoundRect(RoundRect(r, CornerRadius(min(10f * d, r.height / 2f)))) }
-        clipPath(clip) {
-            for (s in t.scorches) {
-                val age = ((nowMs - s.born) / 1000f).coerceAtLeast(0f)
-                val fade = (1f - age / SCORCH_LIFE).coerceIn(0f, 1f)
-                val hot = exp(-age * 1.4f)
-                val c = Offset(r.left + s.rx * r.width, r.top + s.ry * r.height)
-                val rr = s.r * 1.8f
-                drawCircle(Brush.radialGradient(
-                    0f to Color(0xFF1A0E06).copy(alpha = 0.7f * fade), 0.55f to Color(0xFF3A2414).copy(alpha = 0.4f * fade), 1f to Color.Transparent,
-                    center = c, radius = rr,
-                ), rr, c)
-                if (hot > 0.02f) {
-                    drawCircle(Brush.radialGradient(listOf(Color(0xFFFFD27A).copy(alpha = hot), Color(0xFFFF5A1F).copy(alpha = 0.6f * hot), Color.Transparent), c, s.r),
-                        s.r, c, blendMode = BlendMode.Plus)
-                }
-            }
-        }
-    }
-
     private fun DrawScope.drawPile(t: FxTarget, d: Float, topC: Color, botC: Color, edgeC: Color) {
         val p = t.pile ?: return
-        val r = t.rect
-        val l = r.left + 3f * d
-        val w = r.width - 6f * d
-        if (w <= 0f) return
+        val n = p.size
+        if (n != t.cols()) return
+        val cw = t.colW()
         var mx = 0f
         for (v in p) mx = max(mx, v)
         if (mx < 0.3f * d) return
-        val binW = w / (PILE_BINS - 1)
-        val surf = Path()
-        val fill = Path()
-        val base = r.top + 1f * d
-        fill.moveTo(l - 1f * d, base)
-        for (i in 0 until PILE_BINS) {
-            val x = l + i * binW
-            val y = r.top - p[i]
-            if (i == 0) { surf.moveTo(x, y); fill.lineTo(x, y) }
-            else {
-                val x0 = l + (i - 1) * binW
-                val y0 = r.top - p[i - 1]
-                val mxp = (x0 + x) / 2f; val myp = (y0 + y) / 2f
-                surf.quadraticBezierTo(x0, y0, mxp, myp)
-                fill.quadraticBezierTo(x0, y0, mxp, myp)
+        val brush = Brush.verticalGradient(listOf(topC, botC), startY = t.tight.top - mx, endY = t.tight.bottom)
+        val edge = edgeC.copy(alpha = 0.75f)
+        val grain = botC.copy(alpha = 0.5f)
+        var i = 0
+        while (i < n) {
+            if (t.colTop(i) == null || p[i] < 0.25f * d) { i++; continue }
+            var j = i
+            while (j < n && t.colTop(j) != null && p[j] >= 0.25f * d) j++
+            // [i, j): kesintisiz yığın; üst yüzey yumuşatılır, alt kenar içeriğin üstünü izler
+            val surf = Path()
+            val fill = Path()
+            val x0 = t.rect.left + i * cw
+            fill.moveTo(x0, t.colTop(i)!! + 0.8f * d)
+            var prevX = x0
+            var prevY = t.colTop(i)!! - p[i] * 0.5f
+            surf.moveTo(prevX, prevY); fill.lineTo(prevX, prevY)
+            for (c in i until j) {
+                val x = t.colX(c)
+                val y = t.colTop(c)!! - p[c]
+                surf.quadraticBezierTo(prevX, prevY, (prevX + x) / 2f, (prevY + y) / 2f)
+                fill.quadraticBezierTo(prevX, prevY, (prevX + x) / 2f, (prevY + y) / 2f)
+                prevX = x; prevY = y
             }
-        }
-        val lx = l + w; val ly = r.top - p[PILE_BINS - 1]
-        surf.lineTo(lx, ly); fill.lineTo(lx, ly)
-        fill.lineTo(lx + 1f * d, base)
-        fill.close()
-        drawPath(fill, Brush.verticalGradient(listOf(topC, botC), startY = r.top - mx, endY = base))
-        drawPath(surf, edgeC.copy(alpha = 0.75f), style = Stroke(0.8f * d, cap = StrokeCap.Round))
-        // yüzeydeki doku (tane / kristal)
-        val rr = java.util.Random(t.id.hashCode().toLong())
-        repeat((w / (3f * d)).toInt().coerceAtMost(60)) {
-            val u = rr.nextFloat()
-            val i = (u * (PILE_BINS - 1)).toInt().coerceIn(0, PILE_BINS - 1)
-            val hgt = p[i]
-            if (hgt > 1f * d) {
-                val x = l + u * w
-                val y = r.top - hgt * rr.nextFloat()
-                drawCircle(botC.copy(alpha = 0.5f), 0.45f * d, Offset(x, y))
+            val x1 = t.rect.left + j * cw
+            val yEnd = t.colTop(j - 1)!! - p[j - 1] * 0.5f
+            surf.quadraticBezierTo(prevX, prevY, x1, yEnd); fill.quadraticBezierTo(prevX, prevY, x1, yEnd)
+            for (c in j - 1 downTo i) fill.lineTo(t.rect.left + (c + if (c == j - 1) 1f else 0.5f) * cw, t.colTop(c)!! + 0.8f * d)
+            fill.lineTo(x0, t.colTop(i)!! + 0.8f * d)
+            fill.close()
+            drawPath(fill, brush)
+            drawPath(surf, edge, style = Stroke(0.8f * d, cap = StrokeCap.Round))
+            // yüzeydeki doku (tane / kristal)
+            for (c in i until j) {
+                if (p[c] > 1.2f * d && ((c * 7 + t.id.hashCode()) and 3) == 0) {
+                    drawCircle(grain, 0.45f * d, Offset(t.colX(c), t.colTop(c)!! - p[c] * 0.5f))
+                }
             }
+            i = j
         }
     }
 
@@ -1390,15 +1443,26 @@ internal class FxScenes {
             while (x <= W + step) { edge.lineTo(x, auroraBase(c, x, W, H)); x += step * 2f }
             drawPath(edge, Color(0xFFCFFFE4).copy(alpha = 0.12f * strength), style = Stroke(2.2f * d, cap = StrokeCap.Round), blendMode = BlendMode.Plus)
         }
-        // öğelerin üst kenarı gökteki ışığı yansıtır
+        // içeriğin (harflerin, simgelerin, çubuğun) üst kenarı gökteki ışığı yansıtır
         for (t in targets) {
-            if (t.gone) continue
-            val r = t.rect
-            if (r.width < 8f * d) continue
-            val b = (auroraBright(0, r.center.x, W) + auroraBright(1, r.center.x, W)) * 0.5f * strength
-            drawRect(Brush.verticalGradient(listOf(Color(0xFF5CFFB0).copy(alpha = 0.22f * b), Color.Transparent), startY = r.top, endY = r.top + 12f * d),
-                Offset(r.left + 2f * d, r.top), Size(r.width - 4f * d, 12f * d))
-            drawLine(Color(0xFFBFFFE0).copy(alpha = 0.45f * b), Offset(r.left + 6f * d, r.top + 0.6f * d), Offset(r.right - 6f * d, r.top + 0.6f * d), 1f * d, StrokeCap.Round)
+            if (t.gone || t.tight.width < 4f * d) continue
+            val n = t.cols()
+            val cw = t.colW()
+            var i = 0
+            while (i < n) {
+                if (t.colTop(i) == null) { i++; continue }
+                var j = i
+                while (j < n && t.colTop(j) != null) j++
+                val cx = t.colX((i + j) / 2)
+                val b = (auroraBright(0, cx, W) + auroraBright(1, cx, W)) * 0.5f * strength
+                val rim = Path()
+                rim.moveTo(t.rect.left + i * cw + 0.5f * d, t.colTop(i)!! + 0.5f * d)
+                for (c in i until j) rim.lineTo(t.colX(c), t.colTop(c)!! + 0.5f * d)
+                rim.lineTo(t.rect.left + j * cw - 0.5f * d, t.colTop(j - 1)!! + 0.5f * d)
+                drawPath(rim, Color(0xFF5CFFB0).copy(alpha = 0.25f * b), style = Stroke(3.5f * d, cap = StrokeCap.Round, join = StrokeJoin.Round), blendMode = BlendMode.Plus)
+                drawPath(rim, Color(0xFFBFFFE0).copy(alpha = 0.6f * b), style = Stroke(1f * d, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                i = j
+            }
         }
     }
 
@@ -1412,6 +1476,36 @@ internal class FxScenes {
             val y = seeds[k + 70] * H
             drawLine(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.18f * gust), Color.Transparent), x, x + len),
                 Offset(x, y), Offset(x + len, y + 4f * d), 1f * d, StrokeCap.Round)
+        }
+    }
+}
+
+/**
+ * Öğenin kendi çiziminde (yerel koordinat) çağrılır: meteor yanığı ve elektrik parıltısı yalnızca içeriğin
+ * pikselleri üstüne boyanır (SrcAtop); yazının, simgenin çevresindeki boş alana taşmaz.
+ */
+internal fun DrawScope.drawFxMarks(t: FxTarget) {
+    if (t.glow > 0.01f) {
+        drawRect(Color(0xFF8CEBFF).copy(alpha = 0.65f * t.glow), blendMode = BlendMode.SrcAtop)
+    }
+    if (t.scorches.isEmpty()) return
+    val now = System.currentTimeMillis()
+    val w = size.width
+    val h = size.height
+    for (s in t.scorches) {
+        val age = ((now - s.born) / 1000f).coerceAtLeast(0f)
+        val fade = (1f - age / SCORCH_LIFE).coerceIn(0f, 1f)
+        if (fade <= 0f) continue
+        val hot = exp(-age * 1.4f)
+        val c = Offset(s.rx * w, s.ry * h)
+        val rr = s.r * 1.8f
+        drawCircle(Brush.radialGradient(
+            0f to Color(0xFF1A0E06).copy(alpha = 0.75f * fade), 0.55f to Color(0xFF3A2414).copy(alpha = 0.45f * fade), 1f to Color.Transparent,
+            center = c, radius = rr,
+        ), rr, c, blendMode = BlendMode.SrcAtop)
+        if (hot > 0.02f) {
+            drawCircle(Brush.radialGradient(listOf(Color(0xFFFFD27A).copy(alpha = hot), Color(0xFFFF5A1F).copy(alpha = 0.6f * hot), Color.Transparent), c, s.r),
+                s.r, c, blendMode = BlendMode.SrcAtop)
         }
     }
 }
