@@ -354,7 +354,8 @@ internal class FaceState {
 }
 
 @Composable
-private fun rememberFaceState(on: Boolean, compactIdle: Boolean): FaceState {
+internal fun rememberFaceState(on: Boolean, compactIdle: Boolean): FaceState {
+    val bus = LocalPlayBus.current
     val f = remember { FaceState() }
     val visible = on && compactIdle
     SideEffect { f.visible = visible }
@@ -362,7 +363,7 @@ private fun rememberFaceState(on: Boolean, compactIdle: Boolean): FaceState {
 
     LaunchedEffect(on) {
         if (!on) return@LaunchedEffect
-        PlayFx.events.collect { e ->
+        bus.events.collect { e ->
             if (e == PlayEvent.Notif) pendingHappy = true
             if (e == PlayEvent.Party || e == PlayEvent.Water) launch {
                 f.happyUntil = System.currentTimeMillis() + (if (e == PlayEvent.Party) 4_000L else 1_500L)
@@ -422,7 +423,7 @@ private fun currentMood(f: FaceState): Mood {
     return Mood.Normal
 }
 
-private fun DrawScope.drawFace(f: FaceState, c: Offset, cw: Float, ch: Float) {
+internal fun DrawScope.drawFace(f: FaceState, c: Offset, cw: Float, ch: Float) {
     if (f.tick < 0) return   // dakikalık yenileme: değeri okununca çizim her dakika tazelenir
     val mood = currentMood(f)
     val eyeW = ch * 0.20f
@@ -483,7 +484,7 @@ private fun DrawScope.drawFace(f: FaceState, c: Offset, cw: Float, ch: Float) {
 /** Sıvı yüzeyinin dünyaya göre düz kalması için ekrandaki hedef açısı (radyan). Sağ taraf aşağıdaysa sıvı sağda toplanır. */
 private fun liquidTarget(): Float = atan2(-PlayFx.gx, PlayFx.gy.coerceAtLeast(1f)).coerceIn(-0.6f, 0.6f)
 
-private fun DrawScope.drawLiquid(c: Offset, cw: Float, ch: Float, bubbleT: Float) {
+internal fun DrawScope.drawLiquid(c: Offset, cw: Float, ch: Float, bubbleT: Float) {
     val pct = PlayFx.batteryPct.coerceIn(0f, 1f)
     val col = when {
         PlayFx.charging -> Color(0xFF30D158)
@@ -526,7 +527,7 @@ private fun DrawScope.drawLiquid(c: Offset, cw: Float, ch: Float, bubbleT: Float
 // ================================================================ Karalama tahtası
 
 /** Kayıtlı çizimi boştaki adanın içine (kenarlardan biraz içeride) beyaz çizgilerle çizer. */
-private fun DrawScope.drawDoodle(strokes: List<List<Offset>>, c: Offset, cw: Float, ch: Float) {
+internal fun DrawScope.drawDoodle(strokes: List<List<Offset>>, c: Offset, cw: Float, ch: Float) {
     val l = c.x - cw / 2f + ch * 0.35f
     val t = c.y - ch / 2f + ch * 0.14f
     val w = cw - ch * 0.7f

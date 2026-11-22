@@ -91,12 +91,12 @@ internal fun ShadowFx(a: PlayAnchor) {
 // ================================================================ Gece lambası
 
 @Composable
-internal fun NightLightFx(a: PlayAnchor, amount: Float) {
+internal fun NightLightFx(a: PlayAnchor, amount: Float, force: Boolean = false) {
     var minute by remember { mutableLongStateOf(System.currentTimeMillis() / 60_000L) }
     LaunchedEffect(Unit) { while (true) { delay(20_000L); minute = System.currentTimeMillis() / 60_000L } }
     val cal = java.util.Calendar.getInstance()
     val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
-    val on = PlayFx.charging && (hour >= 22 || hour < 7) && minute > 0L
+    val on = force || (PlayFx.charging && (hour >= 22 || hour < 7) && minute > 0L)   // force: ayarlar önizlemesi
     if (!on || !a.compactVisible) return
     val measurer = rememberTextMeasurer()
     Canvas(Modifier.fillMaxSize()) {
@@ -128,6 +128,7 @@ internal fun NightLightFx(a: PlayAnchor, amount: Float) {
 
 @Composable
 internal fun DiceFx(a: PlayAnchor, mode: Int) {
+    val bus = LocalPlayBus.current
     val roll = remember { Animatable(0f) }          // 0..1 yuvarlanma, sonra sabit
     val fade = remember { Animatable(0f) }
     var results by remember { mutableStateOf(intArrayOf(1, 1)) }
@@ -135,15 +136,15 @@ internal fun DiceFx(a: PlayAnchor, mode: Int) {
     val modeNow by rememberUpdatedState(mode)
     val measurer = rememberTextMeasurer()
     LaunchedEffect(Unit) {
-        PlayFx.events.collect { e ->
+        bus.events.collect { e ->
             if (e == PlayEvent.Dice) launch {
                 val m = modeNow
                 results = if (m == 2) intArrayOf(Random.nextInt(2)) else intArrayOf(Random.nextInt(1, 7), Random.nextInt(1, 7))
                 seed = Random.nextInt()
                 fade.snapTo(1f); roll.snapTo(0f)
                 roll.animateTo(1f, tween(950, easing = FastOutSlowInEasing))
-                PlayFx.kick(2.5f)
-                PlayFx.emit(PlayEvent.Say(when (m) {
+                bus.kick(2.5f)
+                bus.emit(PlayEvent.Say(when (m) {
                     2 -> if (results[0] == 0) "Yazı!" else "Tura!"
                     1 -> "${results[0]} + ${results[1]} = ${results[0] + results[1]}"
                     else -> "Zar: ${results[0]}!"
@@ -210,15 +211,17 @@ private fun DrawScope.drawDie(c: Offset, size: Float, face: Int, alpha: Float) {
 // ================================================================ Nefes egzersizi
 
 @Composable
-internal fun BreathFx(a: PlayAnchor, pattern: Int, minutes: Float) {
-    val active = BreathSession.active
+internal fun BreathFx(a: PlayAnchor, pattern: Int, minutes: Float, previewStart: Long = 0L) {
+    // previewStart > 0: ayarlar önizlemesi; gerçek nefes oturumuna (BreathSession) ve evcile dokunmaz
+    val preview = previewStart > 0L
+    val active = preview || BreathSession.active
     val t = rememberClock(active)
     val measurer = rememberTextMeasurer()
     if (!active) { SideEffect { if (PlayFx.breath != 0f) PlayFx.breath = 0f }; return }
-    val elapsed = (SystemClock.uptimeMillis() - BreathSession.startedAt) / 1000f
+    val elapsed = (SystemClock.uptimeMillis() - (if (preview) previewStart else BreathSession.startedAt)) / 1000f
     if (t < 0f) return
     val total = minutes.coerceIn(0.5f, 10f) * 60f
-    if (elapsed >= total) {
+    if (elapsed >= total && !preview) {
         LaunchedEffect(Unit) { BreathSession.stop(); PlayFx.emit(PlayEvent.Say("Harika, aferin!")) }
         return
     }
@@ -231,7 +234,7 @@ internal fun BreathFx(a: PlayAnchor, pattern: Int, minutes: Float) {
     val k = (x / dur).coerceIn(0f, 1f)
     val ease = 0.5f - 0.5f * cos(k * PI.toFloat())
     val b = when (phase) { 0 -> ease; 1 -> 1f; 2 -> 1f - ease; else -> 0f }
-    SideEffect { PlayFx.breath = b }
+    SideEffect { if (!preview) PlayFx.breath = b }
     val label = when (phase) { 0 -> "Nefes al"; 1 -> "Tut"; 2 -> "Nefes ver"; else -> "Tut" }
     val left = (dur - x).toInt() + 1
     Canvas(Modifier.fillMaxSize()) {
@@ -266,6 +269,7 @@ internal fun BreathFx(a: PlayAnchor, pattern: Int, minutes: Float) {
 
 @Composable
 internal fun VisitorFx(a: PlayAnchor) {
+    val bus = LocalPlayBus.current
     val ctx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) { VisitorStore.load(ctx) }
     val cur = VisitorStore.current
@@ -278,12 +282,12 @@ internal fun VisitorFx(a: PlayAnchor) {
     LaunchedEffect(cur) { if (cur != null) shown = cur }
     // Yakalanınca: ziyaretçi adaya doğru küçülerek çekilir, ışıltı saçar
     LaunchedEffect(Unit) {
-        PlayFx.events.collect { e ->
+        bus.events.collect { e ->
             if (e is PlayEvent.Caught) launch {
                 catchFrom = pos
                 catchAnim.snapTo(0f)
                 catchAnim.animateTo(1f, tween(450, easing = FastOutSlowInEasing))
-                PlayFx.kick(3.5f)
+                bus.kick(3.5f)
                 shown = null
                 catchAnim.snapTo(0f)
             }
@@ -326,7 +330,7 @@ internal fun VisitorFx(a: PlayAnchor) {
                 if (abs(p.x - last.x) > 0.3f) facing = if (p.x > last.x) 1f else -1f
                 last = p
                 pos = p
-                if (el > 26.6f && VisitorStore.current == k) { VisitorStore.current = null; shown = null }
+                if (el > 26.6f && VisitorStore.current == k) { if (!bus.preview) VisitorStore.current = null; shown = null }
             }
         }
     }

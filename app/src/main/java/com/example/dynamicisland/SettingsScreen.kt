@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -1032,9 +1033,20 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
 
     // Pager durumu burada tutulur: görünen sayfanın türüne göre üstteki önizleme değişir
     val pager = rememberPagerState { pages.size }
-    val kind = if (lyricsPage) PreviewKind.Island else (pages.getOrNull(pager.currentPage)?.kind ?: PreviewKind.Island)
+    val pageKind = if (lyricsPage) PreviewKind.Island else (pages.getOrNull(pager.currentPage)?.kind ?: PreviewKind.Island)
     // Sayfaya göre önizleme otomatik doğru hale gelir (örn. ilerleme çubuğu için müzik + açık ada); sonra dokunarak değiştirilebilir
     val curTitle = pages.getOrNull(pager.currentPage)?.title
+    // Özellik sahneleri (FeaturePreviews.kt): sayfadaki özelliğin kendisi telefonda oynar.
+    // Aynı sayfada birden çok özellik varsa (ör. Konum: ters ada + yatay mod) en son açılan gösterilir.
+    var featFocus by remember { mutableStateOf<Feat?>(null) }
+    var prevDraft by remember { mutableStateOf(draft) }
+    LaunchedEffect(draft) {
+        justEnabledFeature(curTitle, prevDraft, draft)?.let { featFocus = it }
+        prevDraft = draft
+    }
+    LaunchedEffect(pager.currentPage) { featFocus = null }
+    val feat = if (lyricsPage) null else resolveFeature(curTitle, draft, featFocus)
+    val kind = if (feat != null) PreviewKind.Feature else pageKind
     LaunchedEffect(pager.currentPage, lyricsPage) {
         if (lyricsPage) return@LaunchedEffect
         previewFocusFor(curTitle)?.let { f ->
@@ -1047,12 +1059,13 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
     val needsBig = when (kind) {
         PreviewKind.Assistant -> draft.assistantEnabled && draft.assistantFullWidth
         PreviewKind.SideCall -> sidePrefs.enabled
+        PreviewKind.Feature -> feat?.big == true
         else -> false
     }
     var bigDismissed by remember { mutableStateOf(false) }
-    LaunchedEffect(kind) { bigDismissed = false }
+    LaunchedEffect(kind, feat) { bigDismissed = false }
     val showBig = needsBig && !bigDismissed
-    val hint = previewHint(kind, draft, bigDismissed)
+    val hint = if (feat != null) featureHint(feat) else previewHint(kind, draft, bigDismissed)
 
     // Tam telefon gerektiren ayarlarda önizleme kartı telefonun tamamını gösterecek şekilde büyür
     Box(Modifier.fillMaxSize()) {
@@ -1062,7 +1075,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             var previewHidden by remember { mutableStateOf(uiPrefs.getBoolean("preview_hidden", false)) }
             if (!previewHidden) PreviewCard(
                 draft.effective(), mode, { mode = it }, expanded, { expanded = !expanded },
-                kind = kind, hint = hint, showBig = showBig,
+                kind = kind, hint = hint, showBig = showBig, feat = feat,
                 onSmallTap = { if (needsBig) bigDismissed = false }, onBigTap = { bigDismissed = true },
             )
 
@@ -1334,6 +1347,7 @@ private fun PreviewCard(
     cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, expanded: Boolean, onToggle: () -> Unit,
     kind: PreviewKind = PreviewKind.Island, hint: String = "", showBig: Boolean = false,
     onSmallTap: () -> Unit = {}, onBigTap: () -> Unit = {},
+    feat: Feat? = null,
 ) {
     val art = remember { sampleArt() }
     val music = mode == 1
@@ -1364,13 +1378,16 @@ private fun PreviewCard(
         PreviewKind.ScreenRec -> 74f
         PreviewKind.SideBubbles -> cfg.expandedHeightDp
         PreviewKind.PillStyle -> cfg.pillMusicHDp
+        PreviewKind.Feature -> if (feat != null) featureNeedDp(feat, cfg) else geo.eh.value
     }
     // 3 boyutlu telefon: normal modda büyük çizilip üst kısmı gösterilir, tam modda tamamı karta sığar
-    val phoneWDp = if (showBig) p3dFullWidthDp() else P3D_W_DP
-    val phoneTopDp = if (showBig) P3D_FULL_PAD_DP else P3D_TOP_DP
+    // Yatay mod: telefon 90° döner (kamera solda); yan yatınca karta sığacak boyda çizilir
+    val land = feat?.rotated() == true
+    val phoneWDp = if (land) LAND_PHONE_W_DP else if (showBig) p3dFullWidthDp() else P3D_W_DP
+    val phoneTopDp = if (land) 0f else if (showBig) P3D_FULL_PAD_DP else P3D_TOP_DP
     val openNeedDp = (islandTopV + ehForKind + 14f) * p3dScale(P3D_W_DP) + P3D_TOP_DP + p3dScreenInsetDp(P3D_W_DP) + 12f
     val boxH by animateDpAsState(
-        (if (showBig) P3D_FULL_H_DP
+        (if (showBig || land) P3D_FULL_H_DP
         else (if (expanded || kind != PreviewKind.Island) openNeedDp else 150f).coerceAtLeast(150f)).dp,
         tween(320, easing = FastOutSlowInEasing), label = "previewH",
     )
@@ -1391,8 +1408,19 @@ private fun PreviewCard(
                 ),
             contentAlignment = Alignment.TopCenter,
         ) {
-            Phone3DPreview(phoneWDp, Modifier.padding(top = phoneTopDp.dp)) {
-                if (kind != PreviewKind.Island) {
+            Phone3DPreview(
+                phoneWDp,
+                Modifier.padding(top = phoneTopDp.dp).then(
+                    if (land) Modifier.graphicsLayer {
+                        rotationZ = -90f
+                        // Döndürme kartın ortasından olur; telefonun boyu karttan uzun olduğu için yatayda ortalanır
+                        translationX = -((phoneWDp * PHONE3D_ASPECT - P3D_FULL_H_DP) / 2f).dp.toPx()
+                    } else Modifier,
+                ),
+            ) {
+                if (kind == PreviewKind.Feature && feat != null) {
+                    FeatureScene(feat, cfg)
+                } else if (kind != PreviewKind.Island) {
                     // Telefon o ayarın sahnesini oynatır (gerçek ada / asistan / favoriler / kenar tuşları)
                     PreviewScene(kind, cfg)
                 } else {

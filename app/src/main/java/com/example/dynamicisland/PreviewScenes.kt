@@ -29,7 +29,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Üstteki önizleme telefonunda hangi ayar grubunun gösterileceği. */
-internal enum class PreviewKind { Island, Assistant, Favorites, SideCall, Privacy, ScreenRec, SideBubbles, PillStyle }
+internal enum class PreviewKind { Island, Assistant, Favorites, SideCall, Privacy, ScreenRec, SideBubbles, PillStyle, Feature }
 
 /** "Tam genişlik" gibi geniş ayarlar için ayarlar sayfasının üstüne binen, tamamı görünen telefon ölçüsü. */
 internal const val BIG_PHONE_W_DP = 200f
@@ -115,7 +115,7 @@ internal fun PreviewScene(kind: PreviewKind, cfg: IslandSettings) {
         PreviewKind.ScreenRec -> ScreenRecScene(cfg)
         PreviewKind.SideBubbles -> SideBubblesScene(cfg)
         PreviewKind.PillStyle -> PillStyleScene(cfg)
-        PreviewKind.Island -> Unit
+        PreviewKind.Island, PreviewKind.Feature -> Unit     // Feature: FeaturePreviews.kt (FeatureScene)
     }
 }
 
@@ -132,7 +132,7 @@ internal fun previewHint(kind: PreviewKind, cfg: IslandSettings, bigDismissed: B
     PreviewKind.ScreenRec -> if (cfg.screenRecEnabled) "Ekran kaydı: geri sayım, kayıt ve kaydedildi" else "Ekran kaydı adası kapalı"
     PreviewKind.SideBubbles -> "Müzik çalarken ekran kaydı yan baloncukta"
     PreviewKind.PillStyle -> "Küçültülmüş adada gelen arama, aktif arama ve müzik sırayla gösterilir"
-    PreviewKind.Island -> ""
+    PreviewKind.Island, PreviewKind.Feature -> ""
 }
 
 // ---------------------------------------------------------------- Asistan

@@ -23,6 +23,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -108,6 +110,17 @@ object PlayFx {
     /** Adaya jöle darbesi verir (+ yayvanlaşır). */
     fun kick(v: Float) { jellyV += v }
 }
+
+/**
+ * Efekt katmanlarının olay kanalı. Gerçek adada [PlayFx] (ortak akış). Ayarlar önizlemesi kendi kanalını verir:
+ * önizlemede tetiklenen bildirim / konfeti / zar gerçek adaya ulaşmaz, önizleme gerçek adayı sarsmaz ([preview]).
+ */
+internal class PlayBus(val events: SharedFlow<PlayEvent>, private val send: (PlayEvent) -> Unit, val preview: Boolean) {
+    fun emit(e: PlayEvent) = send(e)
+    fun kick(v: Float) { if (!preview) PlayFx.kick(v) }
+}
+
+internal val LocalPlayBus = staticCompositionLocalOf { PlayBus(PlayFx.events, { PlayFx.emit(it) }, false) }
 
 /**
  * Sensör, ekran, şarj, pil ve kulaklık olaylarını dinler; yalnızca ilgili ayar açıkken.

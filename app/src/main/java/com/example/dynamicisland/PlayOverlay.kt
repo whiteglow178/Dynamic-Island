@@ -161,16 +161,18 @@ class PlayOverlay(
 }
 
 @Composable
-private fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow<PlayAnchor?>) {
+/** [previewStart] > 0: ayarlar önizlemesi (gece lambası zorla görünür, nefes gerçek oturumdan bağımsız, fırlatma yok). */
+internal fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow<PlayAnchor?>, previewStart: Long = 0L) {
+    val preview = previewStart > 0L
     val s by settings.collectAsState()
     val a by anchorFlow.collectAsState()
     val anchor = a ?: return
     if (!anchor.shown) return
     Box(Modifier.fillMaxSize()) {
         if (s.playShadow) ShadowFx(anchor)
-        if (s.playNightLight) NightLightFx(anchor, s.playNightAmt)
+        if (s.playNightLight) NightLightFx(anchor, s.playNightAmt, force = preview)
         if (s.playDaylight) DaylightFx(anchor, s.playDaylightAmt)
-        if (s.playBreath) BreathFx(anchor, s.playBreathPattern, s.playBreathMin)
+        if (s.playBreath) BreathFx(anchor, s.playBreathPattern, s.playBreathMin, previewStart)
         if (s.playSeason) SeasonFx(anchor, seasonOf(s.playSeasonMode))
         if (s.playPlant) PlantFx(anchor)
         if (s.playEater) EaterFx(anchor)
@@ -181,7 +183,7 @@ private fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow
         if (s.playVisitors) VisitorFx(anchor)
         if (s.playDice) DiceFx(anchor, s.playDiceMode)
         if (s.playParty) PartyFx(anchor)
-        if (s.playFling) FlingFx(anchor)
+        if (s.playFling && !preview) FlingFx(anchor)
     }
 }
 
@@ -196,10 +198,11 @@ internal fun PlayAnchor.dir() = if (inverted) -1f else 1f
 
 @Composable
 private fun RippleFx(a: PlayAnchor) {
+    val bus = LocalPlayBus.current
     val rings = remember { mutableStateListOf<Long>() }
     var now by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
-        PlayFx.events.collect { if (it == PlayEvent.Ripple && rings.size < 4) rings.add(SystemClock.uptimeMillis()) }
+        bus.events.collect { if (it == PlayEvent.Ripple && rings.size < 4) rings.add(SystemClock.uptimeMillis()) }
     }
     val busy = rings.isNotEmpty()
     LaunchedEffect(busy) {
@@ -236,23 +239,24 @@ private const val RIPPLE_GAP = 140
 
 @Composable
 private fun MagnetFx(a: PlayAnchor) {
+    val bus = LocalPlayBus.current
     val charge = remember { Animatable(0f) }
     val buds = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        PlayFx.events.collect { e ->
+        bus.events.collect { e ->
             when (e) {
                 PlayEvent.Charger -> launch {
-                    PlayFx.kick(-2.5f)                                   // ada önce kabloya doğru uzar
+                    bus.kick(-2.5f)                                   // ada önce kabloya doğru uzar
                     charge.snapTo(0f)
                     charge.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
                     delay(140)
                     charge.animateTo(0f, spring(dampingRatio = 0.55f, stiffness = 420f))
-                    PlayFx.kick(3.5f)                                    // damla geri girince ada sarsılır
+                    bus.kick(3.5f)                                    // damla geri girince ada sarsılır
                 }
                 PlayEvent.Buds -> launch {
                     buds.snapTo(0f)
                     buds.animateTo(1f, tween(650, easing = FastOutLinearInEasing))   // mıknatıs gibi hızlanarak gelir
-                    PlayFx.kick(3f)
+                    bus.kick(3f)
                     buds.snapTo(0f)
                 }
                 else -> Unit
@@ -366,6 +370,7 @@ private fun PuffDustFx(a: PlayAnchor) {
 
 @Composable
 private fun PetFx(a: PlayAnchor, talk: Boolean, plantOn: Boolean) {
+    val bus = LocalPlayBus.current
     val show = a.compactVisible && PlayFx.pocket < 0.5f
     val hide = remember { Animatable(if (show) 0f else 1f) }
     LaunchedEffect(show) { hide.animateTo(if (show) 0f else 1f, tween(if (show) 520 else 320, easing = FastOutSlowInEasing)) }
@@ -389,7 +394,7 @@ private fun PetFx(a: PlayAnchor, talk: Boolean, plantOn: Boolean) {
         }
     }
     LaunchedEffect(Unit) {
-        PlayFx.events.collect { e ->
+        bus.events.collect { e ->
             when (e) {
                 PlayEvent.Notif -> {
                     launch {                                       // bildirim: heyecanla aşağı sarkıp geri tırmanır
@@ -572,10 +577,11 @@ private class Morsel(val start: Long, val fromLeft: Boolean, val yFrac: Float, v
 
 @Composable
 private fun EaterFx(a: PlayAnchor) {
+    val bus = LocalPlayBus.current
     val bites = remember { mutableStateListOf<Morsel>() }
     var now by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
-        PlayFx.events.collect {
+        bus.events.collect {
             if (it == PlayEvent.Notif && bites.size < 3) {
                 bites.add(Morsel(SystemClock.uptimeMillis(), Random.nextBoolean(), 0.28f + Random.nextFloat() * 0.2f, Random.nextInt(BITE_COLORS.size)))
             }
@@ -588,7 +594,7 @@ private fun EaterFx(a: PlayAnchor) {
             val done = bites.filter { now - it.start >= EAT_MS }
             if (done.isNotEmpty()) {
                 bites.removeAll(done)
-                done.forEach { _ -> PlayFx.emit(PlayEvent.Eaten) }      // ada yutkunur
+                done.forEach { _ -> bus.emit(PlayEvent.Eaten) }      // ada yutkunur
             }
         }
     }
@@ -741,6 +747,7 @@ private fun FlingFx(a: PlayAnchor) {
 
 @Composable
 private fun PlantFx(a: PlayAnchor) {
+    val bus = LocalPlayBus.current
     val ctx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) { PlantStore.load(ctx) }
     // Gün dönünce susuzluk durumu güncellensin
@@ -748,7 +755,7 @@ private fun PlantFx(a: PlayAnchor) {
     LaunchedEffect(Unit) { while (true) { delay(10 * 60_000L); PlantStore.decay(ctx); dayTick++ } }
     val water = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        PlayFx.events.collect { if (it == PlayEvent.Water) launch { water.snapTo(0f); water.animateTo(1f, tween(900)) ; water.snapTo(0f) } }
+        bus.events.collect { if (it == PlayEvent.Water) launch { water.snapTo(0f); water.animateTo(1f, tween(900)) ; water.snapTo(0f) } }
     }
     if (!a.compactVisible) return
     var t by remember { mutableFloatStateOf(0f) }
@@ -924,17 +931,18 @@ private class Confetti(var x: Float, var y: Float, var vx: Float, var vy: Float,
 
 @Composable
 private fun PartyFx(a: PlayAnchor) {
+    val bus = LocalPlayBus.current
     val parts = remember { ArrayList<Confetti>() }
     var frame by remember { mutableLongStateOf(0L) }
     var active by remember { mutableStateOf(false) }
     val live by rememberUpdatedState(a)
     LaunchedEffect(Unit) {
-        PlayFx.events.collect {
+        bus.events.collect {
             if (it == PlayEvent.Party) {
                 val an = live
                 val d = an.h / 37f
-                PlayFx.partyUntil = System.currentTimeMillis() + 4_000L
-                PlayFx.kick(5f)
+                if (!bus.preview) PlayFx.partyUntil = System.currentTimeMillis() + 4_000L
+                bus.kick(5f)
                 repeat(140) {
                     val ang = (Random.nextFloat() - 0.5f) * 2.8f       // aşağı yönde geniş yelpaze
                     val sp = (400f + Random.nextFloat() * 800f) * d

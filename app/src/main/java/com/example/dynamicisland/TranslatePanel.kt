@@ -80,6 +80,7 @@ fun TranslatePanel(topInset: Dp) {
     val focus = remember { FocusRequester() }
     val kb = LocalSoftwareKeyboardController.current
     val view = LocalView.current
+    val inPreview = LocalIslandPreview.current
 
     // Diller yer değiştirince sonuç yazı alanına taşınır
     LaunchedEffect(ui.nonce) {
@@ -87,7 +88,7 @@ fun TranslatePanel(topInset: Dp) {
     }
     // Panel açılınca (ve dil listesinden dönünce) klavye açılır; pencere odağı alana kadar kısa süre beklenir
     LaunchedEffect(ui.picking == 0) {
-        if (ui.picking != 0) return@LaunchedEffect
+        if (ui.picking != 0 || inPreview) return@LaunchedEffect     // ayarlar önizlemesinde klavye açılmaz
         delay(220)
         var tries = 0
         while (!view.hasWindowFocus() && tries < 15) { delay(100); tries++ }

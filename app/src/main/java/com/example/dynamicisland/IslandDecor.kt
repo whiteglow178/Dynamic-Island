@@ -516,7 +516,7 @@ class DecorOverlay(
 }
 
 @Composable
-private fun DecorLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow<DecorAnchor?>) {
+internal fun DecorLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow<DecorAnchor?>) {
     val s by settings.collectAsState()
     val cur by anchorFlow.collectAsState()
     // Görünmez olunca son konumda solarak kaybolsun

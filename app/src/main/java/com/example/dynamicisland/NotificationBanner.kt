@@ -342,7 +342,7 @@ class NotifBannerOverlay(
 
 // ---------------------------------------------------------------- Arayüz
 @Composable
-private fun NotifBannerRoot(
+internal fun NotifBannerRoot(
     n: IslandContent.Notif?,
     shown: Boolean,
     widthDp: Float,

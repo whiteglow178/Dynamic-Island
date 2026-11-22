@@ -1149,6 +1149,11 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
 //  - Normal: telefon büyük çizilir, kart yalnızca üst kısmı (ada bölgesi) gösterir, alt kısım kartta kesilir.
 //  - Tam: telefonun tamamı karta sığacak şekilde küçültülür (tam genişlik asistan, kenar tuşları gibi ayarlar).
 
+/** Telefonun boy / en oranı (önizlemede döndürme hesabı için). */
+internal const val PHONE3D_ASPECT = PH_H / PH_W
+/** Yatay mod önizlemesinde (telefon yan yatık) telefon genişliği, dp: yan yatınca kart yüksekliğine sığar. */
+internal const val LAND_PHONE_W_DP = 130f
+
 /** Normal (üst kısım) önizlemede telefon genişliği, dp. */
 internal const val P3D_W_DP = 236f
 /** Normal önizlemede telefonun karttaki üst boşluğu, dp. */
