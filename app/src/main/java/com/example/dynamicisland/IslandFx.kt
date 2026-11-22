@@ -866,12 +866,17 @@ fun FxLayer(
             if (r == 0 || r == rows) base else base + (sim.f() - 0.5f) * (H / rows) * 0.6f
         } }
         val base = bodyNow().copy(alpha = 1f)
+        // Adanın gerçek (kavisli) dış hattı: açık adanın köşe yarıçapı (islandCornerPx ile aynı). Üçgenler bu şekle
+        // kırpılır; yoksa parçalar geri toplanınca köşeleri sivri bir dikdörtgen oluşuyordu.
+        val outline = roundRectPolygon(W, H, min(min(36f * d, H / 2f), W / 2f))
         for (r in 0 until rows) for (c in 0 until cols) {
             val a = Offset(vx[r][c], vy[r][c]); val b = Offset(vx[r][c + 1], vy[r][c + 1])
             val cc = Offset(vx[r + 1][c + 1], vy[r + 1][c + 1]); val dd = Offset(vx[r + 1][c], vy[r + 1][c])
             val tris = if (sim.rnd.nextBoolean()) listOf(listOf(a, b, cc), listOf(a, cc, dd)) else listOf(listOf(a, b, dd), listOf(b, cc, dd))
-            for (tri in tris) {
-                val g = Offset((tri[0].x + tri[1].x + tri[2].x) / 3f, (tri[0].y + tri[1].y + tri[2].y) / 3f)
+            for (tri0 in tris) {
+                val tri = clipConvex(tri0, outline)
+                if (tri.size < 3 || polyArea(tri) < 1f) continue          // tamamen köşenin dışında kalan parça
+                val g = Offset(tri.sumOf { it.x.toDouble() }.toFloat() / tri.size, tri.sumOf { it.y.toDouble() }.toFloat() / tri.size)
                 val rel = tri.map { Offset(it.x - g.x, it.y - g.y) }
                 val rad = rel.maxOf { max(abs(it.x), abs(it.y)) }
                 val col = lerp(base, Pal.c("fx_white"), 0.05f + sim.f() * 0.09f)
@@ -1028,3 +1033,54 @@ fun FxLayer(
         }
     }
 }
+
+
+// ---------------------------------------------------------------- Kırılma: parçaları adanın kavisli şekline kırpma
+/** (0,0)-(w,h) yuvarlak dikdörtgen, saat yönünde (ekran koordinatı) çokgen olarak. */
+internal fun roundRectPolygon(w: Float, h: Float, r: Float, seg: Int = 10): List<Offset> {
+    val out = ArrayList<Offset>()
+    // köşe merkezleri ve başlangıç açıları: sağ üst, sağ alt, sol alt, sol üst
+    val cs = listOf(Offset(w - r, r) to -90f, Offset(w - r, h - r) to 0f, Offset(r, h - r) to 90f, Offset(r, r) to 180f)
+    for ((c, a0) in cs) {
+        for (i in 0..seg) {
+            val a = Math.toRadians((a0 + 90f * i / seg).toDouble())
+            out.add(Offset(c.x + r * cos(a).toFloat(), c.y + r * sin(a).toFloat()))
+        }
+    }
+    return out
+}
+
+private fun cross(a: Offset, b: Offset, p: Offset): Float = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+
+/** Sutherland–Hodgman: [subject] çokgenini dışbükey [clip] çokgeninin içine kırpar (her ikisi de aynı yönde değilse de çalışır). */
+internal fun clipConvex(subject: List<Offset>, clip: List<Offset>): List<Offset> {
+    val sign = if (polySigned(clip) >= 0f) 1f else -1f
+    var out = subject
+    for (i in clip.indices) {
+        if (out.isEmpty()) break
+        val a = clip[i]; val b = clip[(i + 1) % clip.size]
+        val input = out
+        val res = ArrayList<Offset>()
+        for (j in input.indices) {
+            val p = input[j]; val q = input[(j + 1) % input.size]
+            val pin = cross(a, b, p) * sign >= 0f
+            val qin = cross(a, b, q) * sign >= 0f
+            if (pin) res.add(p)
+            if (pin != qin) {
+                val dp = cross(a, b, p); val dq = cross(a, b, q)
+                val t = dp / (dp - dq)
+                res.add(Offset(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t))
+            }
+        }
+        out = res
+    }
+    return out
+}
+
+private fun polySigned(p: List<Offset>): Float {
+    var s = 0f
+    for (i in p.indices) { val a = p[i]; val b = p[(i + 1) % p.size]; s += a.x * b.y - b.x * a.y }
+    return s / 2f
+}
+
+internal fun polyArea(p: List<Offset>): Float = abs(polySigned(p))

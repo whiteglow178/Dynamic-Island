@@ -183,7 +183,8 @@ fun MusicPanel(
                     modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().offset(y = 3.dp).rainbowFill(rb),
                 )
             }
-            Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb)
+            // Kırılabilir öğe: adayı kırma / yağmur / asit efektlerinde ekolayzır da düşer
+            Box(Modifier.fxTarget("eq")) { Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb) }
         }
 
         if (cfg.lyricsEnabled && cfg.lyricsInPanel) Column(Modifier.fxTarget("lyrics")) { PanelLyrics(cfg, lyrics, frame, artColor = m.artColor) }

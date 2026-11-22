@@ -51,6 +51,7 @@ data class IslandSettings(
     val customBgExpandedUri: String = "",
     // Özel albüm kapağı (galeriden): adadaki kapak yerine bu fotoğraf gösterilir
     val customBgVideoUri: String = "",       // boş = video seçilmedi; doluysa videonun adresi (kopyalanmaz). Doluysa fotoğrafın yerine çalar
+    val notifBottomFx: Boolean = false,      // bildirim gelince (ada ve cam banner) alt kenarda uygulamanın renginde ışık
     val musicBottomFx: Boolean = false,      // müzik çalarken adanın altında albüm renginde hareketli ışık
     // Ada olayları (genişletilmiş müzik adasında): hava durumu, şimşek, donma, erime, kırılma
     val fxWeather: Int = 0,                  // 0 kapalı, 1 yağmur, 2 kar, 3 asit yağmuru
@@ -511,7 +512,7 @@ class SettingsRepository(context: Context) {
         val CB_U_BOTH = stringPreferencesKey("cb_u_both"); val CB_U_C = stringPreferencesKey("cb_u_c"); val CB_U_E = stringPreferencesKey("cb_u_e")
         val FX_W = intPreferencesKey("fx_w"); val FX_I = floatPreferencesKey("fx_i"); val FX_L = booleanPreferencesKey("fx_l"); val FX_LS = floatPreferencesKey("fx_ls")
         val FX_FS = floatPreferencesKey("fx_fs"); val FX_TT = intPreferencesKey("fx_tt"); val FX_MS = floatPreferencesKey("fx_ms"); val FX_B = booleanPreferencesKey("fx_b"); val FX_RS = floatPreferencesKey("fx_rs")
-        val CB_V = stringPreferencesKey("cb_v"); val CA_V = stringPreferencesKey("ca_v"); val MB_FX = booleanPreferencesKey("mb_fx")
+        val CB_V = stringPreferencesKey("cb_v"); val CA_V = stringPreferencesKey("ca_v"); val MB_FX = booleanPreferencesKey("mb_fx"); val NB_FX = booleanPreferencesKey("nb_fx")
         val CA_ON = booleanPreferencesKey("ca_on"); val CA_U = stringPreferencesKey("ca_u")
         val GLASS = booleanPreferencesKey("glass"); val ALPHA = floatPreferencesKey("alpha"); val BLUR = intPreferencesKey("blur")
         val LQ_ON = booleanPreferencesKey("lq_on"); val LQ_R = floatPreferencesKey("lq_r")
@@ -622,6 +623,7 @@ class SettingsRepository(context: Context) {
             fxBreak = p[K.FX_B] ?: d.fxBreak,
             fxRestoreSec = p[K.FX_RS] ?: d.fxRestoreSec,
             musicBottomFx = p[K.MB_FX] ?: d.musicBottomFx,
+            notifBottomFx = p[K.NB_FX] ?: d.notifBottomFx,
             customArtEnabled = p[K.CA_ON] ?: d.customArtEnabled,
             customArtUri = p[K.CA_U] ?: d.customArtUri,
             customArtVideoUri = p[K.CA_V] ?: d.customArtVideoUri,
@@ -831,7 +833,7 @@ class SettingsRepository(context: Context) {
             it[K.CB_U_BOTH] = s.customBgBothUri; it[K.CB_U_C] = s.customBgCompactUri; it[K.CB_U_E] = s.customBgExpandedUri
             it[K.FX_W] = s.fxWeather; it[K.FX_I] = s.fxIntensity; it[K.FX_L] = s.fxLightning; it[K.FX_LS] = s.fxLightningSec
             it[K.FX_FS] = s.fxFreezeSpeed; it[K.FX_TT] = s.fxThawTaps; it[K.FX_MS] = s.fxMeltSpeed; it[K.FX_B] = s.fxBreak; it[K.FX_RS] = s.fxRestoreSec
-            it[K.CB_V] = s.customBgVideoUri; it[K.MB_FX] = s.musicBottomFx
+            it[K.CB_V] = s.customBgVideoUri; it[K.MB_FX] = s.musicBottomFx; it[K.NB_FX] = s.notifBottomFx
             it[K.CA_ON] = s.customArtEnabled; it[K.CA_U] = s.customArtUri; it[K.CA_V] = s.customArtVideoUri
             it[K.GLASS] = s.glassEnabled; it[K.ALPHA] = s.glassAlpha; it[K.BLUR] = s.blurRadiusPx
             it[K.LQ_ON] = s.liquidEnabled; it[K.LQ_R] = s.liquidRefraction

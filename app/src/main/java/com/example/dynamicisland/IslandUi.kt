@@ -892,6 +892,10 @@ fun IslandPill(
         if (media != null && cfg.musicBottomFx && !swallow && !cfg.dotMode) {
             MusicBottomFx(artColor ?: accent, media.playing)
         }
+        // Bildirim gelince alt kenarda uygulamanın renginde hareketli ışık (Müzik efekti > Bildirimde de)
+        if (content is IslandContent.Notif && content.accent != 0 && !swallow && !cfg.dotMode) {
+            MusicBottomFx(Color(content.accent), true)
+        }
 
         val musicBlur = cfg.animEnabled && ((cfg.musicBlurAnim && content is IslandContent.Media) || content is IslandContent.Shazam)
         val artSpin: () -> Float = { artFlip?.spin?.value ?: 0f }

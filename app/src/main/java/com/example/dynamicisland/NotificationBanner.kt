@@ -57,6 +57,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -418,6 +419,8 @@ private fun NotifBannerRoot(
                     )
                 },
         ) {
+            // Bildirimde renkli ışık: uygulamanın renginde alt kenarda akan ışık (ayar açıksa accent dolu gelir)
+            if (cur.accent != 0) MusicBottomFx(Color(cur.accent), true)
             // İçerik her zaman tam boyutta yerleşir; küçükken hapın içine ölçeklenerek sığar (yeniden yerleşim / sıçrama olmaz)
             Box(
                 Modifier
@@ -531,10 +534,17 @@ private fun BannerContent(n: IslandContent.Notif) {
         Modifier.fillMaxSize().padding(start = 14.dp, end = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Gönderen fotoğrafı (yoksa baş harf) + sağ altta uygulama simgesi
+        // Sohbet bildirimi: gönderen fotoğrafı (yoksa baş harf) + sağ altta küçük uygulama simgesi.
+        // Diğer uygulamalar (mesaj olmayan): uygulamanın simgesi büyük alanda görünür.
+        val bigIcon = if (!n.messaging) n.icon else null
         Box(Modifier.size(54.dp)) {
             val av = n.avatar
-            if (av != null) {
+            if (bigIcon != null) {
+                Image(
+                    bitmap = bigIcon, contentDescription = null, filterQuality = FilterQuality.High,
+                    modifier = Modifier.align(Alignment.CenterStart).size(48.dp).clip(RoundedCornerShape(12.dp)),
+                )
+            } else if (av != null) {
                 Image(
                     bitmap = av, contentDescription = null, contentScale = ContentScale.Crop,
                     modifier = Modifier.size(48.dp).clip(CircleShape),
@@ -550,7 +560,7 @@ private fun BannerContent(n: IslandContent.Notif) {
                     )
                 }
             }
-            n.icon?.let { icon ->
+            if (bigIcon == null) n.icon?.let { icon ->
                 val s = RoundedCornerShape(7.dp)
                 Image(
                     bitmap = icon, contentDescription = null,

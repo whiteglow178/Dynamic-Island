@@ -462,6 +462,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Müzik efekti", "Müzik çalarken adanın alt kısmında hareketli renk") {
             SwitchRow("Alt kenarda renkli ışık", "Albüm kapağının rengine göre adanın altında yavaşça akan ışık; duraklatınca söner",
                 draft.musicBottomFx) { draft = draft.copy(musicBottomFx = it) }
+            SwitchRow("Bildirimde de renkli ışık", "Bildirim gelince adanın (ve iOS tarzı cam bannerın) alt kenarında, bildirimi gönderen uygulamanın simge renginde akan ışık",
+                draft.notifBottomFx) { draft = draft.copy(notifBottomFx = it) }
         }
 
         sec("Özel arka plan", "Adanın içini galeriden seçtiğin fotoğraf veya videoyla doldur") {

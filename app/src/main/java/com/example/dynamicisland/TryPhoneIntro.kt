@@ -570,12 +570,12 @@ private fun DrawScope.drawLockScreen(sx: Float, sy: Float, sw: Float, sh: Float,
         p.textAlign = android.graphics.Paint.Align.CENTER
         p.color = android.graphics.Color.argb(225, 255, 255, 255)
         p.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        p.textSize = 4.4f
-        c.nativeCanvas.drawText("Pazartesi, 9 Kasım", cx, sy + 25f, p)
+        p.textSize = 3.9f
+        c.nativeCanvas.drawText("Pazartesi, 9 Kasım", cx, sy + 24f, p)
         p.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         p.color = android.graphics.Color.argb(235, 255, 255, 255)
-        p.textSize = 23f
-        c.nativeCanvas.drawText("10:43", cx, sy + 47f, p)
+        p.textSize = 17f          // dört haneli saat (10:43) ekrana göre büyük kalıyordu
+        c.nativeCanvas.drawText("10:43", cx, sy + 42f, p)
     }
 
     // Alttaki fener / kamera düğmeleri ve ana ekran çubuğu

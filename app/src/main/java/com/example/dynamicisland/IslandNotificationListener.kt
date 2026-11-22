@@ -587,6 +587,10 @@ class IslandNotificationListener : NotificationListenerService() {
         val avatar = runCatching {
             n.getLargeIcon()?.loadDrawable(this)?.toBitmap(128, 128)?.asImageBitmap()
         }.getOrNull()
-        IslandBus.post(IslandEvent.Notification(sbn.packageName, title, text, n.contentIntent, sbn.key, avatar))
+        // Sohbet bildirimi mi? (WhatsApp, Telegram, SMS... MessagingStyle kullanır ya da mesaj kategorisindedir)
+        val messaging = n.category == Notification.CATEGORY_MESSAGE ||
+            ex.containsKey(Notification.EXTRA_MESSAGES) ||
+            (ex.getString(Notification.EXTRA_TEMPLATE)?.contains("MessagingStyle") == true)
+        IslandBus.post(IslandEvent.Notification(sbn.packageName, title, text, n.contentIntent, sbn.key, avatar, messaging))
     }
 }

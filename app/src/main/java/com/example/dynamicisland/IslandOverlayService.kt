@@ -21,6 +21,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
@@ -259,8 +260,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.Notification -> if (!assistantActive && !call.active && !appHide.hidden && ui.value.content !is IslandContent.Translate) scope.launch {
                 playSfx(SoundEvent.Notif)
                 val icon = iconFor(e.pkg)
-                val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar)
                 val st = settings.value
+                // Bildirimde renkli ışık: uygulama simgesinin rengi (ayar kapalıysa 0 = ışık yok)
+                val accent = if (st.notifBottomFx && icon != null) accentFor(e.pkg, icon) else 0
+                val n = IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent, e.key, e.avatar, e.messaging, accent)
                 // iOS tarzı banner açıksa bildirim adada değil cam banner olarak gösterilir; pencere eklenemezse adaya düşer
                 if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
             }
@@ -1531,6 +1534,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         if (ui.value.expanded) scheduleMusicCollapse()
     }
+
+    private val accentCache = HashMap<String, Int>()
+
+    /** Uygulama simgesinin baskın rengi (önbellekli). */
+    private fun accentFor(pkg: String, icon: ImageBitmap): Int =
+        accentCache.getOrPut(pkg) { runCatching { appAccentColor(icon.asAndroidBitmap()) }.getOrDefault(0) }
 
     private suspend fun iconFor(pkg: String): ImageBitmap? {
         iconCache.get(pkg)?.let { return it }
