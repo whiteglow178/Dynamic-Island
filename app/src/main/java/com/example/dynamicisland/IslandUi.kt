@@ -135,7 +135,10 @@ const val PILL_MUSIC_MIN_W_DP = 300f
 
 /** Hap tasarımı açıksa ve içerik arama / müzikse kapalı adanın (genişlik, yükseklik) değeri; yoksa null. Üç nokta modunda uygulanmaz. */
 fun pillCompactSizeDp(cfg: IslandSettings, content: IslandContent): Pair<Float, Float>? = when {
-    cfg.dotMode || cfg.pillFitIsland -> null     // "adanın boyutuna uydur": ada büyümez
+    cfg.dotMode -> null
+    // Orta boy müzik adası: müzik çalarken ada küçülmez, ayarlanan orta boyda açık kalır ("uydur" ayarından bağımsız)
+    content is IslandContent.Media && cfg.more.musicMid -> cfg.more.musicMidWDp to cfg.more.musicMidHDp
+    cfg.pillFitIsland -> null     // "adanın boyutuna uydur": ada büyümez
     content is IslandContent.Call && cfg.pillCallStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_CALL_H_DP
     content is IslandContent.Media && cfg.pillMusicStyle -> cfg.pillMusicWDp to cfg.pillMusicHDp
     else -> null
@@ -143,7 +146,9 @@ fun pillCompactSizeDp(cfg: IslandSettings, content: IslandContent): Pair<Float, 
 
 /** Servis penceresi için aynı hesap ([kind]: 2 = müzik, 5 / 6 = gelen / aktif arama). */
 fun pillCompactSizeForKind(cfg: IslandSettings, kind: Int): Pair<Float, Float>? = when {
-    cfg.dotMode || cfg.pillFitIsland -> null
+    cfg.dotMode -> null
+    kind == 2 && cfg.more.musicMid -> cfg.more.musicMidWDp to cfg.more.musicMidHDp
+    cfg.pillFitIsland -> null
     (kind == 5 || kind == 6) && cfg.pillCallStyle -> minOf(cfg.expandedWidthDp, PILL_MAX_W_DP) to PILL_CALL_H_DP
     kind == 2 && cfg.pillMusicStyle -> cfg.pillMusicWDp to cfg.pillMusicHDp
     else -> null
@@ -276,7 +281,13 @@ internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float =
     is IslandContent.Favorites -> cfg.favoritesHeightDp(c.apps.size)
     IslandContent.Translate -> cfg.translateHeightDp(TranslateSession.bodyDp.value)
     is IslandContent.Call -> if (c.isIncoming) 74f else 88f
-    is IslandContent.Status -> if (c.isPill()) (if (c.kind == StatusKind.Ringer) ringerPillHeightDp(cfg) else chargePillHeightDp(cfg)) else cfg.expandedHeightDp
+    is IslandContent.Status -> when {
+        c.isSysPill() -> sysPillHeightDp(cfg)
+        c.kind == StatusKind.LowBatteryCard -> LOWBATT_CARD_H_DP
+        c.isPill() -> if (c.kind == StatusKind.Ringer) ringerPillHeightDp(cfg) else chargePillHeightDp(cfg)
+        else -> cfg.expandedHeightDp
+    }
+    IslandContent.Photo -> cfg.more.designPhotoHDp
     is IslandContent.ScreenRec -> REC_PILL_H_DP
     is IslandContent.Shazam -> SHAZAM_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
@@ -439,6 +450,17 @@ fun IslandRoot(
                     val swDp = LocalConfiguration.current.screenWidthDp.toFloat()
                     geo = geo.copy(ew = ringerPillWidthDp(cfg, content.silent || content.vibrate, swDp).dp, eh = ringerPillHeightDp(cfg).dp)
                 } else geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
+            }
+            // Ağ / uçak modu / zil sesi / ince düşük pil: geniş iOS hapı; düşük pil kartı: açık ada genişliğinde kart
+            if (content is IslandContent.Status && content.isSysPill()) {
+                val swDp = LocalConfiguration.current.screenWidthDp.toFloat()
+                geo = geo.copy(ew = sysPillWidthDp(cfg, swDp).dp, eh = sysPillHeightDp(cfg).dp)
+            }
+            if (content is IslandContent.Status && content.kind == StatusKind.LowBatteryCard) geo = geo.copy(eh = LOWBATT_CARD_H_DP.dp)
+            // Özel tasarım fotoğrafı: ada çentiksiz, fotoğrafın tamamını gösteren büyük bir karta açılır
+            if (content is IslandContent.Photo) {
+                val swDp = LocalConfiguration.current.screenWidthDp.toFloat()
+                geo = geo.copy(ew = designPhotoWidthDp(cfg, swDp).dp, eh = cfg.more.designPhotoHDp.dp)
             }
             // Ekran kaydı: geri sayım / işleniyor aşamasında kapalı ada biraz genişler (sağda rakam / halka için)
             val recWide = !cfg.dotMode && content is IslandContent.ScreenRec &&
@@ -887,6 +909,16 @@ fun IslandPill(
         } else if (bgBoth != null || bgCompact != null || bgExpanded != null) {
             CustomBackdrop(bgBoth, bgCompact, bgExpanded, cfg.customBgDim, geo, progress)
         }
+        // Özel ada tasarımı (Ana Sayfa): boştaki ada (ve istenirse olaylı kapalı ada) seçilen desen / fotoğrafla dolar
+        val dsOn = cfg.more.designEnabled && !assistant && (!cfg.dotMode || content is IslandContent.Photo)
+        val dsPhoto = rememberCustomImage(CustomImages.Slot.DESIGN, if (dsOn && cfg.more.designStyle == DESIGN_PHOTO) cfg.more.designPhotoUri else "")
+        val dsFull = content is IslandContent.Idle || content is IslandContent.Photo
+        if (dsOn && !swallow && (dsFull || cfg.more.designAlways)) {
+            DesignFill(
+                cfg.more.designStyle, dsPhoto,
+                Modifier.fillMaxSize().graphicsLayer { alpha = if (dsFull) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f) },
+            )
+        }
 
         // Müzik çalarken alt kenarda albüm renginde hareketli ışık (içeriğin altında)
         if (media != null && cfg.musicBottomFx && !swallow && !cfg.dotMode) {
@@ -917,6 +949,10 @@ fun IslandPill(
                             StatusKind.Charging -> ChargeContent(content, rb)
                             StatusKind.Ringer -> RingerContent(content, rb, !cfg.ringerExpand, ringerPillHeightDp(cfg))
                             StatusKind.Volume -> VolumeContent(content, rb)
+                            StatusKind.Network, StatusKind.Airplane -> SysPillContent(content, geo.eh.value, rb)
+                            StatusKind.RingVolume -> RingVolumeContent(content, geo.eh.value, rb)
+                            StatusKind.LowBattery -> LowBatteryPillContent(content, geo.eh.value, rb)
+                            StatusKind.LowBatteryCard -> LowBatteryCardContent(content, rb)
                             else -> StatusContent(content, rb)
                         }
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin, artVideo)
@@ -925,6 +961,7 @@ fun IslandPill(
                     IslandContent.Translate -> TranslatePanel(cfg.compactHeightDp.dp)
                     is IslandContent.ScreenRec -> ScreenRecContent(content, onRecStop)
                     is IslandContent.Shazam -> ShazamContent(content, onShazamStop)
+                    IslandContent.Photo -> Unit      // fotoğraf arka planda (DesignFill) çizilir; üstünde çentik / içerik yok
                     IslandContent.Idle -> Unit
                 }
             }
@@ -1111,7 +1148,21 @@ fun IslandPill(
             if (swallow) snap() else tween(240, delayMillis = 60),
             label = "swallowAlpha",
         )
-        if (content is IslandContent.Media && cfg.pillMusicStyle && compactVisible && !swallow && !cfg.dotMode) {
+        val midOn = cfg.more.musicMid && !cfg.dotMode
+        if (content is IslandContent.Media && midOn && compactVisible && !swallow) {
+            // Orta boy müzik adası (iOS tarzı): kapak + şarkı + dalga, ilerleme çubuğu ve kontroller; ada bu boyutta açık kalır
+            Box(
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                    .graphicsLayer {
+                        val c = (1f - progress.mean * 2f).coerceIn(0f, 1f)
+                        alpha = c * swallowAlpha.value
+                        if (musicBlur) musicCompactBlur(c)
+                    },
+            ) {
+                MusicMidPanel(content, eqColor, cfg, onCommand, onOutput, customArt, onOpenMusic, artFlip, artSpin, artVideo)
+            }
+        }
+        if (content is IslandContent.Media && cfg.pillMusicStyle && !midOn && compactVisible && !swallow && !cfg.dotMode) {
             // Hap tasarımı (küçültülmüş ada): solda kapak, ortada başlık / dalga / ilerleme, sağda kontrol düğmeleri
             Box(
                 Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
@@ -1122,7 +1173,7 @@ fun IslandPill(
                 }
             }
         }
-        if (content is IslandContent.Media && !cfg.pillMusicStyle && compactVisible && !swallow && !cfg.dotMode) {
+        if (content is IslandContent.Media && !cfg.pillMusicStyle && !midOn && compactVisible && !swallow && !cfg.dotMode) {
             // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val fade = Modifier.graphicsLayer {

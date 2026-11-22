@@ -120,6 +120,52 @@ object FavoriteStore {
     }
 }
 
+// ---------------------------------------------------------------- Beğeni düğmesi (kalp ya da yıldız)
+/**
+ * Beğeni düğmesi: uygulamada saklanır ve mümkünse çalan oynatıcıda da beğenilir. Ayara göre kalp ya da yıldız çizilir
+ * (Ayarlar > Beğeni düğmesi > Yıldız simgesi).
+ */
+@Composable
+private fun FavButton(
+    m: IslandContent.Media, cfg: IslandSettings, size: Dp, modifier: Modifier = Modifier,
+    rb: RainbowStyle? = null, hit: Dp = 48.dp, fxId: String? = "heart",
+) {
+    val ctx = LocalContext.current
+    val favKey = remember(m.title, m.artist) { "${m.title}|${m.artist}" }
+    var fav by remember(favKey) { mutableStateOf(FavoriteStore.isFav(ctx, favKey)) }
+    var lastTap by remember { mutableLongStateOf(0L) }
+    // Uygulamanın gerçek beğeni durumu biliniyorsa simgeyi ona eşitle (dokunuştan hemen sonra karışma)
+    LaunchedEffect(favKey) {
+        while (true) {
+            if (SystemClock.elapsedRealtime() - lastTap > 2500) {
+                PlayerLike.likedState(ctx, m.title)?.let { real ->
+                    if (real != fav) { fav = real; FavoriteStore.set(ctx, favKey, real) }
+                }
+            }
+            delay(2000)
+        }
+    }
+    // Beğenilmiş simgenin rengi: kapaktan (açıksa ve kapak varsa), yoksa ayarlardaki renk
+    val baseHeart = if (cfg.likeArtColor && m.artColor != 0) glowTone(Color(m.artColor)) else Color(cfg.likeColorArgb)
+    val heartColor by animateColorAsState(baseHeart, tween(450), label = "heartColor")
+    val star = cfg.more.favStar
+    val kind = when {
+        star && fav -> Ctl.StarOn
+        star -> Ctl.Star
+        fav -> Ctl.HeartOn
+        else -> Ctl.Heart
+    }
+    CtlButton(kind, size, modifier, heartColor, rb, fxId = fxId, hit = hit) {
+        val want = !fav
+        fav = want; lastTap = SystemClock.elapsedRealtime()
+        FavoriteStore.set(ctx, favKey, want)
+        // Çalan uygulamada da beğen / beğenmekten vazgeç
+        if (!PlayerLike.setLiked(ctx, m.title, want)) {
+            Toast.makeText(ctx.applicationContext, "Bu oynatıcı dışarıdan beğenmeyi desteklemiyor", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
 // ---------------------------------------------------------------- Genişletilmiş müzik paneli
 @Composable
 fun MusicPanel(
@@ -136,27 +182,48 @@ fun MusicPanel(
     artSpin: () -> Float = { 0f },    // ada açılırken / küçülürken kapağın dönüş açısı (derece)
     artVideo: String = "",            // doluysa kapak yerine bu video çalar
 ) {
-    val ctx = LocalContext.current
     val rb = rememberRainbowStyle(cfg)
     val noRipple = remember { MutableInteractionSource() }
-    val favKey = remember(m.title, m.artist) { "${m.title}|${m.artist}" }
-    var fav by remember(favKey) { mutableStateOf(FavoriteStore.isFav(ctx, favKey)) }
-    var lastTap by remember { mutableLongStateOf(0L) }
-    // Uygulamanın gerçek beğeni durumu biliniyorsa kalbi ona eşitle (dokunuştan hemen sonra karışma)
-    LaunchedEffect(favKey) {
-        while (true) {
-            if (SystemClock.elapsedRealtime() - lastTap > 2500) {
-                PlayerLike.likedState(ctx, m.title)?.let { real ->
-                    if (real != fav) { fav = real; FavoriteStore.set(ctx, favKey, real) }
+
+    // "Sözler sağda": kontroller solda, şarkı sözleri sağda (ekran görüntüsündeki düzen)
+    if (cfg.lyricsEnabled && cfg.lyricsInPanel && cfg.more.lyricsSide) {
+        Row(
+            Modifier.fillMaxSize().padding(start = 18.dp, end = 16.dp, top = 24.dp, bottom = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(0.56f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box((if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier).fxTarget("art")) {
+                        FlipAlbumArt(customArt ?: m.art, 50.dp, artFlip, artSpin, 11.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
+                    }
+                    Column(
+                        Modifier.weight(1f)
+                            .then(if (cfg.openExpTitle) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier)
+                            .fxTarget("title"),
+                    ) {
+                        MarqueeText(
+                            m.title.ifBlank { "Bilinmeyen parça" }, Modifier.fillMaxWidth().rainbowFill(rb),
+                            color = Pal.c("music_title"), fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                        )
+                        Text(m.artist, color = Pal.c("music_artist"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().rainbowFill(rb))
+                    }
+                }
+                Box(Modifier.fxTarget("progress")) { MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) } }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    FavButton(m, cfg, 19.dp, rb = rb, hit = 36.dp)
+                    CtlButton(Ctl.Rew, 20.dp, rb = rb, fxId = "rew", hit = 38.dp) { onCommand(MediaCommand.Previous) }
+                    CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 24.dp, rb = rb, fxId = "play", hit = 40.dp) { onCommand(MediaCommand.PlayPause) }
+                    CtlButton(Ctl.Fwd, 20.dp, rb = rb, fxId = "fwd", hit = 38.dp) { onCommand(MediaCommand.Next) }
+                    CtlButton(Ctl.Cast, 20.dp, rb = rb, fxId = "cast", hit = 36.dp) { onOutput() }
                 }
             }
-            delay(2000)
+            Box(Modifier.weight(0.44f).fillMaxHeight().fxTarget("lyrics")) {
+                SideLyrics(cfg, lyrics, frame, Modifier.fillMaxSize(), artColor = m.artColor)
+            }
         }
+        return
     }
-
-    // Beğenilmiş kalbin rengi: kapaktan (açıksa ve kapak varsa), yoksa ayarlardaki renk
-    val baseHeart = if (cfg.likeArtColor && m.artColor != 0) glowTone(Color(m.artColor)) else Color(cfg.likeColorArgb)
-    val heartColor by animateColorAsState(baseHeart, tween(450), label = "heartColor")
 
     Column(
         Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 20.dp),
@@ -192,21 +259,66 @@ fun MusicPanel(
         Box(Modifier.fxTarget("progress")) { MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) } }
 
         Row(Modifier.fillMaxWidth().offset(y = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp), heartColor, rb, fxId = "heart") {
-                val want = !fav
-                fav = want; lastTap = SystemClock.elapsedRealtime()
-                FavoriteStore.set(ctx, favKey, want)
-                // Çalan uygulamada da beğen / beğenmekten vazgeç
-                if (!PlayerLike.setLiked(ctx, m.title, want)) {
-                    Toast.makeText(ctx.applicationContext, "Bu oynatıcı dışarıdan beğenmeyi desteklemiyor", Toast.LENGTH_SHORT).show()
-                }
-            }
+            FavButton(m, cfg, 22.dp, Modifier.offset(x = (-8).dp), rb)
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 CtlButton(Ctl.Rew, 24.dp, rb = rb, fxId = "rew") { onCommand(MediaCommand.Previous) }
                 CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp, rb = rb, fxId = "play") { onCommand(MediaCommand.PlayPause) }
                 CtlButton(Ctl.Fwd, 24.dp, rb = rb, fxId = "fwd") { onCommand(MediaCommand.Next) }
             }
             CtlButton(Ctl.Cast, 25.dp, Modifier.offset(x = 5.dp), rb = rb, fxId = "cast") { onOutput() }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Orta boy müzik adası (iOS tarzı, kapalı hal yerine)
+/**
+ * Müzik çalarken adanın küçülmeden kaldığı orta boy görünüm: üstte kapak + şarkı / sanatçı + dalga,
+ * ortada ilerleme çubuğu, altta beğeni, geri, oynat / duraklat, ileri ve çıkış düğmeleri.
+ * Boş yerine dokununca ada tam boy panele açılır.
+ */
+@Composable
+fun MusicMidPanel(
+    m: IslandContent.Media,
+    accent: Color,
+    cfg: IslandSettings,
+    onCommand: (MediaCommand) -> Unit,
+    onOutput: () -> Unit,
+    customArt: ImageBitmap? = null,
+    onOpenMusic: () -> Unit = {},
+    artFlip: ArtFlip? = null,
+    artSpin: () -> Float = { 0f },
+    artVideo: String = "",
+) {
+    val rb = rememberRainbowStyle(cfg)
+    val noRipple = remember { MutableInteractionSource() }
+    Column(
+        Modifier.fillMaxSize().padding(start = 16.dp, end = 14.dp, top = 22.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            Box(if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier) {
+                FlipAlbumArt(customArt ?: m.art, 44.dp, artFlip, artSpin, 10.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
+            }
+            Column(
+                Modifier.weight(1f)
+                    .then(if (cfg.openExpTitle) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier),
+            ) {
+                MarqueeText(
+                    m.title.ifBlank { "Bilinmeyen parça" }, Modifier.fillMaxWidth().rainbowFill(rb),
+                    color = Pal.c("music_title"), fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                )
+                Text(m.artist, color = Pal.c("music_artist"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().rainbowFill(rb))
+            }
+            Equalizer(accent, height = 16.dp, barWidth = 3.dp, animate = m.playing, rainbow = rb)
+        }
+        MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            FavButton(m, cfg, 19.dp, rb = rb, hit = 38.dp, fxId = null)
+            CtlButton(Ctl.Rew, 22.dp, rb = rb, hit = 40.dp) { onCommand(MediaCommand.Previous) }
+            CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 26.dp, rb = rb, hit = 42.dp) { onCommand(MediaCommand.PlayPause) }
+            CtlButton(Ctl.Fwd, 22.dp, rb = rb, hit = 40.dp) { onCommand(MediaCommand.Next) }
+            CtlButton(Ctl.Cast, 21.dp, rb = rb, hit = 38.dp) { onOutput() }
         }
     }
 }
@@ -402,7 +514,23 @@ private fun hueShift(c: Color, deg: Float): Color {
 }
 
 // ---------------------------------------------------------------- Kontrol ikonları (Canvas; ek ikon kütüphanesi gerekmez)
-enum class Ctl { Play, Pause, Next, Prev, Rew, Fwd, Heart, HeartOn, Cast }
+enum class Ctl { Play, Pause, Next, Prev, Rew, Fwd, Heart, HeartOn, Star, StarOn, Cast }
+
+/** Beş köşeli yıldız (beğeni düğmesinin yıldız seçeneği). */
+private fun DrawScope.star(s: Float, filled: Boolean, color: Color) {
+    val p = Path()
+    val cx = 0.5f * s; val cy = 0.53f * s
+    val ro = 0.48f * s; val ri = 0.20f * s
+    for (i in 0 until 10) {
+        val r = if (i % 2 == 0) ro else ri
+        val a = Math.toRadians((-90.0 + i * 36.0))
+        val x = cx + (r * kotlin.math.cos(a)).toFloat()
+        val y = cy + (r * kotlin.math.sin(a)).toFloat()
+        if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+    }
+    p.close()
+    if (filled) drawPath(p, color) else drawPath(p, color, style = Stroke(width = 0.08f * s, join = StrokeJoin.Round))
+}
 
 private fun DrawScope.heart(s: Float, filled: Boolean, color: Color) {
     val p = Path().apply {
@@ -429,17 +557,17 @@ private fun DrawScope.cast(s: Float, color: Color) {
 }
 
 @Composable
-private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartColor: Color = Color(0xFFFF2D6F), rb: RainbowStyle? = null, fxId: String? = null, onClick: () -> Unit) {
+private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartColor: Color = Color(0xFFFF2D6F), rb: RainbowStyle? = null, fxId: String? = null, hit: Dp = 48.dp, onClick: () -> Unit) {
     val fxMod = if (fxId != null) modifier.fxTarget(fxId) else modifier
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "press")
     Box(
-        fxMod.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
+        fxMod.size(hit).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
             .clickable(interactionSource = src, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(size).rainbowFill(rb, 48.dp)) {
+        Canvas(Modifier.size(size).rainbowFill(rb, hit)) {
             val s = this.size.width
             fun tri(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
                 val p = Path().apply { moveTo(x1 * s, y1 * s); lineTo(x2 * s, y2 * s); lineTo(x3 * s, y3 * s); close() }
@@ -455,6 +583,8 @@ private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartC
                 Ctl.Fwd -> { tri(0.04f, 0.20f, 0.04f, 0.80f, 0.50f, 0.50f); tri(0.50f, 0.20f, 0.50f, 0.80f, 0.96f, 0.50f) }
                 Ctl.Heart -> heart(s, false, Pal.c("music_ctl_dim"))
                 Ctl.HeartOn -> heart(s, true, heartColor)
+                Ctl.Star -> star(s, false, Pal.c("music_ctl_dim"))
+                Ctl.StarOn -> star(s, true, heartColor)
                 Ctl.Cast -> cast(s, Pal.c("music_ctl_dim"))
             }
         }

@@ -22,8 +22,12 @@ class VolumeController(private val host: IslandHost) {
         val r = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != ACTION) return
-                if (intent.getIntExtra(EXTRA_TYPE, -1) != AudioManager.STREAM_MUSIC) return
-                runCatching { onVolume() }
+                when (intent.getIntExtra(EXTRA_TYPE, -1)) {
+                    AudioManager.STREAM_MUSIC -> runCatching { onVolume() }
+                    AudioManager.STREAM_RING -> runCatching {
+                        onRing(intent.getIntExtra(EXTRA_VALUE, -1), intent.getIntExtra(EXTRA_PREV, -1))
+                    }
+                }
             }
         }
         receiver = r
@@ -53,8 +57,30 @@ class VolumeController(private val host: IslandHost) {
         )
     }
 
+    /**
+     * Zil sesi seviyesi (iOS 26 ekran kaydındaki gibi): ada geniş hap olur; solda zil + "Zil", sağda ince seviye çubuğu.
+     * Yalnızca telefon sesli moddayken ve seviye gerçekten değiştiğinde gösterilir (sessize / titreşime geçişi zil modu göstergesi anlatır).
+     */
+    private fun onRing(value: Int, prev: Int) {
+        val s = host.settings
+        if (!s.more.ringVolIndicator) return
+        if (host.busy || host.blocked) return
+        if (value >= 0 && prev >= 0 && value == prev) return
+        val am = host.context.getSystemService(AudioManager::class.java) ?: return
+        if (am.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
+        val max = am.getStreamMaxVolume(AudioManager.STREAM_RING).coerceAtLeast(1)
+        val v = (if (value >= 0) value else am.getStreamVolume(AudioManager.STREAM_RING)).coerceIn(0, max)
+        val frac = v.toFloat() / max
+        host.showTemporarily(
+            IslandContent.Status(StatusKind.RingVolume, title = "Zil", value = "%${(frac * 100).roundToInt()}", progress = frac),
+            1_600L,
+        )
+    }
+
     private companion object {
         const val ACTION = "android.media.VOLUME_CHANGED_ACTION"
         const val EXTRA_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
+        const val EXTRA_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
+        const val EXTRA_PREV = "android.media.EXTRA_PREV_VOLUME_STREAM_VALUE"
     }
 }

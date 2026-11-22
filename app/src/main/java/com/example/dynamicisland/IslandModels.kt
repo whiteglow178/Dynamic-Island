@@ -11,7 +11,18 @@ import kotlinx.coroutines.flow.asSharedFlow
 @Immutable
 data class FavApp(val pkg: String, val label: String, val icon: ImageBitmap?)
 
-enum class StatusKind { Ringer, Charging, Timer, Alarm, Camera, Mic, Volume }
+enum class StatusKind {
+    Ringer, Charging, Timer, Alarm, Camera, Mic, Volume,
+    Network,          // internet bağlandı / kesildi (geniş iOS hapı)
+    Airplane,         // uçak modu açıldı / kapandı (geniş iOS hapı)
+    RingVolume,       // zil sesi seviyesi (geniş iOS hapı: zil simgesi + "Zil" + ince seviye çubuğu)
+    LowBattery,       // düşük pil: ince geniş hap (ada genişlemez)
+    LowBatteryCard,   // düşük pil: büyük kart (Düşük Güç Modu düğmesi)
+}
+
+/** Geniş, tek satırlık iOS hapları: ağ, uçak modu, zil sesi seviyesi ve ince düşük pil hapı. */
+fun IslandContent.Status.isSysPill(): Boolean =
+    kind == StatusKind.Network || kind == StatusKind.Airplane || kind == StatusKind.RingVolume || kind == StatusKind.LowBattery
 
 /** Dar "hap" şeklinde açılan durumlar: şarj ve zil modu (Zil / Sessiz / Titreşim). */
 fun IslandContent.Status.isPill(): Boolean = kind == StatusKind.Charging || kind == StatusKind.Ringer || kind == StatusKind.Volume
@@ -31,6 +42,9 @@ sealed interface IslandContent {
 
     /** Boştayken adaya dokununca/basılı tutunca açılan favori uygulamalar paneli. */
     data class Favorites(val apps: List<FavApp>) : IslandContent
+
+    /** Özel ada tasarımı (fotoğraf): boştaki adaya dokununca ada genişleyip fotoğrafı tamamen gösterir. */
+    data object Photo : IslandContent
 
     /** Boştayken adaya dokununca açılan çeviri paneli (üstte dil seçimi, altta yazı alanı + sonuç). Durum [TranslateSession]'dadır. */
     data object Translate : IslandContent
@@ -65,6 +79,7 @@ sealed interface IslandContent {
         val totalMs: Long = 0L,          // zamanlayıcı: toplam süre
         val silent: Boolean = false,     // zil modu: sessiz mi
         val vibrate: Boolean = false,    // zil modu: titreşim mi (silent=false, vibrate=true -> titreşim)
+        val extra: Int = 0,              // ağ: 0 Wi-Fi, 1 mobil, 2 diğer, 3 bağlantı yok; uçak: 1 açık; düşük pil: 1 düşük güç modu açık
     ) : IslandContent
 
     /** Sistem ekran kaydı: geri sayım / kayıt / işleniyor / kaydedildi. Süre UI'da startedAt'ten hesaplanır. */

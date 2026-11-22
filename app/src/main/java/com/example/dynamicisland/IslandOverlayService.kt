@@ -147,6 +147,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { privacy.start() }
         runCatching { ringer.start() }
         runCatching { volume.start() }
+        runCatching { sysStatus.start() }       // düşük pil, internet, uçak modu
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
         runCatching { torch.start() }           // fener açılınca ada göstergesi + ışık kartı
@@ -232,7 +233,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Favorites -> 4
         IslandContent.Translate -> 12
         is IslandContent.Call -> if (c.isIncoming) 5 else 6
-        is IslandContent.Status -> if (c.kind == StatusKind.Ringer) 13 else if (c.isPill()) 8 else 7
+        is IslandContent.Status -> when {
+            c.kind == StatusKind.Ringer -> 13
+            c.isSysPill() -> 14                                   // ağ / uçak / zil sesi / ince düşük pil: geniş iOS hapı
+            c.kind == StatusKind.LowBatteryCard -> 15            // düşük pil kartı
+            c.isPill() -> 8
+            else -> 7
+        }
+        IslandContent.Photo -> 16                                // özel tasarım fotoğrafı (genişlemiş)
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
         is IslandContent.Shazam -> 11
     }
@@ -563,6 +571,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cc is IslandContent.Notif -> update { it }
             cc is IslandContent.Status -> update { it }
             cc is IslandContent.Favorites -> update { it }              // favori paneli açıkken müzik paneline geçme
+            cc is IslandContent.Photo -> update { it }                  // fotoğraf açıkken müzik ortayı almaz (kapanınca gelir)
             cc is IslandContent.Translate -> update { it }              // çeviri yazılırken müzik paneline geçme
             cc is IslandContent.Shazam -> update { it }                 // Shazam dinlerken / sonucu gösterirken müzik ortayı almaz
             cc is IslandContent.ScreenRec && cc.phase == RecPhase.Saved -> update { it }   // "kaydedildi" görünümü bozulmasın
@@ -734,9 +743,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandContent.Favorites -> favorites.onTap()
             IslandContent.Translate -> Unit      // panelin içi kendi dokunuşlarını işler (yazı alanı, dil, kapat)
+            IslandContent.Photo -> {
+                // Açılır açılmaz gelen titreşimli ikinci dokunuş fotoğrafı hemen kapatmasın
+                if (android.os.SystemClock.elapsedRealtime() - photoOpenedAt < 400L) return
+                collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+            }
             IslandContent.Idle -> {
                 val s = settings.value
-                if (s.translateReady() && s.translateTrigger == 0) openTranslate()
+                if (s.designPhotoReady() && s.more.designPhotoTrigger == 0) openPhoto()
+                else if (s.translateReady() && s.translateTrigger == 0) openTranslate()
                 else if (s.favoritesReady() && s.favoritesTrigger == 0) favorites.open()
             }
             IslandContent.Assistant -> Unit
@@ -745,7 +760,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (!call.incoming && peeking()) collapseNow()          // baloncuktan açılmış arama: dokununca baloncuğa geri küçülür
                 else if (!call.incoming) call.toggleExpanded()
             }
-            is IslandContent.Status -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            is IslandContent.Status -> {
+                val st = cur.content as IslandContent.Status
+                // Düşük pil: dokununca düşük güç modu açılır (izin varsa) ya da pil tasarrufu ayarı açılır
+                if (st.kind == StatusKind.LowBattery || st.kind == StatusKind.LowBatteryCard) {
+                    if (sysStatus.onLowBatteryTap(st)) return
+                }
+                collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+            }
             is IslandContent.Shazam -> {
                 // Bulunan şarkıya dokununca Shazam açılır; dinlerken dokunma "Listening..." panelini açar / küçültür
                 if ((cur.content as IslandContent.Shazam).phase == ShazamPhase.Found) { call.send(shazam.open); shazam.end() }
@@ -763,6 +785,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------- Özel tasarım fotoğrafı
+    private var photoOpenedAt = 0L
+
+    /** Boştaki adaya dokununca (ya da basılı tutunca) ada çentiksiz büyük bir karta açılıp seçilen fotoğrafı gösterir. */
+    private fun openPhoto() {
+        val s = settings.value
+        if (!s.designPhotoReady() || assistantActive || call.active) return
+        photoOpenedAt = android.os.SystemClock.elapsedRealtime()
+        showTemporarily(IslandContent.Photo, (s.more.designPhotoSec * 1000f).toLong())
     }
 
     // ---------------------------------------------------------------- Ayrı dosyalara taşınan olaylar
@@ -800,6 +833,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val privacy: PrivacyController by lazy { PrivacyController(host) }
     private val ringer: RingerController by lazy { RingerController(host) }
     private val volume: VolumeController by lazy { VolumeController(host) }
+    private val sysStatus: SystemStatusController by lazy { SystemStatusController(host) }
 
     // ---- Kilit ekranı noktası
     private val lockDot by lazy {
@@ -1047,6 +1081,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (gesturePad.canShow()) gesturePad.show()
                 else android.widget.Toast.makeText(this, "Çizerek komut için erişilebilirlik ya da 'üstte göster' izni gerekli", android.widget.Toast.LENGTH_LONG).show()
             }
+            else if (s.designPhotoReady() && s.more.designPhotoTrigger == 1) openPhoto()
             else if (s.translateReady() && s.translateTrigger == 1) openTranslate()
             else if (s.favoritesReady()) favorites.open()
             else if (s.playDoodle) IslandDoodleActivity.open(this)          // karalama tahtası
@@ -1948,6 +1983,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 assistant -> s.assistantWidthDp
                 k.kind == 8 -> maxOf(CHARGE_PILL_W_DP, s.compactWidthDp)     // şarj: kompakt pill
                 k.kind == 13 -> ringerPillWidthDp(s, true, wm.currentWindowMetrics.bounds.width() / density)   // zil / sessiz (en geniş hal)
+                k.kind == 14 -> sysPillWidthDp(s, wm.currentWindowMetrics.bounds.width() / density)           // ağ / uçak / zil sesi / düşük pil hapı
+                k.kind == 16 -> designPhotoWidthDp(s, wm.currentWindowMetrics.bounds.width() / density)       // özel tasarım fotoğrafı
                 k.kind == 9 || k.kind == 10 -> recExpandedWidthDp(s, wm.currentWindowMetrics.bounds.width() / density)   // ekran kaydı
                 else -> s.expandedWidthDp
             }
@@ -1960,6 +1997,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 6 -> 88f          // aktif arama
                 k.kind == 8 -> chargePillHeightDp(s)   // şarj
                 k.kind == 13 -> ringerPillHeightDp(s)  // zil / sessiz
+                k.kind == 14 -> sysPillHeightDp(s)     // geniş iOS hapı
+                k.kind == 15 -> LOWBATT_CARD_H_DP      // düşük pil kartı
+                k.kind == 16 -> s.more.designPhotoHDp  // özel tasarım fotoğrafı
                 k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
                 k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
@@ -1985,7 +2025,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
         val playTouch = k.kind == 0 && s.showIdle &&
             (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant || s.playVisitors || s.playBreath)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden)
         when {
             k.stackH > 0 -> {
                 // Yığın görünümü: pencere kartların toplam boyutunda
@@ -2204,6 +2244,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { privacy.stop() }
         runCatching { ringer.stop() }
         runCatching { volume.stop() }
+        runCatching { sysStatus.stop() }
         runCatching { sideVolume.hide() }
         runCatching { sfxTriggers.stop() }
         runCatching { lockDot.stop() }

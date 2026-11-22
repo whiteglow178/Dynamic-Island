@@ -193,6 +193,8 @@ data class IslandSettings(
     val musicFluidAnim: Boolean = false,      // Akıcı yutma: pencere bulanıklaşarak adaya küçülür, ada şişip yutar; müzik açılışı da aynı tarzda
     // Oyuncak ada ayarları ayrı sınıfta (bkz. PlaySettings): bu sınıf JVM'in 255 parametre sınırına yaklaştı
     val play: PlaySettings = PlaySettings(),
+    // Yeni eklenen ayarlar (özel ada tasarımı, sistem göstergeleri, orta boy müzik...) yine ayrı sınıfta: bkz. MoreSettings
+    val more: MoreSettings = MoreSettings(),
     // Müzik uygulamasını açma + hareketler
     val musicOpenAnim: Boolean = true,        // adadan müzik uygulamasını açarken açılış animasyonu
     val launchClassic: Boolean = false,       // bildirim + müzik uygulaması açılışı: klasik büyüyen ekran
@@ -387,8 +389,11 @@ data class IslandSettings(
     /** Genişletilmiş panelde şarkı sözü satırına ayrılan sabit yükseklik. */
     fun lyricsBlockDp(): Float = ceil(lyricsPanelSizeSp * 1.3f * lyricsPanelLines) + 10f
 
-    /** Müzik panelinin temel yüksekliğine eklenen miktar (sözler açıksa söz alanı dahil). */
-    fun musicExtraDp(): Float = MUSIC_EXTRA_DP + if (lyricsEnabled && lyricsInPanel) lyricsBlockDp() else 0f
+    /**
+     * Müzik panelinin temel yüksekliğine eklenen miktar (sözler açıksa söz alanı dahil).
+     * "Sözler sağda" düzeninde sözler kontrollerin yanında durduğu için ek yükseklik gerekmez.
+     */
+    fun musicExtraDp(): Float = MUSIC_EXTRA_DP + if (lyricsEnabled && lyricsInPanel && !more.lyricsSide) lyricsBlockDp() else 0f
 
     /** Yalnızca şarkı sözü ayarlarını varsayılana döndürür. */
     fun withLyricsDefaults(): IslandSettings {
@@ -404,6 +409,7 @@ data class IslandSettings(
             lyricsFillEnabled = d.lyricsFillEnabled, lyricsOffsetMs = d.lyricsOffsetMs,
             lyricsGlowEnabled = d.lyricsGlowEnabled, lyricsGlowLevel = d.lyricsGlowLevel,
             lyricsAnimEnabled = d.lyricsAnimEnabled, lyricsAnimStyle = d.lyricsAnimStyle, lyricsAnimMs = d.lyricsAnimMs,
+            more = more.copy(lyricsSide = d.more.lyricsSide),
         )
     }
 }
@@ -500,6 +506,42 @@ val IslandSettings.playNightLight get() = play.playNightLight
 val IslandSettings.playNightAmt get() = play.playNightAmt
 val IslandSettings.playShadow get() = play.playShadow
 
+/**
+ * Sonradan eklenen ayarlar. Ana sınıf JVM'in parametre sınırına yaklaştığı için ayrı tutulur (bkz. PlaySettings).
+ */
+@Immutable
+data class MoreSettings(
+    // ---- Özel ada tasarımı (Ana Sayfa): boştaki ada seçilen desenle ya da fotoğrafla dolar
+    val designEnabled: Boolean = false,
+    val designStyle: Int = 0,               // 0 siyah, 1 yıldızlı gece, 2 zebra dalga, 3 turkuaz mandala, 4 gün batımı, 5 sarı mozaik, 6 fotoğraf
+    val designPhotoUri: String = "",        // boş = fotoğraf seçilmedi (galerideki adres; kopyalanmaz)
+    val designAlways: Boolean = false,      // olay varken de (kapalı adada) desen görünsün
+    val designPhotoExpand: Boolean = true,  // fotoğraf tasarımında: boştaki adaya dokununca ada genişleyip fotoğrafı gösterir
+    val designPhotoTrigger: Int = 0,        // 0 dokununca, 1 basılı tutunca
+    val designPhotoWDp: Float = 340f,       // genişleyen fotoğraf adasının boyutu
+    val designPhotoHDp: Float = 170f,
+    val designPhotoSec: Float = 5f,         // açık kalma süresi (sn)
+    // ---- Orta boy müzik adası (Hap tasarımları): müzik çalarken ada küçülmez, orta boyda açık kalır
+    val musicMid: Boolean = false,
+    val musicMidWDp: Float = 350f,
+    val musicMidHDp: Float = 150f,
+    // ---- Sistem göstergeleri
+    val lowBattIndicator: Boolean = true,   // pil %20 ve %10'a düşünce adada uyarı
+    val lowBattExpand: Boolean = false,     // false: ince geniş hap (genişlemez), true: büyük kart (Düşük Güç Modu düğmesiyle)
+    val netIndicator: Boolean = true,       // internet bağlanınca / kesilince adada iOS tarzı hap
+    val airplaneIndicator: Boolean = true,  // uçak modu açılınca / kapanınca
+    val ringVolIndicator: Boolean = true,   // zil sesi seviyesi değişince "Zil" + seviye çubuğu
+    // ---- Müzik paneli
+    val favStar: Boolean = false,           // beğeni düğmesi kalp yerine yıldız
+    val lyricsSide: Boolean = false,        // açık müzik adası: kontroller solda, şarkı sözleri sağda
+)
+
+/** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
+fun IslandSettings.designPhotoReady(): Boolean =
+    more.designEnabled && more.designStyle == DESIGN_PHOTO && more.designPhotoUri.isNotEmpty() && more.designPhotoExpand && showIdle
+
+const val DESIGN_PHOTO = 6
+
 class SettingsRepository(context: Context) {
     private val store = context.applicationContext.islandStore
     private object K {
@@ -589,6 +631,14 @@ class SettingsRepository(context: Context) {
         val TRN_ON = booleanPreferencesKey("trn_on"); val TRN_TRIG = intPreferencesKey("trn_trig")
         val TRN_SRC = stringPreferencesKey("trn_src"); val TRN_TGT = stringPreferencesKey("trn_tgt")
         val CE_ON = booleanPreferencesKey("ce_on"); val CE_MAP = stringPreferencesKey("ce_map")
+        // MoreSettings
+        val DS_ON = booleanPreferencesKey("ds_on"); val DS_STYLE = intPreferencesKey("ds_style"); val DS_PHOTO = stringPreferencesKey("ds_photo")
+        val DS_ALW = booleanPreferencesKey("ds_alw"); val DS_EXP = booleanPreferencesKey("ds_exp"); val DS_TRIG = intPreferencesKey("ds_trig")
+        val DS_W = floatPreferencesKey("ds_w"); val DS_H = floatPreferencesKey("ds_h"); val DS_SEC = floatPreferencesKey("ds_sec")
+        val MID_ON = booleanPreferencesKey("mid_on"); val MID_W = floatPreferencesKey("mid_w"); val MID_H = floatPreferencesKey("mid_h")
+        val LB_ON = booleanPreferencesKey("lb_on"); val LB_EXP = booleanPreferencesKey("lb_exp")
+        val NET_ON = booleanPreferencesKey("net_on"); val AIR_ON = booleanPreferencesKey("air_on"); val RVOL_ON = booleanPreferencesKey("rvol_on")
+        val FAV_STAR = booleanPreferencesKey("fav_star"); val LY_SIDE = booleanPreferencesKey("ly_side")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -819,6 +869,27 @@ class SettingsRepository(context: Context) {
             translateTgt = p[K.TRN_TGT] ?: d.translateTgt,
             colorEditorEnabled = p[K.CE_ON] ?: d.colorEditorEnabled,
             colorOverrides = p[K.CE_MAP] ?: d.colorOverrides,
+            more = MoreSettings(
+                designEnabled = p[K.DS_ON] ?: d.more.designEnabled,
+                designStyle = (p[K.DS_STYLE] ?: d.more.designStyle).coerceIn(0, DESIGN_PHOTO),
+                designPhotoUri = p[K.DS_PHOTO] ?: d.more.designPhotoUri,
+                designAlways = p[K.DS_ALW] ?: d.more.designAlways,
+                designPhotoExpand = p[K.DS_EXP] ?: d.more.designPhotoExpand,
+                designPhotoTrigger = (p[K.DS_TRIG] ?: d.more.designPhotoTrigger).coerceIn(0, 1),
+                designPhotoWDp = (p[K.DS_W] ?: d.more.designPhotoWDp).coerceIn(160f, 420f),
+                designPhotoHDp = (p[K.DS_H] ?: d.more.designPhotoHDp).coerceIn(60f, 420f),
+                designPhotoSec = (p[K.DS_SEC] ?: d.more.designPhotoSec).coerceIn(1f, 30f),
+                musicMid = p[K.MID_ON] ?: d.more.musicMid,
+                musicMidWDp = (p[K.MID_W] ?: d.more.musicMidWDp).coerceIn(260f, 400f),
+                musicMidHDp = (p[K.MID_H] ?: d.more.musicMidHDp).coerceIn(140f, 220f),
+                lowBattIndicator = p[K.LB_ON] ?: d.more.lowBattIndicator,
+                lowBattExpand = p[K.LB_EXP] ?: d.more.lowBattExpand,
+                netIndicator = p[K.NET_ON] ?: d.more.netIndicator,
+                airplaneIndicator = p[K.AIR_ON] ?: d.more.airplaneIndicator,
+                ringVolIndicator = p[K.RVOL_ON] ?: d.more.ringVolIndicator,
+                favStar = p[K.FAV_STAR] ?: d.more.favStar,
+                lyricsSide = p[K.LY_SIDE] ?: d.more.lyricsSide,
+            ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
 
@@ -920,12 +991,25 @@ class SettingsRepository(context: Context) {
             it[K.TRN_ON] = s.translateEnabled; it[K.TRN_TRIG] = s.translateTrigger
             it[K.TRN_SRC] = s.translateSrc; it[K.TRN_TGT] = s.translateTgt
             it[K.CE_ON] = s.colorEditorEnabled; it[K.CE_MAP] = s.colorOverrides
+            val m = s.more
+            it[K.DS_ON] = m.designEnabled; it[K.DS_STYLE] = m.designStyle; it[K.DS_PHOTO] = m.designPhotoUri
+            it[K.DS_ALW] = m.designAlways; it[K.DS_EXP] = m.designPhotoExpand; it[K.DS_TRIG] = m.designPhotoTrigger
+            it[K.DS_W] = m.designPhotoWDp; it[K.DS_H] = m.designPhotoHDp; it[K.DS_SEC] = m.designPhotoSec
+            it[K.MID_ON] = m.musicMid; it[K.MID_W] = m.musicMidWDp; it[K.MID_H] = m.musicMidHDp
+            it[K.LB_ON] = m.lowBattIndicator; it[K.LB_EXP] = m.lowBattExpand
+            it[K.NET_ON] = m.netIndicator; it[K.AIR_ON] = m.airplaneIndicator; it[K.RVOL_ON] = m.ringVolIndicator
+            it[K.FAV_STAR] = m.favStar; it[K.LY_SIDE] = m.lyricsSide
         }
+    }
+
+    /** Kayıtlı ayarların yalnızca [f] ile değiştirilen kısmını yazar (Ana Sayfa'daki kartlar için). */
+    suspend fun update(f: (IslandSettings) -> IslandSettings) {
+        save(f(flow.first()))
     }
 
     // ---------------------------------------------------------------- Yedekleme
     /** Galeri adresleri başka cihazda / yeniden kurulumda geçerli olmadığı için yedeğe girmez. */
-    private val exportSkip = setOf("cb_u_both", "cb_u_c", "cb_u_e", "ca_u", "sfx_tap", "sfx_chg", "sfx_unp", "sfx_ntf", "sfx_sil", "sfx_call")
+    private val exportSkip = setOf("cb_u_both", "cb_u_c", "cb_u_e", "ca_u", "sfx_tap", "sfx_chg", "sfx_unp", "sfx_ntf", "sfx_sil", "sfx_call", "ds_photo")
 
     /** Tüm kayıtlı ayarları JSON metni olarak verir. */
     suspend fun exportJson(): String {

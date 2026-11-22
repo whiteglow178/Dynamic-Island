@@ -35,6 +35,7 @@ object CustomImages {
         BG_COMPACT(1280),   // yalnızca kapalı ada
         BG_EXPANDED(1280),  // yalnızca açık ada
         ART(512),           // albüm kapağı yerine
+        DESIGN(1280),       // Ana Sayfa > Özel ada tasarımı: fotoğraf
     }
 
     // Her slot için tek giriş: (uri, bitmap). Yalnızca bellekte.
@@ -126,6 +127,7 @@ fun IslandSettings.imageUri(slot: CustomImages.Slot): String = when (slot) {
     CustomImages.Slot.BG_COMPACT -> customBgCompactUri
     CustomImages.Slot.BG_EXPANDED -> customBgExpandedUri
     CustomImages.Slot.ART -> customArtUri
+    CustomImages.Slot.DESIGN -> more.designPhotoUri
 }
 
 fun IslandSettings.withImageUri(slot: CustomImages.Slot, v: String): IslandSettings = when (slot) {
@@ -133,6 +135,7 @@ fun IslandSettings.withImageUri(slot: CustomImages.Slot, v: String): IslandSetti
     CustomImages.Slot.BG_COMPACT -> copy(customBgCompactUri = v)
     CustomImages.Slot.BG_EXPANDED -> copy(customBgExpandedUri = v)
     CustomImages.Slot.ART -> copy(customArtUri = v)
+    CustomImages.Slot.DESIGN -> copy(more = more.copy(designPhotoUri = v))
 }
 
 /** Adres boşsa null; değilse galeriden (arka planda) okunmuş görsel. Adres değişince yeniden yüklenir. */

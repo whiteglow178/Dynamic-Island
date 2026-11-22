@@ -105,6 +105,10 @@ private val TryItems = listOf(
     TryItem("Asistan", "Asistan animasyonu ve ekran kenarı parıltısı.", Color(0xFFAF52DE), 8),
     TryItem("Favoriler", "Favori uygulamalar paneli. Ayarlardan favori uygulama seçili olmalı.", Color(0xFF5E5CE6), 9),
     TryItem("Shazam", "Şarkı tanıma. Önce dinler, sonra şarkıyı bulup adayı genişletir ve albüm kapağını animasyonla gösterir.", Color(0xFF1E9BFF), 10),
+    TryItem("İnternet", "Wi-Fi bağlandı ve bağlantı kesildi görünümü. Her dokunuşta değişir.", Color(0xFF0A84FF), 11),
+    TryItem("Uçak Modu", "Uçak modu açıldı görünümü.", Color(0xFFFF9F0A), 12),
+    TryItem("Zil Sesi", "Zil sesi seviyesi: ada yana genişler, seviye çubuğu değişir.", Color(0xFFD1D1D6), 13),
+    TryItem("Düşük Pil", "Düşük pil uyarısı. Ayarlarda \"Düşük pil uyarısı genişlesin\" açıksa büyük kart olarak açılır.", Color(0xFFFF3B30), 14),
 )
 
 /** Dönme açısı (derece). Fazla dönmesin diye küçük; ters yöne dönerse eksi yap. */
@@ -281,6 +285,33 @@ private fun tryIslandScript(
             delay(3000)
             ui.openIsland(IslandContent.Shazam(ShazamPhase.Found, "Sweater Weather", "The Neighbourhood", makeDemoCover()))
             delay(4500); ui.closeIsland()
+        }
+        11 -> {
+            ui.openIsland(
+                if (silent) IslandContent.Status(StatusKind.Network, title = "Wi-Fi", value = "Bağlantı kesildi", extra = 3)
+                else IslandContent.Status(StatusKind.Network, title = "Wi-Fi", value = "Bağlandı", extra = 0)
+            )
+            delay(2600); ui.closeIsland()
+        }
+        12 -> {
+            ui.openIsland(IslandContent.Status(StatusKind.Airplane, title = "Uçak Modu", value = "Açık", extra = 1))
+            delay(2600); ui.closeIsland()
+        }
+        13 -> {
+            ui.openIsland(IslandContent.Status(StatusKind.RingVolume, title = "Zil", value = "%40", progress = 0.4f))
+            for (v in floatArrayOf(0.53f, 0.67f, 0.8f, 0.67f, 0.53f)) {
+                delay(380)
+                ui.value = ui.value.copy(content = IslandContent.Status(StatusKind.RingVolume, title = "Zil", value = "%${(v * 100).toInt()}", progress = v))
+            }
+            delay(1200); ui.closeIsland()
+        }
+        14 -> {
+            ui.openIsland(
+                if (cfg.more.lowBattExpand) IslandContent.Status(
+                    StatusKind.LowBatteryCard, title = "%10 Pil", subtitle = "Düşük Güç Modu için dokun", progress = 0.10f,
+                ) else IslandContent.Status(StatusKind.LowBattery, title = "Düşük Pil", value = "%20", progress = 0.20f)
+            )
+            delay(3800); ui.closeIsland()
         }
     }
 }
@@ -530,7 +561,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                                         val silentNow = silentDemo
                                         // Gerçek ada da tetiklensin istersen TryAlsoRealIsland = true yap
                                         if (TryAlsoRealIsland && isIslandRunning()) trigger(idx)
-                                        else if (idx == 2) silentDemo = !silentDemo
+                                        else if (idx == 2 || idx == 11) silentDemo = !silentDemo
                                         showcase = ShowcaseRun(idx, tryIslandScript(ctx, idx, silentNow))
                                     }
                                 },
@@ -939,6 +970,10 @@ private fun DrawScope.drawGlyph(kind: Int, c: Color, gap: Color) {
                 withTransform({ rotate(180f, Offset(540f, 1224.5f)) }) { drawPath(hook, c, style = st) }
             }
         }
+        11 -> drawWifiGlyph(c)
+        12 -> drawPlaneGlyph(c)
+        13 -> drawPath(BellPath, c)
+        14 -> drawBatteryGlyph(c, c, 0.2f)
         9 -> { // favoriler: 2x2 uygulama ızgarası
             val cr = CornerRadius(2.4f, 2.4f)
             drawRoundRect(c, Offset(3.5f, 3.5f), Size(7.5f, 7.5f), cr)

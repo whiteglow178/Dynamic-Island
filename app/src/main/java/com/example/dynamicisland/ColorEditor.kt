@@ -216,6 +216,12 @@ object ColorGroups {
                 s("status_track", "İlerleme çubuğu zemini", 0x29FFFFFF, true),
                 s("status_batt_body", "Pil gövdesi", 0x47FFFFFF, true),
                 s("status_batt_tip", "Pil ucu", 0x66FFFFFF, true),
+                s("status_wifi", "Wi-Fi / bağlandı", 0xFF0A84FF),
+                s("status_cell", "Mobil veri", 0xFF34C759),
+                s("status_offline", "İnternet kesildi", 0xFFFF453A),
+                s("status_airplane", "Uçak modu", 0xFFFF9F0A),
+                s("status_low_batt", "Düşük pil", 0xFFFF3B30),
+                s("status_power_save", "Düşük güç modu", 0xFFFFCC00),
             ),
         ),
         ColorGroup(

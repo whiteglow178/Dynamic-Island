@@ -493,6 +493,38 @@ fun PanelLyrics(cfg: IslandSettings, state: LyricsState, frame: LyricFrame, modi
     }
 }
 
+/**
+ * "Sözler sağda" düzeni: açık müzik adasının sağ sütunu. Üstte o an söylenen satır (karaoke dolumuyla),
+ * altında sıradaki satır soluk olarak görünür.
+ */
+@Composable
+fun SideLyrics(cfg: IslandSettings, state: LyricsState, frame: LyricFrame, modifier: Modifier = Modifier, artColor: Int = 0) {
+    Box(modifier, contentAlignment = Alignment.CenterStart) {
+        when (state) {
+            is LyricsState.Ready -> {
+                val sizeSp = cfg.lyricsPanelSizeSp.coerceIn(11f, 17f)
+                val base = if (cfg.lyricsDynamicColor) lyricColorFromArt(artColor, Color(cfg.lyricsColorArgb)) else Color(cfg.lyricsColorArgb)
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LyricTransition(frame.index.value, cfg, Modifier.fillMaxWidth()) { i ->
+                        LyricLineText(lineText(state, i), i, frame, cfg, sizeSp, 3, false, TextAlign.Start, Modifier.fillMaxWidth(), artColor = artColor)
+                    }
+                    val next = state.lines.getOrNull(frame.index.value + 1)?.text.orEmpty()
+                    if (next.isNotBlank()) {
+                        Text(
+                            next, color = base.copy(alpha = cfg.lyricsDimAlpha.coerceIn(0.2f, 0.8f)),
+                            fontSize = (sizeSp - 2f).sp, lineHeight = (sizeSp + 1f).sp, fontWeight = FontWeight.SemiBold,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            LyricsState.Loading -> StatusText("Sözler aranıyor…")
+            LyricsState.NotFound -> StatusText("Söz bulunamadı")
+            LyricsState.Idle -> Unit
+        }
+    }
+}
+
 @Composable
 private fun StatusText(s: String) = Text(s, color = Pal.c("lyrics_status"), fontSize = 14.sp, fontWeight = FontWeight.Medium)
 

@@ -254,6 +254,18 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SliderRow("Zil hapı yüksekliği", draft.ringerHeightPct, 100f..220f, "%${draft.ringerHeightPct.toInt()} (kapalı adaya göre)") { draft = draft.copy(ringerHeightPct = it) }
             }
             SwitchRow("Medya sesi göstergesi", "Ses tuşlarıyla (ya da kenar ses tuşlarıyla) medya sesini artırınca / azaltınca ada kısa süre hoparlör simgesi, seviye çubuğu ve yüzdeyle açılır", draft.volumeIndicator) { draft = draft.copy(volumeIndicator = it) }
+            SwitchRow("Zil sesi seviyesi göstergesi", "Zil sesini (ses tuşları ya da ayarlar) değiştirince ada iOS gibi yana genişler: solda zil simgesi ve \"Zil\", sağda ince seviye çubuğu. Telefon sesli moddayken çalışır",
+                draft.more.ringVolIndicator) { draft = draft.copy(more = draft.more.copy(ringVolIndicator = it)) }
+            SwitchRow("İnternet göstergesi", "İnternete bağlanınca ada iOS tarzı geniş hap olur: solda Wi-Fi / mobil veri simgesi, sağda \"Bağlandı\". Bağlantı kesilince \"Bağlantı kesildi\" yazar. Wi-Fi'den mobil veriye geçişte yanıp sönmez",
+                draft.more.netIndicator) { draft = draft.copy(more = draft.more.copy(netIndicator = it)) }
+            SwitchRow("Uçak modu göstergesi", "Uçak modu açılınca / kapanınca ada turuncu uçak simgesi ve \"Açık\" / \"Kapalı\" yazısıyla haber verir",
+                draft.more.airplaneIndicator) { draft = draft.copy(more = draft.more.copy(airplaneIndicator = it)) }
+            SwitchRow("Düşük pil göstergesi", "Şarjda değilken pil %20'ye ve %10'a düşünce ada uyarır. Dokununca düşük güç modu açılır (izin yoksa pil tasarrufu ayarı açılır). Düşük güç modu açılınca sarıya döner",
+                draft.more.lowBattIndicator) { draft = draft.copy(more = draft.more.copy(lowBattIndicator = it)) }
+            if (draft.more.lowBattIndicator) {
+                SwitchRow("Düşük pil uyarısı genişlesin", "Açıkken ada büyük bir karta açılır: solda \"%10 Pil\" ve \"Düşük Güç Modu için dokun\", sağda kırmızı kapsül içinde pil. Kapalıyken ada genişlemez; ince geniş hapta \"Düşük Pil\" ve kırmızı yüzde + pil görünür",
+                    draft.more.lowBattExpand) { draft = draft.copy(more = draft.more.copy(lowBattExpand = it)) }
+            }
             SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler. Durum çubuğu bulanıklaşır (cihaz desteklemiyorsa siyah olur)", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
         }
         sec("Kamera / mikrofon göstergesi", "Bir uygulama kamerayı ya da mikrofonu kullanırken ada haber verir", PreviewKind.Privacy) {
@@ -325,7 +337,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
 
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
             SubHeader("Bildirim türü")
-            SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, sol üstte saatin altından küçük bir hap olarak çıkıp büyüyerek ekranın üstünde tam genişlikte cam banner olur. Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
+            SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi sol tarafta ince bir çizgi olarak doğar, sağa doğru uzar, büyüyerek yukarı süzülür ve ekranın üstünde tam genişlikte cam banner olur. Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
                 draft.notifBanner) { draft = draft.copy(notifBanner = it, notifInline = if (it) false else draft.notifInline) }
             SwitchRow("Adayı genişletme (yazı adanın içinde)", "Bildirim gelince ada büyümez. Gönderen, bildirim yazısı ve uygulamanın simgesi küçük adanın içine sığdırılarak gösterilir. Süre: Genişletilmiş + Küçültülmüş kalma süresi toplamı. Nokta modunda etkisizdir. İstersen Ada genişliğini artırarak yazıya daha çok yer açabilirsin.",
                 draft.notifInline) { draft = draft.copy(notifInline = it, notifBanner = if (it) false else draft.notifBanner) }
@@ -613,6 +625,9 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         }
 
         sec("Beğeni düğmesi", "Açık adadaki kalp, beğenildiğinde bu renkte olur") {
+            SwitchRow("Yıldız simgesi", "Müzik çalarken ada genişleyince favorilere ekleme düğmesi kalp yerine yıldız şeklinde olur (beğenince içi dolar)",
+                draft.more.favStar) { draft = draft.copy(more = draft.more.copy(favStar = it)) }
+            SectionDivider()
             SwitchRow("Albüm kapağı rengi", "Kalp, çalan şarkının kapağıyla aynı renkte olur",
                 draft.likeArtColor) { draft = draft.copy(likeArtColor = it) }
             SubHeader(if (draft.likeArtColor) "Kapak yoksa kullanılacak renk" else "Kalp rengi")
@@ -886,6 +901,13 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 draft.pillCallStyle) { draft = draft.copy(pillCallStyle = it) }
             SwitchRow("Müzik hapı", "KÜÇÜLTÜLMÜŞ adada: solda albüm kapağı, ortada şarkı adı, renkli dalga ve ilerleme çubuğu, sağda önceki / duraklat / sonraki düğmeleri. Genişletilmiş panel değişmez",
                 draft.pillMusicStyle) { draft = draft.copy(pillMusicStyle = it) }
+            SwitchRow("Orta boy müzik adası", "Müzik çalarken ada küçülmez; iOS'taki gibi ne çok küçük ne çok büyük, orta boyda açık kalır: üstte kapak, şarkı adı ve dalga, ortada ilerleme çubuğu, altta beğeni, geri, oynat / duraklat, ileri ve çıkış düğmeleri. Boş yerine dokununca tam boy panel açılır. Açıkken müzik hapı yerine bu görünüm kullanılır",
+                draft.more.musicMid) { draft = draft.copy(more = draft.more.copy(musicMid = it)) }
+            if (draft.more.musicMid) {
+                SliderRow("Orta boy genişlik", draft.more.musicMidWDp, 260f..400f, "${draft.more.musicMidWDp.toInt()} dp") { draft = draft.copy(more = draft.more.copy(musicMidWDp = it)) }
+                SliderRow("Orta boy yükseklik", draft.more.musicMidHDp, 140f..220f, "${draft.more.musicMidHDp.toInt()} dp") { draft = draft.copy(more = draft.more.copy(musicMidHDp = it)) }
+                SectionDivider()
+            }
             SwitchRow("Adanın boyutuna uydur", "Açıkken ada büyümez: hap tasarımları (arama ve müzik) ayarladığın küçültülmüş ada boyutuna sığacak şekilde ölçeklenir. Kapalıyken ada hap boyutuna (müzikte ~344×100 dp) büyür. Kapalı ada küçükse (varsayılan 120×32) yazılar küçük kalır; okunaklı olması için adanın genişlik / yüksekliğini artır",
                 draft.pillFitIsland) { draft = draft.copy(pillFitIsland = it) }
             if (draft.pillMusicStyle) {
@@ -1604,6 +1626,12 @@ private fun lyricsPages(draft: IslandSettings, version: Int, set: (IslandSetting
     }
 
     if (draft.lyricsInPanel) sec("Genişletilmiş ada", "Panelin içindeki sözler") {
+        SwitchRow(
+            "Sözler sağda, kontroller solda",
+            "Ada genişleyince müzik kontrolleri (kapak, şarkı adı, ilerleme çubuğu, düğmeler) sol tarafta, şarkı sözleri sağ tarafta görünür. O an söylenen satırın altında sıradaki satır soluk olarak durur. Panel sözler için uzamaz",
+            draft.more.lyricsSide,
+        ) { set(draft.copy(more = draft.more.copy(lyricsSide = it))) }
+        SectionDivider()
         SliderRow("Yazı boyutu", draft.lyricsPanelSizeSp, 12f..26f, "${draft.lyricsPanelSizeSp.toInt()} sp") { set(draft.copy(lyricsPanelSizeSp = it)) }
         SliderRow("En fazla satır", draft.lyricsPanelLines.toFloat(), 1f..3f, "${draft.lyricsPanelLines}") { set(draft.copy(lyricsPanelLines = it.roundToInt().coerceIn(1, 3))) }
     }

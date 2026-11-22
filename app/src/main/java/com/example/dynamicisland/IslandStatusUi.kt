@@ -95,7 +95,7 @@ import kotlin.math.sqrt
 private const val BELL_PATH =
     "M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5" +
     "s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"
-private val BellPath: Path by lazy { PathParser().parsePathString(BELL_PATH).toPath() }
+internal val BellPath: Path by lazy { PathParser().parsePathString(BELL_PATH).toPath() }
 
 internal fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
     StatusKind.Ringer -> if (c.silent) Pal.c("status_ringer_silent") else Pal.c("status_ringer_vibrate")
@@ -105,6 +105,7 @@ internal fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
     StatusKind.Camera -> Pal.c("status_camera")
     StatusKind.Mic -> Pal.c("status_mic")
     StatusKind.Volume -> Pal.c("status_text")
+    StatusKind.Network, StatusKind.Airplane, StatusKind.RingVolume, StatusKind.LowBattery, StatusKind.LowBatteryCard -> sysColor(c)
 }
 
 @Composable
@@ -144,6 +145,8 @@ internal fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) 
                     drawPath(lens, w)
                 }
                 StatusKind.Volume -> drawSpeaker(w, c.progress, c.silent)
+                StatusKind.Network, StatusKind.Airplane, StatusKind.RingVolume, StatusKind.LowBattery, StatusKind.LowBatteryCard ->
+                    drawSysGlyph(c, w)
                 StatusKind.Mic -> {
                     drawRoundRect(w, Offset(9f, 2.5f), Size(6f, 11f), CornerRadius(3f, 3f))
                     drawArc(w, 0f, 180f, false, Offset(5.5f, 6f), Size(13f, 12f), style = st)

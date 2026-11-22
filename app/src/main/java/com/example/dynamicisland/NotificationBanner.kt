@@ -92,15 +92,18 @@ import kotlin.math.roundToInt
 private const val BANNER_MARGIN_DP = 10f      // ekranın sağ / sol kenarından boşluk
 private const val BANNER_H_DP = 80f           // tam açık banner yüksekliği
 private const val BANNER_RADIUS_DP = 34f      // tam açık köşe yuvarlaklığı
-// Giriş animasyonu (iOS 27 ekran kaydından ölçüldü): ekran genişliğinin ~%10'u kadar minik, bulanık bir çizgi/hap olarak
-// sol-orta tarafta (bannerın son konumunun hizasında) belirir; ~0,8 sn'de genişleyip büyüyerek tam banner olur.
-// Büyürken önce hafifçe aşağı iner (DIP), sonra yerine oturur. İçerik küçükken bulanık, büyüdükçe netleşir.
-private const val START_W_DP = 40f            // başlangıçtaki küçük hap: genişlik
-private const val START_H_DP = 7f             // ... yükseklik
-private const val START_LEFT_DP = 52f         // ... bannerın sol kenarından uzaklık (ekran genişliğinin ~%16'sı)
-private const val START_RADIUS_DP = 4f
-private const val DIP_DP = 14f                // büyürken aşağı sarkma miktarı
-private const val ENTER_MS = 820              // giriş süresi
+// Giriş animasyonu (ekran kaydından kare kare ölçüldü): banner, son yerinin biraz ALTINDA, sol tarafta (uygulama simgesi
+// hizasında) incecik, bulanık bir çizgi olarak doğar. Önce sağa doğru uzar (yükseklik neredeyse değişmez), sonra
+// yüksekliği artarken yukarı süzülüp saatin altındaki yerine oturur. İçerik baştan görünür, küçükken bulanık; büyüdükçe netleşir.
+private const val START_W_FRAC = 0.15f        // başlangıçtaki çizginin genişliği (banner genişliğine oranı)
+private const val START_H_DP = 5f             // ... yükseklik
+private const val START_LEFT_FRAC = 0.13f     // ... bannerın sol kenarından uzaklık (banner genişliğine oranı)
+private const val START_W_DP = 40f            // kapanış: küçülüp kaybolduğu hap
+private const val START_LEFT_DP = 52f
+private const val START_RADIUS_DP = 3f
+private const val DROP_DP = 34f               // doğduğu yerin bannerın son merkezine göre ne kadar aşağıda olduğu
+private const val ENTER_EXTRA_DP = 24f        // giriş sırasında pencerenin alttan uzaması (çizgi bannerın altında doğar)
+private const val ENTER_MS = 980              // giriş süresi
 private const val MENU_GAP_DP = 8f            // banner ile menü arası
 private const val MENU_H_DP = 46f             // menü / cevap satırı yüksekliği
 private const val MENU_EXTRA_DP = MENU_GAP_DP + MENU_H_DP + 6f   // menü açılınca pencerenin uzaması
@@ -134,6 +137,8 @@ class NotifBannerOverlay(
     private var holdMs = 3_000L
     private var hideJob: Job? = null
     private var detachJob: Job? = null
+    private var enterJob: Job? = null
+    private var entering = false      // giriş animasyonu sürüyor: pencere alttan biraz uzun (çizgi bannerın altında doğar)
 
     private fun px(v: Float) = (v * ctx.resources.displayMetrics.density).roundToInt()
 
@@ -149,9 +154,11 @@ class NotifBannerOverlay(
         hideJob?.cancel(); detachJob?.cancel()
         this.holdMs = holdMs
         if (mode.value != 0) applyWindow(0)
+        val fresh = view == null || !shown.value      // yeni giriş (zaten açık banner yalnızca içeriğini değiştirir)
         current.value = n
         shown.value = true
         if (view == null && !attach()) { shown.value = false; current.value = null; return false }
+        if (fresh) beginEnter()
         scheduleHide(holdMs)
         return true
     }
@@ -167,8 +174,20 @@ class NotifBannerOverlay(
     }
 
     fun release() {
-        hideJob?.cancel(); detachJob?.cancel()
+        hideJob?.cancel(); detachJob?.cancel(); enterJob?.cancel()
         detach()
+    }
+
+    /** Giriş animasyonu boyunca pencere alttan uzar; animasyon bitince normal boyuna döner (fazla alan dokunuş almasın). */
+    private fun beginEnter() {
+        enterJob?.cancel()
+        entering = true
+        applyWindow(mode.value)
+        enterJob = scope.launch {
+            delay(ENTER_MS + 60L)
+            entering = false
+            if (view != null) applyWindow(mode.value)
+        }
     }
 
     // ---------------------------------------------------------------- Menü / pencere durumu
@@ -178,7 +197,7 @@ class NotifBannerOverlay(
         mode.value = m
         val v = view ?: return
         val p = lp ?: return
-        p.height = px(BANNER_H_DP + if (m == 0) 0f else MENU_EXTRA_DP)
+        p.height = px(BANNER_H_DP + if (m == 0) (if (entering) ENTER_EXTRA_DP else 0f) else MENU_EXTRA_DP)
         if (m == 2) {
             // Klavye için pencere odak almalı; pencere yeniden boyutlanmasın
             p.flags = p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
@@ -294,7 +313,7 @@ class NotifBannerOverlay(
             }
         }
         fun params(type: Int) = WindowManager.LayoutParams(
-            wPx, dp(BANNER_H_DP), type,
+            wPx, dp(BANNER_H_DP + if (entering) ENTER_EXTRA_DP else 0f), type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -334,6 +353,7 @@ class NotifBannerOverlay(
         v.setViewTreeLifecycleOwner(null)
         v.setViewTreeSavedStateRegistryOwner(null)
         view = null; host = null; lp = null
+        enterJob?.cancel(); entering = false
         shown.value = false
         mode.value = 0
         current.value = null
@@ -355,14 +375,16 @@ internal fun NotifBannerRoot(
     onReply: () -> Unit,
     onSend: (String) -> Unit,
 ) {
-    val p = remember { Animatable(0f) }       // boyut ilerlemesi: 0 = minik hap, 1 = tam banner
-    val py = remember { Animatable(0f) }      // aşağı sarkma evresi (yalnızca girişte oynar)
+    val p = remember { Animatable(0f) }       // boyut ilerlemesi: 0 = minik çizgi, 1 = tam banner
+    val py = remember { Animatable(0f) }      // giriş evresi (0..1, doğrusal): uzama -> büyüme + yukarı süzülme (ilk karede de giriş yolu çizilir)
     val fade = remember { Animatable(1f) }    // kapanırken genel solma
     LaunchedEffect(shown) {
         if (shown) {
             fade.snapTo(1f)
-            if (p.value < 0.05f) py.snapTo(0f)
-            launch { py.animateTo(1f, tween(ENTER_MS, easing = EnterEase)) }
+            if (p.value < 0.05f) {
+                py.snapTo(0f)
+                launch { py.animateTo(1f, tween(ENTER_MS, easing = androidx.compose.animation.core.LinearEasing)) }
+            }
             p.animateTo(1f, tween(ENTER_MS, easing = EnterEase))
         } else {
             launch { fade.animateTo(0f, tween(240, delayMillis = 100)) }
@@ -378,15 +400,37 @@ internal fun NotifBannerRoot(
 
     val pc = p.value.coerceIn(0f, 1f)
     val pyc = py.value.coerceIn(0f, 1f)
-    val left = lerpF(START_LEFT_DP, 0f, pc)
-    val w = lerpF(START_W_DP, widthDp, pc)
-    val h = lerpF(START_H_DP, BANNER_H_DP, pc)
-    // Giriş: hap, bannerın son merkez hizasından başlar, büyürken hafifçe aşağı sarkıp yerine oturur. Çıkış: yukarı (saate doğru) küçülür.
-    val centerTop = BANNER_H_DP / 2f - h / 2f
-    val dip = DIP_DP * sin(PI.toFloat() * pyc.pow(0.6f))
-    val top = if (shown) centerTop + dip else lerpF(0f, centerTop, pc)
-    val radius = lerpF(START_RADIUS_DP, BANNER_RADIUS_DP, pc)
-    val blurDp = (1f - pc) * 14f              // küçükken içerik bulanık, büyüdükçe netleşir
+    val entering = shown && pyc < 1f
+    val left: Float
+    val w: Float
+    val h: Float
+    val top: Float
+    if (entering) {
+        // Ekran kaydındaki giriş: 1) solda, bannerın altında incecik çizgi doğar ve sağa doğru uzar,
+        // 2) uzamaya devam ederken yüksekliği artar ve yukarı süzülerek yerine oturur.
+        val tw = 1f - (1f - (pyc / 0.80f).coerceIn(0f, 1f)).pow(3)                 // genişlik: hızlı başlar, yumuşak biter
+        val thRaw = ((pyc - 0.22f) / 0.78f).coerceIn(0f, 1f)
+        val th = thRaw * thRaw * (3f - 2f * thRaw)                                  // yükseklik: gecikmeli, yumuşak
+        val tyRaw = ((pyc - 0.30f) / 0.70f).coerceIn(0f, 1f)
+        val ty = 1f - (1f - tyRaw).pow(2.4f)                                        // yukarı süzülme
+        // İlk uzama evresinde çizgi hafifçe kalınlaşır (ekran kaydındaki gibi incecik kalır)
+        val hStretch = START_H_DP + 6f * tw
+        w = lerpF(widthDp * START_W_FRAC, widthDp, tw)
+        h = lerpF(hStretch, BANNER_H_DP, th)
+        left = lerpF(widthDp * START_LEFT_FRAC, 0f, (tw * 0.55f + ty * 0.45f))
+        val centerY = lerpF(BANNER_H_DP / 2f + DROP_DP, BANNER_H_DP / 2f, ty)
+        top = centerY - h / 2f
+    } else {
+        // Açık banner ya da kapanış: yukarı (saate doğru) küçülerek kaybolur
+        left = lerpF(START_LEFT_DP, 0f, pc)
+        w = lerpF(START_W_DP, widthDp, pc)
+        h = lerpF(START_H_DP, BANNER_H_DP, pc)
+        val centerTop = BANNER_H_DP / 2f - h / 2f
+        top = if (shown) centerTop else lerpF(0f, centerTop, pc)
+    }
+    val grow = if (entering) (h - START_H_DP) / (BANNER_H_DP - START_H_DP) else pc
+    val radius = lerpF(START_RADIUS_DP, BANNER_RADIUS_DP, grow.coerceIn(0f, 1f)).coerceAtMost(h / 2f)
+    val blurDp = (1f - grow.coerceIn(0f, 1f)) * 14f      // küçükken içerik bulanık, büyüdükçe netleşir
 
     Box(Modifier.fillMaxSize()) {
         Box(
@@ -430,7 +474,7 @@ internal fun NotifBannerRoot(
                         transformOrigin = TransformOrigin(0f, 0f)
                         scaleX = w / widthDp
                         scaleY = h / BANNER_H_DP
-                        alpha = ((pc - 0.10f) / 0.45f).coerceIn(0f, 1f)
+                        alpha = if (entering) ((pyc - 0.04f) / 0.30f).coerceIn(0f, 1f) else ((pc - 0.10f) / 0.45f).coerceIn(0f, 1f)
                     }
                     .then(if (blurDp > 0.4f) Modifier.blur(blurDp.dp) else Modifier),
             ) { BannerContent(cur) }
