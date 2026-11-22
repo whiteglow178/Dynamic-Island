@@ -289,29 +289,47 @@ class GesturePad(
     fun canShow(): Boolean =
         IslandAccessibilityService.instance != null || android.provider.Settings.canDrawOverlays(ctx)
 
+    private fun params(type: Int) = WindowManager.LayoutParams(
+        WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+        PixelFormat.TRANSLUCENT,
+    ).apply {
+        gravity = Gravity.TOP or Gravity.START
+        layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+    }
+
     fun show() {
         if (view != null) return
-        val a11y = IslandAccessibilityService.instance
-        val type = if (a11y != null) WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-        else WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        val wm = (a11y ?: ctx).getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val prefs = GestureStore.flow(ctx).value
         if (prefs.map.values.contains(GestureAction.TORCH)) FlashToggle.warmUp(ctx)
         val v = PadView(ctx, prefs.map) { ch -> finish(ch) }
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+
+        // Önce erişilebilirlik penceresi (durum çubuğunun üstünde), olmazsa normal "üstte göster" penceresi
+        val tries = ArrayList<Pair<WindowManager, Int>>()
+        IslandAccessibilityService.instance?.let { a ->
+            (a.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
+                ?.let { tries.add(it to WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY) }
         }
-        if (!runCatching { wm.addView(v, lp) }.isSuccess) return
-        view = v; host = wm
-        v.start()
+        if (android.provider.Settings.canDrawOverlays(ctx)) {
+            (ctx.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
+                ?.let { tries.add(it to WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY) }
+        }
+        var err: Throwable? = null
+        for ((wm, type) in tries) {
+            try {
+                wm.addView(v, params(type))
+                view = v; host = wm
+                v.start()
+                return
+            } catch (t: Throwable) { err = t }
+        }
+        android.widget.Toast.makeText(
+            ctx, "Çizim ekranı açılamadı: " + (err?.let { it.javaClass.simpleName + " " + (it.message ?: "") } ?: "pencere izni yok"),
+            android.widget.Toast.LENGTH_LONG,
+        ).show()
     }
 
     fun dismiss() {

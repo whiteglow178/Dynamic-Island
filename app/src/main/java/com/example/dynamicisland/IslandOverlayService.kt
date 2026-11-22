@@ -1036,7 +1036,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val cur = ui.value
         val s = settings.value
         if (cur.content is IslandContent.Idle) {
-            if (GestureStore.flow(applicationContext).value.enabled && gesturePad.canShow()) gesturePad.show()   // çizerek komut
+            if (GestureStore.flow(applicationContext).value.enabled) {                                              // çizerek komut
+                if (gesturePad.canShow()) gesturePad.show()
+                else android.widget.Toast.makeText(this, "Çizerek komut için erişilebilirlik ya da 'üstte göster' izni gerekli", android.widget.Toast.LENGTH_LONG).show()
+            }
             else if (s.translateReady() && s.translateTrigger == 1) openTranslate()
             else if (s.favoritesReady()) favorites.open()
             else if (s.playDoodle) IslandDoodleActivity.open(this)          // karalama tahtası
