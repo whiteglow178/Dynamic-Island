@@ -11,6 +11,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -324,6 +326,30 @@ fun SegmentedTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) 
                 ) {
                     Text(label, color = fg, fontSize = 13.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium)
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Kaydırmalı seçici (sekmeye sığmayacak kadar çok seçenek)
+@Composable
+fun ChipPicker(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        labels.forEachIndexed { i, label ->
+            val sel = i == selected
+            Box(
+                Modifier.height(34.dp).clip(RoundedCornerShape(10.dp))
+                    .background(if (sel) Pal.c("ui_tab_selected") else cs.surfaceVariant)
+                    .selectable(selected = sel, role = Role.Tab) { onSelect(i) }
+                    .padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = if (sel) Pal.c("ui_tab_selected_text") else cs.onSurfaceVariant, fontSize = 13.sp,
+                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
             }
         }
     }

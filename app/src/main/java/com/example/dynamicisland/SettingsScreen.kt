@@ -507,9 +507,23 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
 
-        sec("Ada olayları", "Genişletilmiş müzik adasında yağmur, kar, asit ve kırılma efektleri") {
-            SubHeader("Hava durumu")
-            SegmentedTabs(listOf("Kapalı", "Yağmur", "Kar", "Asit"), draft.fxWeather) { draft = draft.copy(fxWeather = it) }
+        sec("Ada olayları", "Genişletilmiş müzik adasında hava durumu, portal sahneleri ve kırılma efektleri") {
+            SubHeader("Olay")
+            val fxSel = FX_WEATHER_OPTIONS.indexOfFirst { it.first == draft.fxWeather }.coerceAtLeast(0)
+            ChipPicker(FX_WEATHER_OPTIONS.map { it.second }, fxSel) { draft = draft.copy(fxWeather = FX_WEATHER_OPTIONS[it].first) }
+            val fxInfo = when (draft.fxWeather) {
+                FXW_SUN -> "Panelde yavaşça süzülen altın parıltılar ve köşeden yayılan sıcak ışık. Öğelere zarar vermez."
+                FXW_METEOR -> "Meteorlar gökte tek bir noktadan yayılır. Büyük olanlar öğeye çarpınca kıvılcım saçar, öğeyi sarsar ve üstünde soğuyan bir kor izi bırakır."
+                FXW_SEA -> "Kabarcıklar alttan yükselir, öğelerin altına takılıp birleşir ve kenardan kaçar. Balıklar öğelerin üstünden ya da altından dolaşır."
+                FXW_FIREWORKS -> "Roketler yükselip farklı biçimlerde patlar (şakayık, söğüt, halka, çıtırtı). Düşen kıvılcımlar öğelerin üstüne konup söner."
+                FXW_FIREFLY -> "Ateşböcekleri dolaşır, öğelerin üstüne konup kalkar. Yanıp sönmeleri komşularıyla zamanla eşzamanlanır."
+                FXW_SAND -> "Rüzgâr hamlelerle eser. Kum öğelerin üstünde birikir, rüzgâr yönünde kayar ve kenardan dökülür."
+                FXW_AURORA -> "Kutup ışığı perdeleri dalgalanır; renk yüksekliğe göre yeşilden mora döner. Öğelerin üst kenarı ışığı yansıtır."
+                FXW_ELECTRIC -> "Öğeler arasında dallanan elektrik arkları atlar; çarptığı öğe parlar ve sarsılır. Kenarlarda küçük deşarjlar gezinir."
+                FXW_BLIZZARD -> "Rüzgârlı, derinlikli kar fırtınası. Öğelerin üstünde rüzgâr yönüne kayan kar kümeleri oluşur."
+                else -> null
+            }
+            if (fxInfo != null) Text(fxInfo, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             if (draft.fxWeather != 0) {
                 SliderRow("Yoğunluk", draft.fxIntensity, 0.1f..1f, "%${(draft.fxIntensity * 100).toInt()}") { draft = draft.copy(fxIntensity = it) }
             }

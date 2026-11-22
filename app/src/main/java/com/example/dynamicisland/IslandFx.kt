@@ -93,6 +93,14 @@ class FxTarget(val id: String) {
     var dens = 1f
     var iceCrack: Crack? = null                     // donmuş öğede dokundukça açılan çatlaklar (öğe başına sabit)
     var iceCrackW = 0f
+    // Portal olayları (IslandFxScenes.kt): sarsıntı, kum / kar yığını, meteor izi, elektrik parıltısı
+    var shake = 0f
+    var shakeX by mutableFloatStateOf(0f)
+    var shakeY by mutableFloatStateOf(0f)
+    var pile: FloatArray? = null
+    var pileKind = 0
+    val scorches = ArrayList<FxScorch>()
+    var glow = 0f
     private val seed = id.hashCode()
 
     /** Asit öğeyi üstten aşağı doğru yer: erime cephesinin üst kenardan uzaklığı (öğe içi px), tırtıklı. */
@@ -119,6 +127,7 @@ class FxTarget(val id: String) {
     fun reset() {
         freeze = 0f; taps = 0; melt = 0f; away = false
         coolUntil = 0L; meltRestoreAt = 0L; awayRestoreAt = 0L; snow = 0f; blobs = 0
+        shake = 0f; shakeX = 0f; shakeY = 0f; pile = null; pileKind = 0; scorches.clear(); glow = 0f
     }
 }
 
@@ -255,6 +264,8 @@ fun Modifier.fxTarget(id: String): Modifier {
             val m = t.melt.coerceIn(0f, 1f)
             val fade = ((m - 0.9f) / 0.1f).coerceIn(0f, 1f)          // öğe ezilip küçülmez: asit yer, en sonda silinir
             alpha = if (t.away) 0f else (1f - fade)
+            translationX = t.shakeX                                  // meteor / elektrik çarpınca sarsılır
+            translationY = t.shakeY
             compositingStrategy = CompositingStrategy.Offscreen      // asidin yediği yerler gerçekten şeffaflaşsın
         }
         .drawWithContent {
@@ -503,12 +514,14 @@ private class FxSim {
     var autoNext = 0L
     var autoCount = 0
     var shattered = false
+    val scenes = FxScenes()                         // portal olayları (5 ve sonrası)
 
     fun f(): Float = rnd.nextFloat()
 
     fun clear() {
         ps.clear(); acc = 0f; boltIn = 3f; bolt = null; flash = 0f
         armed = true; autoStart = 0L; autoNext = 0L; autoCount = 0; shattered = false
+        scenes.clear()
     }
 
     private fun hit(targets: Collection<FxTarget>, x: Float, y: Float): FxTarget? {
@@ -560,7 +573,7 @@ private class FxSim {
         val inten = cfg.fxIntensity.coerceIn(0.05f, 1f)
         val restoreMs = (cfg.fxRestoreSec * 1000f).toLong()
 
-        if (weather != 0) {
+        if (weather in 1..FXW_SUN) {
             val base = when (weather) { 1 -> 90f; 2 -> 28f; 4 -> 16f; else -> 45f }
             acc += base * inten * (W / (340f * d)).coerceIn(0.6f, 1.8f) * dt
             while (acc >= 1f) {
@@ -671,6 +684,10 @@ private class FxSim {
             }
             if (t.away && t.awayRestoreAt > 0L && now >= t.awayRestoreAt) { t.away = false; t.awayRestoreAt = 0L }
         }
+
+        // Portal olayları kendi parçacıklarını yönetir
+        if (weather >= FXW_METEOR) scenes.step(weather, dt, now, W, H, d, inten, targets, fx.targets)
+        else scenes.idle(targets)
 
         if (weather == 1 && cfg.fxLightning) {
             boltIn -= dt
@@ -1012,6 +1029,9 @@ fun FxLayer(
                     }
                 }
             }
+
+            // ---- portal olayları (meteor, sualtı, havai fişek, ateşböceği, kum, kutup ışığı, elektrik, tipi)
+            with(sim.scenes) { render(d, fx.targets.values) }
 
             // ---- çatlaklar (cam kırığı)
             for (cr in fx.cracks) {

@@ -8,9 +8,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +36,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,7 +85,7 @@ fun ExtrasSections() {
             color = dim, fontSize = 12.sp, lineHeight = 17.sp)
         SwitchRow("Portal ada", "Boştaki adanın içi pencere gibi olur; arkasında uzak ve yakın katmanlar farklı hızda kayar. Ekran kapalıyken sensör dinlenmez. Açıkken özel tasarım ve kamuflaj boştaki adada görünmez",
             cur.portalEnabled) { set(cur.copy(portalEnabled = it, camoEnabled = if (it) false else cur.camoEnabled, contrastEnabled = if (it) false else cur.contrastEnabled)) }
-        SceneChips(PORTAL_NAMES, cur.portalScene) { set(cur.copy(portalScene = it)) }
+        ChipPicker(PORTAL_NAMES, cur.portalScene) { set(cur.copy(portalScene = it)) }
         SliderRow("Derinlik", cur.portalDepth, 0.2f..2f, "%.1fx".format(cur.portalDepth)) { set(cur.copy(portalDepth = it)) }
     }
 
@@ -417,30 +413,6 @@ private fun TimeCapsuleSection() {
                         }
                     }, Modifier.weight(0.35f))
                 }
-            }
-        }
-    }
-}
-
-/** Kaydırılabilir sahne seçici (sekmelere sığmayacak kadar çok seçenek için). */
-@Composable
-private fun SceneChips(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        labels.forEachIndexed { i, label ->
-            val sel = i == selected
-            Box(
-                Modifier.height(34.dp).clip(RoundedCornerShape(10.dp))
-                    .background(if (sel) Pal.c("ui_tab_selected") else cs.surfaceVariant)
-                    .clickable(role = Role.Tab) { onSelect(i) }
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(label, color = if (sel) Pal.c("ui_tab_selected_text") else cs.onSurfaceVariant, fontSize = 13.sp,
-                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
             }
         }
     }
