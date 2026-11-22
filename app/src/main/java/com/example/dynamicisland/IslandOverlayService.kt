@@ -186,6 +186,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
         }
+        // ---- Ada yenileme hızı (Ana Sayfa) -> RefreshRate.kt
+        scope.launch { RefreshRateStore.flow(applicationContext).collect { applyRefreshRate() } }
         // ---- Ada süsleri -> IslandDecor.kt
         scope.launch { combine(ui, settings) { _, _ -> Unit }.collect { refreshDecor() } }
         scope.launch {
@@ -1720,6 +1722,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         d.window?.decorView?.let { stripInsets(it) }   // show'dan SONRA: kalan dolguları sıfırla
         dialog = d
         applyMainHidden()
+        applyRefreshRate()
+    }
+
+    /** Ana Sayfa > Ada yenileme hızı: ada penceresine / görünümüne uygulanır (RefreshRate.kt). */
+    private fun applyRefreshRate() {
+        val win = dialog?.window ?: return
+        runCatching { RefreshRate.apply(win, listOf(composeView, win.decorView), RefreshRateStore.flow(applicationContext).value) }
     }
 
     /** Dialog'un decor/içerik katmanlarına eklediği tüm sistem çubuğu dolgularını sıfırlar. */

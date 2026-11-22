@@ -468,6 +468,25 @@ private fun HomeScreen() {
         SectionCard("Dene", "Adanın görünümlerini ve animasyonlarını önizle") {
             IslandActionButton("Dene", { tryOpen = true }, tonal = false)
         }
+        SectionCard("Ada yenileme hızı", "Adanın animasyonları saniyede kaç kare çizilsin") {
+            val hz by RefreshRateStore.flow(ctx).collectAsState()
+            val supported = remember { RefreshRate.supported(ctx) }
+            SegmentedTabs(RefreshRateStore.OPTIONS.map { "$it Hz" }, RefreshRateStore.OPTIONS.indexOf(hz).coerceAtLeast(0)) { i ->
+                RefreshRateStore.set(ctx, RefreshRateStore.OPTIONS[i])
+            }
+            val note = buildString {
+                append("Yüksek değer daha akıcı, düşük değer daha az pil harcar. Değişiklik hemen uygulanır.")
+                if (supported.isNotEmpty()) append(" Bu ekranın desteklediği hızlar: ${supported.joinToString(", ")} Hz.")
+                if (supported.isNotEmpty() && hz > (supported.maxOrNull() ?: hz)) {
+                    append(" Ekran $hz Hz'e çıkamadığı için en yüksek ${supported.maxOrNull()} Hz kullanılır.")
+                }
+                if (RefreshRate.legacyLimited(hz)) {
+                    append(" Android 15'ten eski sürümlerde ada yalnızca hızı artırabilir; $hz Hz'de sistem kendi hızını kullanır " +
+                        "(arka plandaki uygulamaları yavaşlatmamak için).")
+                }
+            }
+            Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
         SectionCard("Uygulama ikonu", "Ana ekrandaki ikonun rengi") {
             var darkIcon by remember { mutableStateOf(AppIcon.isDark(ctx)) }
             RadioRow("Beyaz", "Açık zeminli ikon", !darkIcon) { darkIcon = false; AppIcon.set(ctx, false) }
