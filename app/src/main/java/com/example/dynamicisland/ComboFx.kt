@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -217,12 +218,19 @@ private fun hrnd(i: Int, j: Int, k: Int): Float {
 internal fun DissolveArt(art: ImageBitmap?, modifier: Modifier = Modifier) {
     var cur by remember { mutableStateOf<ImageBitmap?>(null) }
     var prev by remember { mutableStateOf<ImageBitmap?>(null) }
+    val curSig = remember { arrayOfNulls<IntArray>(1) }
     val prog = remember { Animatable(1f) }
     LaunchedEffect(art) {
         if (art == null || art === cur) return@LaunchedEffect
-        if (cur == null) { cur = art; return@LaunchedEffect }
-        prev = cur
+        val c0 = cur
+        if (c0 == null) { cur = art; curSig[0] = artSig(art); return@LaunchedEffect }
+        // Medya oturumu aynı kapağı sık sık yeni bir görüntü nesnesi olarak gönderir (oynatma durumu, süre güncellemesi...).
+        // Yalnızca görüntünün İÇERİĞİ değiştiyse (gerçekten yeni şarkının kapağı) animasyon oynar; aynı kapaksa sessizce değiştirilir.
+        val sig = artSig(art)
+        if (sameArt(curSig[0], sig, c0, art)) { cur = art; curSig[0] = sig; return@LaunchedEffect }
+        prev = c0
         cur = art
+        curSig[0] = sig
         prog.snapTo(0f)
         prog.animateTo(1f, tween(1150, easing = LinearEasing))
         prev = null
@@ -272,6 +280,40 @@ internal fun DissolveArt(art: ImageBitmap?, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/**
+ * Kapağın küçük parmak izi: 5x5 ızgaradaki noktaların rengi (görüntü boyutundan bağımsız, oransal konumlar).
+ * Donanım belleğindeki görüntü okunamadığı için gerekirse önce kopyalanır. Okunamazsa null.
+ */
+private fun artSig(img: ImageBitmap): IntArray? = runCatching {
+    val b = img.asAndroidBitmap()
+    val src = if (b.config == android.graphics.Bitmap.Config.HARDWARE) b.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else b
+    val out = IntArray(25)
+    for (j in 0 until 5) for (i in 0 until 5) {
+        val x = ((i + 0.5f) / 5f * src.width).toInt().coerceIn(0, src.width - 1)
+        val y = ((j + 0.5f) / 5f * src.height).toInt().coerceIn(0, src.height - 1)
+        out[j * 5 + i] = src.getPixel(x, y)
+    }
+    if (src !== b) src.recycle()
+    out
+}.getOrNull()
+
+/**
+ * İki kapak aynı resim mi? Örnek noktaların ortalama renk farkı küçükse aynıdır (farklı çözünürlükte ya da
+ * yeniden sıkıştırılmış aynı kapak da aynı sayılır). Parmak izi alınamadıysa boyutlar aynıysa aynı kabul edilir
+ * (gereksiz yere oynamaktansa oynamamak yeğlenir).
+ */
+private fun sameArt(a: IntArray?, b: IntArray?, ia: ImageBitmap, ib: ImageBitmap): Boolean {
+    if (a == null || b == null) return ia.width == ib.width && ia.height == ib.height
+    var sum = 0
+    for (k in 0 until 25) {
+        val p = a[k]; val q = b[k]
+        sum += abs(((p shr 16) and 0xFF) - ((q shr 16) and 0xFF)) +
+            abs(((p shr 8) and 0xFF) - ((q shr 8) and 0xFF)) +
+            abs((p and 0xFF) - (q and 0xFF))
+    }
+    return sum / (25f * 3f) < 22f
 }
 
 /** Görüntünün kutuyu dolduracak şekilde kırpılmış kaynak bölgesi: (sx, sy, sw, sh). */
