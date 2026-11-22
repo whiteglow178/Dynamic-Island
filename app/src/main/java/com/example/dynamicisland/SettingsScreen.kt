@@ -1045,7 +1045,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         prevDraft = draft
     }
     LaunchedEffect(pager.currentPage) { featFocus = null }
-    val feat = if (lyricsPage) null else resolveFeature(curTitle, draft, featFocus)
+    val feat = resolveFeature(curTitle, draft, featFocus)     // Sözler sekmesinde de (ör. Müzikten çıkış)
     val kind = if (feat != null) PreviewKind.Feature else pageKind
     LaunchedEffect(pager.currentPage, lyricsPage) {
         if (lyricsPage) return@LaunchedEffect

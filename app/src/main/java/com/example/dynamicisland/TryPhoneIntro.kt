@@ -511,37 +511,17 @@ private fun DrawScope.drawWallpaper(sx: Float, sy: Float, sw: Float, sh: Float) 
         Brush.radialGradient(listOf(Color(0xCCC4C1BC), Color.Transparent), center = P(0f, 0.55f), radius = sw * 0.85f),
         Offset(sx, sy), Size(sw, sh),
     )
-    // Koyu "S" şerit
-    val s = Path().apply {
-        moveTo(P(-0.15f, -0.02f).x, P(-0.15f, -0.02f).y)
-        cubicTo(P(0.55f, 0.06f).x, P(0.55f, 0.06f).y, P(1.12f, 0.26f).x, P(1.12f, 0.26f).y, P(0.86f, 0.50f).x, P(0.86f, 0.50f).y)
-        cubicTo(P(0.62f, 0.70f).x, P(0.62f, 0.70f).y, P(0.02f, 0.60f).x, P(0.02f, 0.60f).y, P(0.08f, 0.84f).x, P(0.08f, 0.84f).y)
-        cubicTo(P(0.12f, 0.98f).x, P(0.12f, 0.98f).y, P(0.35f, 1.00f).x, P(0.35f, 1.00f).y, P(0.50f, 1.12f).x, P(0.50f, 1.12f).y)
-    }
-    val dark = Color(0xFF0F0D0A)
-    val widths = floatArrayOf(0.46f, 0.40f, 0.34f, 0.28f)
-    val alphas = floatArrayOf(0.18f, 0.30f, 0.50f, 0.95f)
-    for (i in widths.indices) {
-        drawPath(s, dark.copy(alpha = alphas[i]), style = Stroke(width = widths[i] * sw, cap = StrokeCap.Round))
-    }
-    // Sağ üst köşe koyu
+    // (Eskiden burada koyu "S" şerit vardı; kaldırıldı. Duvar kağıdı artık düz, yumuşak geçişli.)
+    // Sağ üst köşe hafif gölge
     drawRect(
-        Brush.radialGradient(listOf(Color(0x99000000), Color.Transparent), center = P(1f, 0.10f), radius = sw * 0.9f),
+        Brush.radialGradient(listOf(Color(0x40000000), Color.Transparent), center = P(1f, 0.10f), radius = sw * 0.9f),
         Offset(sx, sy), Size(sw, sh),
     )
-    // Parıltı taneleri (kum gibi): rastgele + şeridin kenarlarında yoğun
+    // Parıltı taneleri (kum gibi), tüm yüzeye eşit dağılmış
     val rnd = kotlin.random.Random(5)
-    val pm = PathMeasure().apply { setPath(s, false) }
-    val total = pm.length
     val buckets = Array(3) { ArrayList<Offset>() }
-    repeat(700) {
+    repeat(1100) {
         buckets[rnd.nextInt(3)].add(Offset(sx + rnd.nextFloat() * sw, sy + rnd.nextFloat() * sh))
-    }
-    repeat(700) {
-        val c = pm.getPosition(rnd.nextFloat() * total)
-        val ang = rnd.nextFloat() * 6.2831855f
-        val d = (0.12f + rnd.nextFloat() * 0.16f) * sw
-        buckets[rnd.nextInt(3)].add(Offset(c.x + d * cos(ang), c.y + d * sin(ang)))
     }
     val gl = Color(0xFFEADFCB)
     drawPoints(buckets[0], PointMode.Points, gl.copy(alpha = 0.18f), 0.32f, StrokeCap.Round)

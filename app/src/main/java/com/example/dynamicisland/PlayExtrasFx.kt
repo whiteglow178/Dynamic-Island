@@ -133,6 +133,9 @@ internal fun DiceFx(a: PlayAnchor, mode: Int) {
     val fade = remember { Animatable(0f) }
     var results by remember { mutableStateOf(intArrayOf(1, 1)) }
     var seed by remember { mutableIntStateOf(0) }
+    // Çizim, zarın ATILDIĞI moda göre yapılır: sonuç ekrandayken ayardan mod değişirse (yazı-tura -> iki zar)
+    // eski sonuç dizisi yeni moda uymuyordu ve uygulama çöküyordu (ArrayIndexOutOfBounds)
+    var rolledMode by remember { mutableIntStateOf(mode) }
     val modeNow by rememberUpdatedState(mode)
     val measurer = rememberTextMeasurer()
     LaunchedEffect(Unit) {
@@ -140,6 +143,7 @@ internal fun DiceFx(a: PlayAnchor, mode: Int) {
             if (e == PlayEvent.Dice) launch {
                 val m = modeNow
                 results = if (m == 2) intArrayOf(Random.nextInt(2)) else intArrayOf(Random.nextInt(1, 7), Random.nextInt(1, 7))
+                rolledMode = m
                 seed = Random.nextInt()
                 fade.snapTo(1f); roll.snapTo(0f)
                 roll.animateTo(1f, tween(950, easing = FastOutSlowInEasing))
@@ -163,10 +167,11 @@ internal fun DiceFx(a: PlayAnchor, mode: Int) {
         // Düşüp sekme: adanın altından çıkar, iki kez seker
         val bounce = abs(cos(r * 2.5f * PI.toFloat())) * (1f - r) * 50f * d
         val y = baseY - a.dir() * bounce
+        val mode = rolledMode
         if (mode == 2) {
             val coin = 22f * d
             val flip = abs(cos(r * 9f * PI.toFloat()))
-            val faceShown = if (r < 1f) ((r * 9f).toInt() + seed) % 2 else results[0]
+            val faceShown = if (r < 1f) ((r * 9f).toInt() + seed) % 2 else results.getOrElse(0) { 0 }
             scale(max(flip, 0.06f), 1f, Offset(a.liveCx(), y)) {
                 drawCircle(Brush.radialGradient(listOf(Color(0xFFFFE08A), Color(0xFFD4A017)), center = Offset(a.liveCx() - coin * 0.3f, y - coin * 0.3f), radius = coin * 1.4f), coin, Offset(a.liveCx(), y), alpha = al)
                 drawCircle(Color(0xFFB8860B), coin * 0.82f, Offset(a.liveCx(), y), alpha = al, style = Stroke(1.6f * d))
@@ -174,7 +179,7 @@ internal fun DiceFx(a: PlayAnchor, mode: Int) {
                 drawText(lay, topLeft = Offset(a.liveCx() - lay.size.width / 2f, y - lay.size.height / 2f), alpha = al)
             }
             if (r >= 1f) {
-                val lay = measurer.measure(if (results[0] == 0) "Yazı" else "Tura", TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
+                val lay = measurer.measure(if (results.getOrElse(0) { 0 } == 0) "Yazı" else "Tura", TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
                 drawText(lay, topLeft = Offset(a.liveCx() - lay.size.width / 2f, y + a.dir() * (coin + 6f * d) - (if (a.inverted) lay.size.height.toFloat() else 0f)), alpha = al)
             }
             return@Canvas
@@ -183,7 +188,7 @@ internal fun DiceFx(a: PlayAnchor, mode: Int) {
         val size = 40f * d
         for (i in 0 until n) {
             val cx = a.liveCx() + (if (n == 2) (i - 0.5f) * (size + 14f * d) else 0f)
-            val face = if (r < 1f) ((r * 14f).toInt() + seed + i * 3).mod(6) + 1 else results[i]
+            val face = if (r < 1f) ((r * 14f).toInt() + seed + i * 3).mod(6) + 1 else results.getOrElse(i) { 1 }.coerceIn(1, 6)
             val ang = (1f - r) * (540f + i * 200f)
             rotate(ang, Offset(cx, y)) { drawDie(Offset(cx, y), size, face, al) }
         }

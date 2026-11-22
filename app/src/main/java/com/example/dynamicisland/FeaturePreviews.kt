@@ -39,6 +39,11 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.runtime.key
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -78,6 +83,7 @@ internal enum class Feat(val big: Boolean = false) {
     DecorTop, DecorHang, DecorInside, Drip(true), EdgeGlow(true),
     Physics, Pet, Magnet, Puff, Face, Ripple, Liquid, Eater, Pull, Daylight, Fling(true),
     Plant, Season(true), Party(true), Doodle, Dice, Breath, NightLight, Shadow, Pocket,
+    LaunchAnim(true), MusicExit(true), AnimLoop,
 }
 
 /** Sayfa başlığına göre o sayfadaki özellikler ve "açık mı" koşulları (ilk eşleşen gösterilir). */
@@ -118,6 +124,9 @@ private fun featuresOf(title: String?): List<Pair<Feat, (IslandSettings) -> Bool
     "Gece lambası" -> listOf(Feat.NightLight on { _ -> true })
     "Ada gölgesi" -> listOf(Feat.Shadow on { _ -> true })
     "Cep hissi" -> listOf(Feat.Pocket on { _ -> true })
+    "Açılış animasyonu stili" -> listOf(Feat.LaunchAnim on { _ -> true })
+    "Müzikten çıkış" -> listOf(Feat.MusicExit on { _ -> true })
+    "Animasyon" -> listOf(Feat.AnimLoop on { s -> s.animEnabled })
     else -> emptyList()
 }
 
@@ -153,6 +162,7 @@ internal fun featureNeedDp(f: Feat, cfg: IslandSettings): Float {
         Feat.Dice -> 220f
         Feat.Breath -> 190f
         Feat.NightLight -> 170f
+        Feat.AnimLoop -> cfg.expandedHeightDp + cfg.musicExtraDp() + 16f
         else -> 200f
     }
 }
@@ -172,6 +182,9 @@ internal fun featureHint(f: Feat): String = when (f) {
     Feat.EdgeGlow -> "Ekran kenarında akan ışık"
     Feat.Fling -> "Ada savrulup ekranda seker"
     Feat.NightLight -> "Gece lambası (gerçekte gece şarjdayken)"
+    Feat.LaunchAnim -> "Bildirime dokununca: uygulama açılış animasyonu"
+    Feat.MusicExit -> "Müzik uygulamasından çıkınca: panel adaya girer"
+    Feat.AnimLoop -> "Açılma ve küçülme geçişi (bildirim ve müzik sırayla)"
     Feat.Doodle -> if (DoodleStore.strokes.isEmpty()) "Henüz çizim yok: Çiz düğmesiyle çiz" else "Boştaki adada çizimin"
     else -> "Gerçek adadaki gibi; telefona dokununca büyür / küçülür"
 }
@@ -210,7 +223,23 @@ internal fun FeatureScene(f: Feat, cfgIn: IslandSettings) {
     var sy by remember(f) { mutableFloatStateOf(1f) }
     var pivotTop by remember(f) { mutableStateOf(false) }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // Açılış / çıkış geçişleri (LaunchTransition.kt, FluidIslandTransition.kt): senaryo hangisini oynatacağını seçer
+    // 1 klasik açılış, 2 atom açılış, 3 klasik panel -> ada, 4 atom panel -> ada, 5 akıcı yutma, 6 uzayan ada
+    var trans by remember(f) { mutableStateOf(0) }
+    var transId by remember(f) { mutableStateOf(0) }
+    var transFull by remember(f) { mutableStateOf(false) }
+    val transDone = remember(f) { arrayOfNulls<CompletableDeferred<Unit>>(1) }
+    val swallowCb = remember(f) { arrayOfNulls<() -> Unit>(1) }
+    suspend fun play(k: Int, full: Boolean = false, onSwallow: () -> Unit = {}) {
+        val dfd = CompletableDeferred<Unit>()
+        transDone[0] = dfd; swallowCb[0] = onSwallow; transFull = full
+        transId++; trans = k
+        withTimeoutOrNull(8_000L) { dfd.await() }
+        trans = 0
+    }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+
+    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionOnScreen() }) {
         val d = LocalDensity.current.density
         val W = constraints.maxWidth.toFloat()
         val H = constraints.maxHeight.toFloat()
@@ -373,6 +402,53 @@ internal fun FeatureScene(f: Feat, cfgIn: IslandSettings) {
                 Feat.Party -> while (true) { delay(900); bus.emit(PlayEvent.Party); delay(4600) }
                 Feat.Dice -> while (true) { delay(900); bus.emit(PlayEvent.Dice); delay(3800) }
                 Feat.Plant -> while (true) { delay(2000); bus.emit(PlayEvent.Water); delay(2500) }
+                Feat.LaunchAnim -> {
+                    val n = IslandContent.Notif("demo", "Ayşe", "Akşam görüşelim mi? 😊", appIcon)
+                    while (true) {
+                        ui.value = IslandUiState(n, expanded = false); delay(250)
+                        ui.value = ui.value.copy(expanded = true); delay(1800)
+                        // Bildirime dokunuldu: ada küçülür, seçili açılış animasyonu oynar (ikisi de açıksa rastgele)
+                        val c = cfgFlow.value
+                        ui.value = IslandUiState()
+                        val atomic = c.launchAtomic && (!c.launchClassic || kotlin.random.Random.nextBoolean())
+                        play(if (atomic) 2 else 1)
+                        delay(1200)
+                    }
+                }
+                Feat.MusicExit -> {
+                    val m = IslandContent.Media("Örnek Şarkı", "Sanatçı", true, 210_000, 75_000, 1f, SystemClock.elapsedRealtime(), art = null, artColor = SAMPLE_COLOR)
+                    while (true) {
+                        val c = cfgFlow.value
+                        ui.value = IslandUiState(); delay(900)            // müzik uygulamasındayken ada boş
+                        if (!c.musicExitAnim) { ui.value = IslandUiState(m); delay(2600); continue }
+                        if (c.musicFluidAnim) {
+                            play(5)
+                        } else {
+                            val atomic = c.musicExitAtomic && (!c.musicExitClassic || kotlin.random.Random.nextBoolean())
+                            play(if (atomic) 4 else 3, full = atomic && c.musicExitAtomicFull, onSwallow = {
+                                if (!c.musicExitStretch && c.musicExitSwallow) ui.value = IslandUiState(m, expanded = true, swallow = true)
+                            })
+                            if (c.musicExitStretch) play(6)
+                        }
+                        delay(150)
+                        ui.value = IslandUiState(m, expanded = false)
+                        delay(2800)
+                    }
+                }
+                Feat.AnimLoop -> {
+                    val items = listOf<IslandContent>(
+                        IslandContent.Notif("demo", "Ayşe", "Akşam görüşelim mi? 😊", appIcon),
+                        IslandContent.Media("Örnek Şarkı", "Sanatçı", true, 210_000, 75_000, 1f, SystemClock.elapsedRealtime(), art = null, artColor = SAMPLE_COLOR),
+                    )
+                    var i = 0
+                    while (true) {
+                        val c = items[i % items.size]
+                        ui.value = IslandUiState(c, expanded = false); delay(800)
+                        ui.value = IslandUiState(c, expanded = true); delay(2200)
+                        ui.value = IslandUiState(c, expanded = false); delay(1000)
+                        i++
+                    }
+                }
                 else -> Unit
             }
             Unit
@@ -427,6 +503,28 @@ internal fun FeatureScene(f: Feat, cfgIn: IslandSettings) {
             if (f == Feat.Banner) BannerPreview(W, d, appIcon, cfg)
             if (f == Feat.Gesture) GesturePreview()
             if (f == Feat.Landscape) LandscapeBubblePreview(cxHome, islandTop, cwPx, chPx, appIcon, cfg.landscapeBubbleBelow)
+
+            // Gerçek geçiş bileşenleri; konumlar ekran koordinatında (bileşenler kendi ekran konumlarını çıkarır)
+            if (trans != 0) key(transId) {
+                val isLaunch = trans <= 2
+                val sp = LaunchSpec(
+                    cx = origin.x + cxHome, top = origin.y + islandTop, w = cwPx, h = chPx,
+                    speed = if (isLaunch) cfg.launchSpeed else cfg.musicExitSpeed,
+                    color = islandPanelColor(cfg, if (isLaunch) 0 else SAMPLE_COLOR, opaque = isLaunch || transFull || trans == 5),
+                )
+                val fin: () -> Unit = { transDone[0]?.complete(Unit) }
+                val sw: () -> Unit = { swallowCb[0]?.invoke() }
+                when (trans) {
+                    1 -> LaunchTransition(sp, onCovered = {}, onFinished = fin)
+                    2 -> AtomicLaunch(sp, onCovered = {}, onFinished = fin)
+                    3 -> ShrinkToIsland(sp, onSwallow = sw, onFinished = fin)
+                    4 -> AtomicToIsland(sp, onSwallow = sw, onFinished = fin, fullStart = transFull)
+                    5 -> FluidSwallowToIsland(sp, onFinished = fin)
+                    6 -> IslandStretch(sp, onFinished = fin)
+                    else -> Unit
+                }
+                Unit
+            }
         }
     }
 }
