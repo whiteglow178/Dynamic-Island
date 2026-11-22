@@ -56,6 +56,7 @@ private val ApproachEasing = CubicBezierEasing(0.55f, 0f, 0.25f, 1f)
  */
 @Composable
 fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> Unit) {
+    val inPreview = LocalIslandPreview.current      // ayarlar önizlemesi: konumlar yerel (pencere ekranın köşesinde değil)
     val covered by rememberUpdatedState(onCovered)
     val finished by rememberUpdatedState(onFinished)
     val a = remember { Animatable(0f) }
@@ -73,7 +74,7 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
 
     Canvas(
         Modifier.fillMaxSize()
-            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .onGloballyPositioned { origin = if (inPreview) Offset.Zero else it.positionOnScreen() }
             .graphicsLayer { alpha = fade.value }
     ) {
         val d = density
@@ -123,6 +124,7 @@ private val ShrinkEasing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.8f)   // adaya va
  */
 @Composable
 fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Unit) {
+    val inPreview = LocalIslandPreview.current      // ayarlar önizlemesi: konumlar yerel (pencere ekranın köşesinde değil)
     val swallow by rememberUpdatedState(onSwallow)
     val finished by rememberUpdatedState(onFinished)
     val a = remember { Animatable(0f) }            // 0 = başlangıç paneli, 1 = adanın içinde ince şekil
@@ -145,7 +147,7 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
 
     Canvas(
         Modifier.fillMaxSize()
-            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .onGloballyPositioned { origin = if (inPreview) Offset.Zero else it.positionOnScreen() }
             .graphicsLayer { alpha = appear.value * fade.value }
     ) {
         val d = density
@@ -210,6 +212,7 @@ private fun roundedRectPoints(l: Float, t: Float, r: Float, b: Float, rad: Float
  */
 @Composable
 fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Unit, fullStart: Boolean = false) {
+    val inPreview = LocalIslandPreview.current      // ayarlar önizlemesi: konumlar yerel (pencere ekranın köşesinde değil)
     val swallow by rememberUpdatedState(onSwallow)
     val finished by rememberUpdatedState(onFinished)
     val a = remember { Animatable(0f) }
@@ -234,7 +237,7 @@ fun AtomicToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
 
     Canvas(
         Modifier.fillMaxSize()
-            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .onGloballyPositioned { origin = if (inPreview) Offset.Zero else it.positionOnScreen() }
             .graphicsLayer { alpha = appear.value * fade.value }
     ) {
         val d = density
@@ -305,6 +308,7 @@ private const val ATOM_LAUNCH_MS = 480       // hız 1x iken ekranı kaplama sü
  */
 @Composable
 fun AtomicLaunch(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> Unit) {
+    val inPreview = LocalIslandPreview.current      // ayarlar önizlemesi: konumlar yerel (pencere ekranın köşesinde değil)
     val covered by rememberUpdatedState(onCovered)
     val finished by rememberUpdatedState(onFinished)
     val a = remember { Animatable(0f) }
@@ -322,7 +326,7 @@ fun AtomicLaunch(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> Unit
 
     Canvas(
         Modifier.fillMaxSize()
-            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .onGloballyPositioned { origin = if (inPreview) Offset.Zero else it.positionOnScreen() }
             .graphicsLayer { alpha = fade.value }
     ) {
         val d = density
@@ -366,6 +370,7 @@ private val StretchEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 
 @Composable
 fun IslandStretch(spec: LaunchSpec, onFinished: () -> Unit) {
+    val inPreview = LocalIslandPreview.current      // ayarlar önizlemesi: konumlar yerel (pencere ekranın köşesinde değil)
     val finished by rememberUpdatedState(onFinished)
     val a = remember { Animatable(0f) }
     val appear = remember { Animatable(0f) }
@@ -384,7 +389,7 @@ fun IslandStretch(spec: LaunchSpec, onFinished: () -> Unit) {
 
     Canvas(
         Modifier.fillMaxSize()
-            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .onGloballyPositioned { origin = if (inPreview) Offset.Zero else it.positionOnScreen() }
             .graphicsLayer { alpha = appear.value * fade.value }
     ) {
         val t = a.value

@@ -140,6 +140,7 @@ private fun IslandLayer(spec: LaunchSpec, origin: () -> Offset, bulge: () -> Flo
 /** Müzik uygulamasından çıkış: pencere bulanıklaşarak adaya küçülür, ada şişip yutar, yaylanarak döner. */
 @Composable
 fun FluidSwallowToIsland(spec: LaunchSpec, onFinished: () -> Unit) {
+    val inPreview = LocalIslandPreview.current      // ayarlar önizlemesi: konumlar yerel (pencere ekranın köşesinde değil)
     val finished by rememberUpdatedState(onFinished)
     val sp = spec.speed.coerceIn(0.25f, 4f)
     val p = remember { Animatable(0f) }          // pencere: 0 tam ekran → 1 adanın altında
@@ -169,7 +170,7 @@ fun FluidSwallowToIsland(spec: LaunchSpec, onFinished: () -> Unit) {
 
     Box(
         Modifier.fillMaxSize()
-            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .onGloballyPositioned { origin = if (inPreview) Offset.Zero else it.positionOnScreen() }
             .graphicsLayer { alpha = fade.value }
     ) {
         PanelLayer(spec, { origin }, { p.value }, { panelA.value })
@@ -183,6 +184,7 @@ fun FluidSwallowToIsland(spec: LaunchSpec, onFinished: () -> Unit) {
  */
 @Composable
 fun FluidLaunchFromIsland(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> Unit) {
+    val inPreview = LocalIslandPreview.current      // ayarlar önizlemesi: konumlar yerel (pencere ekranın köşesinde değil)
     val covered by rememberUpdatedState(onCovered)
     val finished by rememberUpdatedState(onFinished)
     val sp = spec.speed.coerceIn(0.25f, 4f)
@@ -208,7 +210,7 @@ fun FluidLaunchFromIsland(spec: LaunchSpec, onCovered: () -> Unit, onFinished: (
 
     Box(
         Modifier.fillMaxSize()
-            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .onGloballyPositioned { origin = if (inPreview) Offset.Zero else it.positionOnScreen() }
             .graphicsLayer { alpha = fade.value }
     ) {
         PanelLayer(spec, { origin }, { max(p.value, 0f) }, { panelA.value })

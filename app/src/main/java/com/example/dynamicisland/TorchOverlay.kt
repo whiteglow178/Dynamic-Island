@@ -351,7 +351,7 @@ private fun smooth(e0: Float, e1: Float, x: Float): Float {
 }
 
 @Composable
-private fun TorchRoot(
+internal fun TorchRoot(
     mode: Int,
     level: Float,
     spread: Float,

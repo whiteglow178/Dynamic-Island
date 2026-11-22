@@ -604,6 +604,38 @@ class FaceIdController(
 
 // ================================================================== Ayarlardaki canlı önizleme
 
+/**
+ * Ayarlar önizleme telefonunda, gerçek adanın yerinde döngüyle oynar (başarılı / başarısız sırayla).
+ * [pillWpx], [pillHpx]: kapalı ada (px). Bileşenin boyutu pencereyle aynı: (kare + 2 x pay) kare.
+ */
+@Composable
+internal fun FaceIdLoop(s: IslandSettings, pillWpx: Float, pillHpx: Float, inverted: Boolean, modifier: Modifier) {
+    val d = LocalDensity.current.density
+    val t = remember { mutableStateOf(0f) }
+    val failT = remember { mutableStateOf(-1f) }
+    val wantFail = remember { mutableStateOf(false) }
+    val speed = rememberUpdatedState(s.faceIdSpeed)
+    val sprite = rememberFaceIdSprite()
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            val now = withFrameNanos { it }
+            if (last != 0L) t.value += min((now - last) / 1_000_000_000f, 0.05f) * speed.value.coerceIn(0.25f, 3f)
+            last = now
+            if (wantFail.value && failT.value < 0f && t.value - FaceIdTl.EXP >= FaceIdTl.DECIDE_V) failT.value = t.value
+            val endT = if (failT.value >= 0f) failT.value + FaceIdTl.F_END else FaceIdTl.END
+            if (t.value > endT + 1.2f) {
+                t.value = 0f; failT.value = -1f; wantFail.value = !wantFail.value
+            }
+        }
+    }
+    val g = FaceIdGeo(pillWpx, pillHpx, s.faceIdSizeDp * d, FACE_ID_PAD_DP * d, inverted)
+    Canvas(modifier) { drawFaceId(t.value, s, g, sprite, failT.value) }
+}
+
+/** Face ID penceresinin ada çevresindeki payı (dp); servis penceresiyle aynı. */
+internal const val FACE_ID_PAD_DP = 24f
+
 /** Ayar ekranında animasyonu döngüyle oynatır: sırayla başarılı (✓) ve başarısız (gri titreme) akış. */
 @Composable
 fun FaceIdPreview(s: IslandSettings) {

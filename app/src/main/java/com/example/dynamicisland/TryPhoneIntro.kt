@@ -843,93 +843,141 @@ private fun roundedPts(x0: Float, y0: Float, x1: Float, y1: Float, r: Float): Li
     return out
 }
 
-/** Silindir gibi gölgelenen beyaz yüzey: soldan ışık, sağda gölge. */
-private fun cableBrush(left: Float, width: Float): Brush = Brush.horizontalGradient(
-    colorStops = arrayOf(
-        0f to Color(0xFFB4B4BC), 0.22f to Color(0xFFF3F3F6), 0.42f to Color.White,
-        0.72f to Color(0xFFD9D9DF), 1f to Color(0xFF9E9EA7),
-    ),
-    startX = left, endX = left + width,
-)
+// ---- 3 boyutlu çizim: kablo, kauçuk boğaz, konnektör gövdesi ve metal uç; telefonla aynı kamera uzayında,
+// kesitler halinde yüzeylere bölünür, her yüzey ışığa göre gölgelenir ve uzaktan yakına sıralanarak çizilir.
+// Böylece telefon dönünce kablonun yanları, kalınlığı ve parlaması gerçek bir cisim gibi değişir.
 
-/** Kablo + konnektör. Telefondan sonra çizilir (kablo telefonun altında kalır, telefonun üstüne binmez). */
+/** Kesit halkası: y (telefon ekseni boyunca), yarı genişlik a, yarı kalınlık b (a = b: silindir, a > b: stadyum). */
+private class Ring(val y: Float, val a: Float, val b: Float)
+
+private class Face3(val pts: FloatArray, val depth: Float, val color: Color)
+
+private const val CABLE_SEG = 24                      // kesit çevresindeki yüzey sayısı
+
+private val CABLE_LIGHT: V3 = run {
+    val l = sqrt(LX * LX + LY * LY + LZ * LZ)
+    V3(LX / l, LY / l, LZ / l)
+}
+
+/** Kesit noktası ve yüzey normali (x, z düzleminde) — açı k (0..CABLE_SEG). */
+private fun ringPoint(r: Ring, k: Int): FloatArray {
+    val ang = k * 2.0 * PI / CABLE_SEG
+    val ca = cos(ang).toFloat(); val sa = sin(ang).toFloat()
+    val flat = (r.a - r.b).coerceAtLeast(0f)
+    val x = (if (ca >= 0f) flat else -flat) + r.b * ca
+    val z = r.b * sa
+    return floatArrayOf(x, z, ca, sa)
+}
+
+/** Lambert + parlama; [metal] daha sert ve parlak yansıma. */
+private fun shadeColor(base: Color, nCam: V3, metal: Boolean): Color {
+    val nl = sqrt(nCam.x * nCam.x + nCam.y * nCam.y + nCam.z * nCam.z).coerceAtLeast(1e-4f)
+    val nx = nCam.x / nl; val ny = nCam.y / nl; val nz = nCam.z / nl
+    val lam = (nx * CABLE_LIGHT.x + ny * CABLE_LIGHT.y + nz * CABLE_LIGHT.z).coerceAtLeast(0f)
+    // Yarım vektör (ışık + bakış yönü; bakış = +z kameraya doğru)
+    var hx = CABLE_LIGHT.x; var hy = CABLE_LIGHT.y; var hz = CABLE_LIGHT.z + 1f
+    val hl = sqrt(hx * hx + hy * hy + hz * hz); hx /= hl; hy /= hl; hz /= hl
+    val spec = (nx * hx + ny * hy + nz * hz).coerceAtLeast(0f).pow(if (metal) 18f else 30f) * (if (metal) 0.75f else 0.45f)
+    val amb = if (metal) 0.28f else 0.42f
+    val k = amb + (1f - amb) * lam
+    return Color(
+        (base.red * k + spec).coerceIn(0f, 1f),
+        (base.green * k + spec).coerceIn(0f, 1f),
+        (base.blue * k + spec).coerceIn(0f, 1f),
+    )
+}
+
+/** Halka dizisini yan yüzeylere böler ve [out]'a ekler (yalnızca kameraya bakan yüzeyler). */
+private fun tube(cam: PhoneCam, rings: List<Ring>, base: Color, metal: Boolean, out: MutableList<Face3>) {
+    for (i in 0 until rings.size - 1) {
+        val r0 = rings[i]; val r1 = rings[i + 1]
+        val dy = (r1.y - r0.y).let { if (abs(it) < 1e-4f) 1e-4f else it }
+        val slope = -(r1.b - r0.b) / dy                  // daralan kısımda yüzey biraz yukarı/aşağı bakar
+        for (k in 0 until CABLE_SEG) {
+            val p00 = ringPoint(r0, k); val p01 = ringPoint(r0, k + 1)
+            val p10 = ringPoint(r1, k); val p11 = ringPoint(r1, k + 1)
+            val mx = (p00[2] + p01[2]) / 2f; val mz = (p00[3] + p01[3]) / 2f
+            val nCam = cam.dir(mx, slope, mz)
+            val c0 = cam.pt(p00[0], r0.y, p00[1])
+            if (!cam.visible(nCam, c0) && !cam.visible(nCam, cam.pt(p11[0], r1.y, p11[1]))) continue
+            val a0 = cam.scr(p00[0], r0.y, p00[1]); val a1 = cam.scr(p01[0], r0.y, p01[1])
+            val b1 = cam.scr(p11[0], r1.y, p11[1]); val b0 = cam.scr(p10[0], r1.y, p10[1])
+            val depth = (c0.z + cam.pt(p11[0], r1.y, p11[1]).z) / 2f
+            out.add(Face3(floatArrayOf(a0.x, a0.y, a1.x, a1.y, b1.x, b1.y, b0.x, b0.y), depth, shadeColor(base, nCam, metal)))
+        }
+    }
+}
+
+/** Halkanın düz kapağı ([dirY] = -1 telefona bakan uç). */
+private fun cap(cam: PhoneCam, r: Ring, dirY: Float, base: Color, metal: Boolean, out: MutableList<Face3>) {
+    val nCam = cam.dir(0f, dirY, 0f)
+    val c = cam.pt(0f, r.y, 0f)
+    if (!cam.visible(nCam, c)) return
+    val pts = FloatArray(CABLE_SEG * 2)
+    for (k in 0 until CABLE_SEG) {
+        val p = ringPoint(r, k)
+        val o = cam.scr(p[0], r.y, p[1])
+        pts[2 * k] = o.x; pts[2 * k + 1] = o.y
+    }
+    out.add(Face3(pts, c.z, shadeColor(base, nCam, metal)))
+}
+
+/** Kablo + konnektör. Telefondan sonra çizilir (kablo telefonun alt kenarının altında kalır). */
 private fun DrawScope.drawCable(cam: PhoneCam, e: Float, path: Path) {
     val hw = HOUSING_W / 2f
     val hd = HOUSING_D / 2f
     val yTop = plugTopY(e)
     val yBot = yTop + HOUSING_LEN
+    val faces = ArrayList<Face3>(400)
 
-    // 1) Kablo: telefonun dikey ekseninde olduğu için ekranda dikey ve sabit genişlikli bir silindir
-    val c = cam.pt(0f, yBot, 0f)
-    val sc = cam.s * cam.dist / (cam.dist - c.z)
-    val cx = cam.scr(0f, yBot, 0f).x
-    val yA = cam.scr(0f, yBot - 1f, 0f).y
-    val yB = cam.scr(0f, yBot + CABLE_LEN, 0f).y
-    val cw = 2f * CABLE_R * sc
-    drawRect(cableBrush(cx - cw / 2f, cw), Offset(cx - cw / 2f, yA), Size(cw, yB - yA))
-    // Kauçuk boğaz: kablodan biraz kalın, alt ucu yuvarlak
-    val bw = 2f * BOOT_R * sc
-    val bTop = cam.scr(0f, yBot - 2f, 0f).y
-    val bBot = cam.scr(0f, yBot + BOOT_LEN, 0f).y
-    drawRoundRect(
-        cableBrush(cx - bw / 2f, bw), Offset(cx - bw / 2f, bTop), Size(bw, bBot - bTop), CornerRadius(bw / 2f),
+    val white = Color(0xFFF2F2F5)
+    val rubber = Color(0xFFE6E6EA)
+    val metal = Color(0xFFC4C6CC)
+
+    // 1) Kablo: silindir; perspektif düzgün olsun diye boyunca parçalara bölünür
+    val cable = ArrayList<Ring>()
+    val n = 8
+    for (i in 0..n) cable.add(Ring(yBot + BOOT_LEN - 1f + CABLE_LEN * i / n, CABLE_R, CABLE_R))
+    tube(cam, cable, white, false, faces)
+
+    // 2) Kauçuk boğaz: gövdeden kabloya incelen yumuşak geçiş
+    tube(cam, listOf(
+        Ring(yBot - 1f, BOOT_R * 1.25f, BOOT_R * 1.15f),
+        Ring(yBot + 1.5f, BOOT_R, BOOT_R),
+        Ring(yBot + BOOT_LEN * 0.6f, BOOT_R * 0.86f, BOOT_R * 0.86f),
+        Ring(yBot + BOOT_LEN, CABLE_R * 1.08f, CABLE_R * 1.08f),
+    ), rubber, false, faces)
+
+    // 3) Konnektör gövdesi: stadyum kesitli, uçları pahlı (yuvarlatılmış)
+    val housing = listOf(
+        Ring(yTop, hw * 0.90f, hd * 0.84f),
+        Ring(yTop + 0.6f, hw * 0.98f, hd * 0.96f),
+        Ring(yTop + 1.4f, hw, hd),
+        Ring(yBot - 3.5f, hw, hd),
+        Ring(yBot - 1.2f, hw * 0.93f, hd * 0.90f),
+        Ring(yBot, hw * 0.74f, hd * 0.70f),
     )
+    tube(cam, housing, white, false, faces)
+    cap(cam, housing.first(), -1f, white, false, faces)
 
-    // Yuvarlak (stadyum) kesitin ekrandaki sol/sağ sınırı: dönünce genişlik gerçekçi değişir
-    fun span(a: Float, b: Float, y: Float): Pair<Float, Float> {
-        var lo = Float.MAX_VALUE
-        var hi = -Float.MAX_VALUE
-        val cx0 = a - b
-        for (k in 0 until 24) {
-            val ang = k * 2.0 * PI / 24.0
-            val ca = cos(ang).toFloat()
-            val px = (if (ca >= 0f) cx0 else -cx0) + b * ca
-            val pz = b * sin(ang).toFloat()
-            val sx = cam.scr(px, y, pz).x
-            if (sx < lo) lo = sx
-            if (sx > hi) hi = sx
-        }
-        return lo to hi
-    }
-
-    // 2) USB-C metal uç (yalnızca telefonun dışında kalan kısmı): yuvarlak uçlu, silindir gibi gölgeli
+    // 4) USB-C metal uç: yalnızca telefonun dışında kalan kısmı
     val yM0 = max(PORT_Y, yTop - METAL_LEN)
     if (yTop - yM0 > 0.02f) {
-        val (ml, mr) = span(METAL_W / 2f, METAL_D / 2f, yTop)
-        val mt = cam.scr(0f, yM0, 0f).y
-        val mb = cam.scr(0f, yTop, 0f).y
-        drawRoundRect(
-            Brush.horizontalGradient(
-                colorStops = arrayOf(
-                    0f to Color(0xFF7E8087), 0.2f to Color(0xFFC9CBD2), 0.5f to Color(0xFFE2E4E9),
-                    0.8f to Color(0xFFB4B6BD), 1f to Color(0xFF7B7D84),
-                ),
-                startX = ml, endX = mr,
-            ),
-            Offset(ml, mt), Size(mr - ml, mb - mt), CornerRadius((mr - ml) * 0.1f),
-        )
+        tube(cam, listOf(Ring(yM0, METAL_W / 2f, METAL_D / 2f), Ring(yTop, METAL_W / 2f, METAL_D / 2f)), metal, true, faces)
     }
 
-    // 3) Beyaz konnektör gövdesi: yuvarlak köşeli, kenarları silindir gibi yumuşakça gölgeli (kare kutu değil)
-    val (hl, hr) = span(hw, hd, (yTop + yBot) / 2f)
-    val hTop = cam.scr(0f, yTop, 0f).y
-    val hBot = cam.scr(0f, yBot, 0f).y
-    val hwid = hr - hl
-    val rt = min(1.8f * sc, hwid / 2f)
-    val rb = min(5.5f * sc, hwid / 2f)
-    path.reset()
-    path.addRoundRect(RoundRect(hl, hTop, hr, hBot, CornerRadius(rt), CornerRadius(rt), CornerRadius(rb), CornerRadius(rb)))
-    drawPath(
-        path,
-        Brush.horizontalGradient(
-            colorStops = arrayOf(
-                0f to Color(0xFFB9B9C1), 0.14f to Color(0xFFEDEDF1), 0.26f to Color(0xFFFBFBFD),
-                0.62f to Color(0xFFF6F6F8), 0.80f to Color(0xFFE0E0E5), 1f to Color(0xFFA7A7B0),
-            ),
-            startX = hl, endX = hr,
-        ),
-    )
-    drawPath(path, Color(0x66808088), style = Stroke(0.8f))
+    // Uzaktan yakına çiz (z büyüdükçe kameraya yakın)
+    faces.sortBy { it.depth }
+    for (f in faces) {
+        path.reset()
+        val p = f.pts
+        path.moveTo(p[0], p[1])
+        var i = 2
+        while (i < p.size) { path.lineTo(p[i], p[i + 1]); i += 2 }
+        path.close()
+        drawPath(path, f.color)
+        drawPath(path, f.color, style = Stroke(0.7f))     // komşu yüzeyler arasında ince çatlak kalmasın
+    }
 }
 
 @Composable

@@ -83,7 +83,7 @@ internal enum class Feat(val big: Boolean = false) {
     DecorTop, DecorHang, DecorInside, Drip(true), EdgeGlow(true),
     Physics, Pet, Magnet, Puff, Face, Ripple, Liquid, Eater, Pull, Daylight, Fling(true),
     Plant, Season(true), Party(true), Doodle, Dice, Breath, NightLight, Shadow, Pocket,
-    LaunchAnim(true), MusicExit(true), AnimLoop,
+    LaunchAnim(true), MusicExit(true), AnimLoop, LockDot, Torch, FaceId,
 }
 
 /** Sayfa başlığına göre o sayfadaki özellikler ve "açık mı" koşulları (ilk eşleşen gösterilir). */
@@ -127,6 +127,9 @@ private fun featuresOf(title: String?): List<Pair<Feat, (IslandSettings) -> Bool
     "Açılış animasyonu stili" -> listOf(Feat.LaunchAnim on { _ -> true })
     "Müzikten çıkış" -> listOf(Feat.MusicExit on { _ -> true })
     "Animasyon" -> listOf(Feat.AnimLoop on { s -> s.animEnabled })
+    "Kilit ekranı noktası" -> listOf(Feat.LockDot on { s -> s.lockDotEnabled })
+    "Fener (flaş) göstergesi" -> listOf(Feat.Torch on { s -> s.torchIndicator })
+    "Kilit ekranı Face ID animasyonu" -> listOf(Feat.FaceId on { s -> s.faceIdEnabled })
     else -> emptyList()
 }
 
@@ -163,6 +166,9 @@ internal fun featureNeedDp(f: Feat, cfg: IslandSettings): Float {
         Feat.Breath -> 190f
         Feat.NightLight -> 170f
         Feat.AnimLoop -> cfg.expandedHeightDp + cfg.musicExtraDp() + 16f
+        Feat.LockDot -> ch + cfg.lockDotOffsetYDp.coerceAtLeast(0f) + cfg.lockDotSizeDp + 20f
+        Feat.Torch -> 236f
+        Feat.FaceId -> cfg.faceIdSizeDp + cfg.faceIdOffsetYDp.coerceAtLeast(0f) + 30f
         else -> 200f
     }
 }
@@ -185,6 +191,9 @@ internal fun featureHint(f: Feat): String = when (f) {
     Feat.LaunchAnim -> "Bildirime dokununca: uygulama açılış animasyonu"
     Feat.MusicExit -> "Müzik uygulamasından çıkınca: panel adaya girer"
     Feat.AnimLoop -> "Açılma ve küçülme geçişi (bildirim ve müzik sırayla)"
+    Feat.LockDot -> "Kilit ekranında adanın yanında yanıp sönen nokta"
+    Feat.Torch -> "Fener açıkken simge; dokununca ışık kartı"
+    Feat.FaceId -> "Kilit ekranında Face ID taraması (başarılı / başarısız sırayla)"
     Feat.Doodle -> if (DoodleStore.strokes.isEmpty()) "Henüz çizim yok: Çiz düğmesiyle çiz" else "Boştaki adada çizimin"
     else -> "Gerçek adadaki gibi; telefona dokununca büyür / küçülür"
 }
@@ -463,6 +472,11 @@ internal fun FeatureScene(f: Feat, cfgIn: IslandSettings) {
             if (f == Feat.SideVolume) SideVolumePreview(H, d)
             if (f == Feat.SideMusic) SideMusicPreview(H, d)
 
+            // Panel -> ada (3, 4) adanın ALTINDA: ada büyüyüp paneli yutar (gerçekte de ada panelin üstünde kalır)
+            if (trans == 3 || trans == 4) key(transId) {
+                TransLayer(trans, transFull, cfg, cxHome, islandTop, cwPx, chPx, { transDone[0]?.complete(Unit) }, { swallowCb[0]?.invoke() })
+            }
+
             // ---- Asıl ada (gerçek IslandRoot)
             run {
                 Box(
@@ -502,30 +516,84 @@ internal fun FeatureScene(f: Feat, cfgIn: IslandSettings) {
 
             if (f == Feat.Banner) BannerPreview(W, d, appIcon, cfg)
             if (f == Feat.Gesture) GesturePreview()
+            if (f == Feat.LockDot) {
+                // Servisteki yerleşimle aynı: adanın solunda, ayardaki uzaklık ve dikey kayma ile
+                val r = cfg.lockDotSizeDp * d / 2f
+                val glow = if (cfg.lockDotGlow) cfg.lockDotGlowDp * d else 0f
+                val side = 2f * (r + glow)
+                val dotX = cxHome - cwPx / 2f - cfg.lockDotGapDp * d - r
+                val dotY = islandTop + chPx / 2f + cfg.lockDotOffsetYDp * d
+                Box(Modifier.offset { IntOffset((dotX - side / 2f).toInt(), (dotY - side / 2f).toInt()) }.size((side / d).dp)) {
+                    LockDotView(cfg)
+                }
+            }
+            if (f == Feat.Torch) TorchPreview(cxHome, islandTop, cwPx, chPx, inv, d)
+            if (f == Feat.FaceId) {
+                val side = cfg.faceIdSizeDp * d + 2f * FACE_ID_PAD_DP * d
+                val off = cfg.faceIdOffsetYDp * d
+                val y = if (!inv) islandTop + off - FACE_ID_PAD_DP * d
+                else islandTop + chPx - off - cfg.faceIdSizeDp * d - FACE_ID_PAD_DP * d
+                Box(Modifier.offset { IntOffset((cxHome - side / 2f).toInt(), y.toInt()) }.size((side / d).dp)) {
+                    FaceIdLoop(cfg, cwPx, chPx, inv, Modifier.fillMaxSize())
+                }
+            }
             if (f == Feat.Landscape) LandscapeBubblePreview(cxHome, islandTop, cwPx, chPx, appIcon, cfg.landscapeBubbleBelow)
 
-            // Gerçek geçiş bileşenleri; konumlar ekran koordinatında (bileşenler kendi ekran konumlarını çıkarır)
-            if (trans != 0) key(transId) {
-                val isLaunch = trans <= 2
-                val sp = LaunchSpec(
-                    cx = origin.x + cxHome, top = origin.y + islandTop, w = cwPx, h = chPx,
-                    speed = if (isLaunch) cfg.launchSpeed else cfg.musicExitSpeed,
-                    color = islandPanelColor(cfg, if (isLaunch) 0 else SAMPLE_COLOR, opaque = isLaunch || transFull || trans == 5),
-                )
-                val fin: () -> Unit = { transDone[0]?.complete(Unit) }
-                val sw: () -> Unit = { swallowCb[0]?.invoke() }
-                when (trans) {
-                    1 -> LaunchTransition(sp, onCovered = {}, onFinished = fin)
-                    2 -> AtomicLaunch(sp, onCovered = {}, onFinished = fin)
-                    3 -> ShrinkToIsland(sp, onSwallow = sw, onFinished = fin)
-                    4 -> AtomicToIsland(sp, onSwallow = sw, onFinished = fin, fullStart = transFull)
-                    5 -> FluidSwallowToIsland(sp, onFinished = fin)
-                    6 -> IslandStretch(sp, onFinished = fin)
-                    else -> Unit
-                }
-                Unit
+            // Açılış (1, 2), akıcı yutma (5) ve uzayan ada (6) adanın ÜSTÜNDE: kendi şekillerini adanın yerinde çizerler
+            if (trans == 1 || trans == 2 || trans == 5 || trans == 6) key(transId) {
+                TransLayer(trans, transFull, cfg, cxHome, islandTop, cwPx, chPx, { transDone[0]?.complete(Unit) }, { swallowCb[0]?.invoke() })
             }
         }
+    }
+}
+
+// ================================================================ Açılış / çıkış geçişleri
+
+/** Gerçek geçiş bileşenleri; konumlar sahnenin kendi koordinatında (LocalIslandPreview ile). */
+@Composable
+private fun TransLayer(
+    trans: Int, full: Boolean, cfg: IslandSettings, cx: Float, top: Float, w: Float, h: Float,
+    fin: () -> Unit, swallow: () -> Unit,
+) {
+    val isLaunch = trans <= 2
+    val sp = LaunchSpec(
+        cx = cx, top = top, w = w, h = h,
+        speed = if (isLaunch) cfg.launchSpeed else cfg.musicExitSpeed,
+        color = islandPanelColor(cfg, if (isLaunch) 0 else SAMPLE_COLOR, opaque = isLaunch || full || trans == 5),
+    )
+    when (trans) {
+        1 -> LaunchTransition(sp, onCovered = {}, onFinished = fin)
+        2 -> AtomicLaunch(sp, onCovered = {}, onFinished = fin)
+        3 -> ShrinkToIsland(sp, onSwallow = swallow, onFinished = fin)
+        4 -> AtomicToIsland(sp, onSwallow = swallow, onFinished = fin, fullStart = full)
+        5 -> FluidSwallowToIsland(sp, onFinished = fin)
+        6 -> IslandStretch(sp, onFinished = fin)
+        else -> Unit
+    }
+}
+
+// ================================================================ Fener göstergesi
+
+/** Gerçek fener rozeti ve ışık kartı (TorchRoot), servisteki pencere yerleşimiyle: rozet -> kart -> kapalı döngüsü. */
+@Composable
+private fun TorchPreview(cx: Float, top: Float, cw: Float, ch: Float, inv: Boolean, d: Float) {
+    var mode by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) { delay(700); mode = 1; delay(2200); mode = 2; delay(3400); mode = 0 }
+    }
+    if (mode == 0) return
+    val (w, h, x, y) = if (mode == 1) {
+        val side = ch
+        listOf(side * 1.25f, side, cx - cw / 2f + 3f * d, top)
+    } else {
+        val w = 156f * d; val h = 224f * d
+        listOf(w, h, cx - w / 2f, if (inv) top + ch - h else top)
+    }
+    Box(Modifier.offset { IntOffset(x.toInt(), y.toInt()) }.size((w / d).dp, (h / d).dp)) {
+        TorchRoot(
+            mode = mode, level = 0.8f, spread = 0.7f, supportsLevels = true, pillW = cw, pillH = ch, inverted = inv,
+            onOpenCard = {}, onLevel = {}, onSpread = {}, onInteract = {}, onOff = {},
+        )
     }
 }
 
