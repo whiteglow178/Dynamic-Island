@@ -16,6 +16,13 @@
     <!-- Yalnızca adb ile verilirse: erişilebilirlik servisi çökünce uygulama kendini onarır -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
+    <!-- Kamera göstergesi: ön plandaki uygulamanın kamera uygulaması olup olmadığını anlamak için (izin değil) -->
+    <queries>
+        <intent><action android:name="android.media.action.STILL_IMAGE_CAMERA" /></intent>
+        <intent><action android:name="android.media.action.VIDEO_CAMERA" /></intent>
+        <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
+    </queries>
+
     <application
         android:name=".DynamicIslandApp"
         android:allowBackup="false"
