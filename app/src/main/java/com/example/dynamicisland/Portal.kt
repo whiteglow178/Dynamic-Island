@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -342,7 +343,7 @@ private fun DrawScope.drawSky(w: Float, h: Float, sx: Float, sy: Float, t: Float
             val p = moonPhase(nowMs)        // 0 yeni ay, 0.5 dolunay
             val dx = if (p < 0.5f) -2f * mr * (p / 0.5f) else 2f * mr * ((1f - p) / 0.5f)
             val moon = Path().apply { addOval(androidx.compose.ui.geometry.Rect(c, mr)) }
-            androidx.compose.ui.graphics.drawscope.clipPath(moon) {
+            clipPath(moon) {
                 drawCircle(Color(0xE60A0D24), radius = mr * 1.02f, center = Offset(c.x + dx, c.y))
             }
         }
