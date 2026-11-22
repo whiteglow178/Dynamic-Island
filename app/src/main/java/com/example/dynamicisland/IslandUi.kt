@@ -1384,20 +1384,21 @@ internal fun contrastOf(argb: Int): Color {
 }
 
 /**
- * Şarkının havası: kapak rengine göre hava efekti (0 yok, 1 yağmur, 2 kar, 3 asit yağmuru).
- * Soluk / beyazımsı kapak → kar; mavi, mor ya da çok koyu kapak → yağmur (çok koyuysa şimşekli); canlı yeşil → asit yağmuru;
- * sıcak renkler (kırmızı, turuncu, sarı) → güneşli, efekt yok.
+ * Şarkının havası: kapak rengine göre hava efekti (1 yağmur, 2 kar, 3 asit yağmuru, 4 güneş parıltısı).
+ * Beyazımsı kapak → kar; çok koyu, gri / soluk, mavi ya da mor kapak → yağmur (çok koyuysa şimşekli);
+ * canlı yeşil → asit yağmuru; sıcak renkler (kırmızı, turuncu, sarı, pembe) → güneş parıltısı.
  */
 internal fun moodWeatherFor(argb: Int): Int {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(argb, hsv)
     val h = hsv[0]; val s = hsv[1]; val v = hsv[2]
     return when {
-        s < 0.18f && v > 0.70f -> 2
-        v < 0.22f -> 1
-        h in 75f..160f && s > 0.45f -> 3
-        h in 180f..290f -> 1
-        else -> 0
+        s < 0.18f && v > 0.70f -> 2          // beyazımsı: kar
+        v < 0.22f -> 1                        // çok koyu: yağmur
+        s < 0.25f -> 1                        // gri / soluk: yağmur
+        h in 75f..160f && s > 0.45f -> 3      // canlı yeşil: asit yağmuru
+        h in 160f..300f -> 1                  // mavi, mor: yağmur
+        else -> 4                             // sıcak renkler: güneş
     }
 }
 

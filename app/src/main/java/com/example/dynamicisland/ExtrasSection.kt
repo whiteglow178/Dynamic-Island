@@ -159,7 +159,7 @@ private fun RemixSections() {
     }
 
     SectionCard("Şarkının havası", "Müzik adasındaki hava efektini şarkının kapağı seçsin") {
-        SwitchRow("Şarkının havası", "Açık müzik adasındaki hava efekti ayardan değil kapağın renginden gelir: mavi, mor ya da çok koyu kapakta yağmur (çok koyuysa şimşekli), beyazımsı kapakta kar, canlı yeşilde asit yağmuru; sıcak renkli (kırmızı, turuncu, sarı) kapakta hava açık, efekt yok. Şarkı değişince hava da değişir",
+        SwitchRow("Şarkının havası", "Açık müzik adasındaki hava efekti ayardan değil kapağın renginden gelir: mavi, mor, gri ya da çok koyu kapakta yağmur (çok koyuysa şimşekli), beyazımsı kapakta kar, canlı yeşilde asit yağmuru, sıcak renkli (kırmızı, turuncu, sarı, pembe) kapakta güneş ışığı ve altın parıltılar. Şarkı değişince hava da değişir. Efekt yalnızca ada tam açıkken (müzik paneli açıkken) görünür",
             cur.musicMood) { set(cur.copy(musicMood = it)) }
     }
 

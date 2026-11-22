@@ -479,6 +479,8 @@ private const val K_SPLASH = 3
 private const val K_BLOB = 4
 private const val K_ICE = 5
 private const val K_DRIP = 6
+private const val K_SUN = 7      // güneş parıltısı (Şarkının havası: sıcak renkli kapak)
+private const val SUN_LIFE = 2.4f
 
 private class P(var kind: Int, var x: Float, var y: Float, var vx: Float, var vy: Float, var life: Float, var size: Float) {
     var tid: String? = null
@@ -559,7 +561,7 @@ private class FxSim {
         val restoreMs = (cfg.fxRestoreSec * 1000f).toLong()
 
         if (weather != 0) {
-            val base = when (weather) { 1 -> 90f; 2 -> 28f; else -> 45f }
+            val base = when (weather) { 1 -> 90f; 2 -> 28f; 4 -> 16f; else -> 45f }
             acc += base * inten * (W / (340f * d)).coerceIn(0.6f, 1.8f) * dt
             while (acc >= 1f) {
                 acc -= 1f
@@ -567,6 +569,8 @@ private class FxSim {
                 when (weather) {
                     1 -> ps.add(P(K_RAIN, x, -6f * d, -30f * d, (650f + f() * 250f) * d, 0f, 1f))
                     2 -> ps.add(P(K_FLAKE, x, -6f * d, (f() - 0.5f) * 30f * d, (55f + f() * 60f) * d, f() * 6.28f, (1.4f + f() * 1.8f) * d))
+                    // Güneş: panelin her yerinde yavaşça süzülen, belirip sönen altın parıltılar (öğelere zarar vermez)
+                    4 -> ps.add(P(K_SUN, x, f() * H, (f() - 0.5f) * 14f * d, -(5f + f() * 12f) * d, 0f, (1.6f + f() * 2.4f) * d))
                     else -> ps.add(P(K_ACID, x, -6f * d, -20f * d, (520f + f() * 200f) * d, 0f, 1f))
                 }
             }
@@ -638,6 +642,10 @@ private class FxSim {
                 K_DRIP -> {
                     p.life -= dt; p.vy += 700f * d * dt; p.y += p.vy * dt
                     if (p.life <= 0f) dead = true
+                }
+                K_SUN -> {
+                    p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt
+                    if (p.life >= SUN_LIFE) dead = true
                 }
             }
             if (dead) ps.removeAt(i)
@@ -968,6 +976,17 @@ fun FxLayer(
                 if (t.freeze > 0.02f && !t.away) drawFrost(t, d, cfg.fxThawTaps)
             }
 
+            // ---- güneş: sağ üst köşeden yayılan, yavaşça nabız gibi atan sıcak ışık
+            if (cfg.fxWeather == 4) {
+                val pulse = 0.75f + 0.25f * sin(now % 4000L / 4000f * 2f * PI.toFloat())
+                val c = Offset(size.width * 0.92f, -size.height * 0.05f)
+                val rad = maxOf(size.width, size.height) * 0.75f
+                drawCircle(
+                    Brush.radialGradient(listOf(Color(0xFFFFD27A).copy(alpha = 0.32f * pulse), Color.Transparent), center = c, radius = rad),
+                    radius = rad, center = c,
+                )
+            }
+
             // ---- parçacıklar
             for (p in sim.ps) {
                 when (p.kind) {
@@ -983,6 +1002,14 @@ fun FxLayer(
                         drawRect(Pal.c("fx_ice_a").copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f) * 0.9f), Offset(p.x - p.size / 2f, p.y - p.size * 0.3f), Size(p.size, p.size * 0.6f))
                     }
                     K_DRIP -> drawLine(Pal.c("fx_acid").copy(alpha = (p.life / 0.9f).coerceIn(0f, 1f)), Offset(p.x, p.y - p.vy * 0.03f), Offset(p.x, p.y), p.size * 1.3f, StrokeCap.Round)
+                    K_SUN -> {
+                        val a = sin(PI.toFloat() * (p.life / SUN_LIFE).coerceIn(0f, 1f))
+                        val col = Color(0xFFFFE39A).copy(alpha = a * 0.95f)
+                        val l = p.size * (1.6f + a)
+                        drawLine(col, Offset(p.x - l, p.y), Offset(p.x + l, p.y), 0.9f * d, StrokeCap.Round)
+                        drawLine(col, Offset(p.x, p.y - l), Offset(p.x, p.y + l), 0.9f * d, StrokeCap.Round)
+                        drawCircle(col, p.size * 0.55f, Offset(p.x, p.y))
+                    }
                 }
             }
 
