@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -62,6 +63,8 @@ sealed interface PlayEvent {
     data object Water : PlayEvent         // bitki sulandı
     data object Fling : PlayEvent         // ada savruldu (hız: PlayFx.flingVx / flingVy)
     data class Say(val text: String) : PlayEvent   // evcil bir şey söylesin
+    data object Dice : PlayEvent          // telefon iki kez sallandı: zar at
+    data class Caught(val kind: VisitorKind) : PlayEvent   // ziyaretçi yakalandı
 }
 
 object PlayFx {
@@ -89,7 +92,10 @@ object PlayFx {
     var liquidV = 0f
     var flying by mutableStateOf(false)                // ada ekranda uçuyor (gerçek ada gizli, efekt penceresi çizer)
     var flingVx = 0f; var flingVy = 0f
-    var partyUntil = 0L                                // kutlama süresince evcil dans eder, yüz sevinir
+    var partyUntil = 0L
+    var tiltX by mutableFloatStateOf(0f)               // gölge için yumuşatılmış eğim (-1..1)
+    var tiltY by mutableFloatStateOf(0f)
+    var breath by mutableFloatStateOf(0f)               // nefes egzersizi: 0 boş, 1 dolu (evcil de nefes alır)                                // kutlama süresince evcil dans eder, yüz sevinir
     var lastActivityMs = System.currentTimeMillis()   // son dokunma / bildirim: evcil sıkılır mı
 
     val events = MutableSharedFlow<PlayEvent>(extraBufferCapacity = 16)
@@ -120,6 +126,8 @@ class PlayController(
     private var devCb: AudioDeviceCallback? = null
     private var devCbAt = 0L
     private var screenOn = true
+    private var lastShakeAt = 0L
+    private var lastDiceAt = 0L
     private var fullCelebrated = true          // açılışta zaten doluysa kutlama yapılmaz
     private var wasCharging = true
     private var wasLow = true
@@ -147,7 +155,21 @@ class PlayController(
             PlayFx.gy = PlayFx.gy * a + y * (1f - a)
             val dev = abs(sqrt(x * x + y * y + z * z) - SensorManager.GRAVITY_EARTH)
             if (dev > 6f) PlayFx.shake = max(PlayFx.shake, dev)
-            PlayFx.sensorAt = SystemClock.uptimeMillis()
+            val now = SystemClock.uptimeMillis()
+            PlayFx.sensorAt = now
+            val s = settings.value
+            // Zar: 0,8 sn içinde iki ayrı güçlü sallama
+            if (s.playDice && dev > 9f && now - lastShakeAt > 180L) {
+                if (now - lastShakeAt < 800L && now - lastDiceAt > 2_500L) { lastDiceAt = now; PlayFx.emit(PlayEvent.Dice) }
+                lastShakeAt = now
+            }
+            // Gölge: eğim değişince (gürültüyü yutmak için küçük değişimler yok sayılır)
+            if (s.playShadow) {
+                val tx = (-PlayFx.gx / 9.81f).coerceIn(-1f, 1f)
+                val ty = ((PlayFx.gy - 6.5f) / 6f).coerceIn(-1f, 1f)
+                if (abs(tx - PlayFx.tiltX) > 0.02f) PlayFx.tiltX = tx
+                if (abs(ty - PlayFx.tiltY) > 0.02f) PlayFx.tiltY = ty
+            }
         }
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     }
@@ -157,7 +179,10 @@ class PlayController(
         val r = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 when (i.action) {
-                    Intent.ACTION_SCREEN_ON -> { screenOn = true; syncSensor(); PlayFx.emit(PlayEvent.ScreenOn); dateParty() }
+                    Intent.ACTION_SCREEN_ON -> {
+                        screenOn = true; syncSensor(); PlayFx.emit(PlayEvent.ScreenOn); dateParty()
+                        if (settings.value.playVisitors) main.postDelayed({ runCatching { VisitorStore.maybeVisit(ctx) } }, 4_000L)
+                    }
                     Intent.ACTION_SCREEN_OFF -> { screenOn = false; syncSensor() }
                     Intent.ACTION_POWER_CONNECTED -> if (settings.value.playMagnet) PlayFx.emit(PlayEvent.Charger)
                     Intent.ACTION_BATTERY_CHANGED -> readBattery(i)
@@ -186,7 +211,14 @@ class PlayController(
         runCatching { PlantStore.load(ctx); DoodleStore.load(ctx) }
         main.postDelayed({ dateParty() }, 3_000L)
         // Sensör yalnızca fizik ya da yüz açıkken
-        scope.launch { settings.map { it.playPhysics || it.playFace || it.playLiquid }.distinctUntilChanged().collect { syncSensor() } }
+        scope.launch { settings.map { it.playPhysics || it.playFace || it.playLiquid || it.playDice || it.playShadow }.distinctUntilChanged().collect { syncSensor() } }
+        // Ziyaretçiler: ekran açıkken 10 dakikada bir sıra kontrolü
+        scope.launch {
+            while (true) {
+                if (screenOn && settings.value.playVisitors) runCatching { VisitorStore.maybeVisit(ctx) }
+                delay(10 * 60_000L)
+            }
+        }
     }
 
     private fun readBattery(i: Intent) {
@@ -208,7 +240,7 @@ class PlayController(
 
     private fun syncSensor() {
         val s = settings.value
-        val want = screenOn && (s.playPhysics || s.playFace || s.playLiquid)
+        val want = screenOn && (s.playPhysics || s.playFace || s.playLiquid || s.playDice || s.playShadow)
         if (want == sensorOn) return
         if (want) {
             val m = sm ?: return

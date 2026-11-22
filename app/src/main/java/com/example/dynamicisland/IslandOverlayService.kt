@@ -682,6 +682,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         playSfx(SoundEvent.Tap)
         PlayFx.lastActivityMs = System.currentTimeMillis()      // evcil: dokunulunca sıkılmaz
         PlayFx.fullness = 0f                                    // bildirim yiyen ada: dokununca "tokluk" geçer
+        // Nefes egzersizi sürerken dokunuş onu bitirir
+        if (BreathSession.active) {
+            BreathSession.stop()
+            if (settings.value.playBreath) { PlayFx.emit(PlayEvent.Say("Tamam, bitti.")); return }
+        }
+        // Ziyaretçi varken dokunuş onu yakalar
+        if (settings.value.playVisitors) VisitorStore.catchNow(this)?.let { k ->
+            PlayFx.emit(PlayEvent.Caught(k))
+            if (k.weight <= 3) PlayFx.emit(PlayEvent.Party)                  // nadir yakalama: konfeti
+        }
         if (secretGameTap()) return
         rhythmTap()
         // Ada saksısı: günün ilk dokunuşu bitkiyi sular
@@ -1011,6 +1021,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (s.translateReady() && s.translateTrigger == 1) openTranslate()
             else if (s.favoritesReady()) favorites.open()
             else if (s.playDoodle) IslandDoodleActivity.open(this)          // karalama tahtası
+            else if (s.playBreath && !BreathSession.active) BreathSession.start()   // nefes egzersizi
         } else if (cur.content is IslandContent.Media && !cur.expanded) {
             // Küçük müzik adası: basılı tutunca müzik uygulaması açılır ya da ada genişler
             if (s.openCompLong) openMusicApp()
@@ -1931,7 +1942,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
         val playTouch = k.kind == 0 && s.showIdle &&
-            (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant)
+            (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant || s.playVisitors || s.playBreath)
         setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady())) || playTouch) && !appHide.hidden)
         when {
             k.stackH > 0 -> {

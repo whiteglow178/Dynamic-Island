@@ -139,3 +139,81 @@ object Rhythm {
     /** Ekranda gösterilecek hali: S -> "•", L -> "—" (dokunuşlar arası) */
     fun pretty(p: String): String = "●" + p.map { if (it == 'L') " — ●" else " ●" }.joinToString("")
 }
+
+// ================================================================ Ada ziyaretçileri
+
+/** Ziyaretçi türleri. [weight] ne kadar sık geldiği; [night] yalnızca gece gelenler. */
+enum class VisitorKind(val title: String, val weight: Int, val night: Boolean = false) {
+    Butterfly("Kelebek", 30), Bird("Serçe", 25), Ladybug("Uğur böceği", 20), Bee("Arı", 14),
+    Firefly("Ateş böceği", 12, night = true), Star("Kayan yıldız", 4, night = true), Ufo("UFO", 2), GoldButterfly("Altın kelebek", 1);
+
+    val rarity: String get() = when { weight >= 20 -> "Sık"; weight >= 7 -> "Ara sıra"; weight >= 3 -> "Nadir"; else -> "Efsanevi" }
+}
+
+/**
+ * Günde birkaç kez (2,5–7 saatte bir, ekran açıkken) bir ziyaretçi gelir, ~25 sn adanın çevresinde dolaşır.
+ * O sırada adaya dokunursan yakalanır ve albüme eklenir.
+ */
+object VisitorStore {
+    private const val PREF = "island_visitors"
+    var current by mutableStateOf<VisitorKind?>(null)          // şu an ekrandaki ziyaretçi
+    var arrivedAt = 0L
+    var counts by mutableStateOf<Map<VisitorKind, Int>>(emptyMap())
+        private set
+    private var loaded = false
+
+    fun load(ctx: Context) {
+        if (loaded) return
+        loaded = true
+        val p = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+        counts = VisitorKind.entries.associateWith { p.getInt(it.name, 0) }.filterValues { it > 0 }
+        if (!p.contains("next")) p.edit().putLong("next", System.currentTimeMillis() + (5..30).random() * 60_000L).apply()
+    }
+
+    /** Sırası geldiyse bir ziyaretçi gönderir (ekran açık ve ayar açıkken çağrılır). */
+    fun maybeVisit(ctx: Context, force: Boolean = false) {
+        load(ctx)
+        if (current != null) return
+        val p = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (!force && now < p.getLong("next", 0L)) return
+        p.edit().putLong("next", now + (150..420).random() * 60_000L).apply()
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val night = hour >= 20 || hour < 6
+        val pool = VisitorKind.entries.filter { !it.night || night }
+        var r = (0 until pool.sumOf { it.weight }).random()
+        val kind = pool.first { r -= it.weight; r < 0 }
+        arrivedAt = System.currentTimeMillis()
+        current = kind
+    }
+
+    /** Ekrandaki ziyaretçiyi yakalar. */
+    fun catchNow(ctx: Context): VisitorKind? {
+        val k = current ?: return null
+        load(ctx)
+        val n = (counts[k] ?: 0) + 1
+        counts = counts + (k to n)
+        ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putInt(k.name, n).apply()
+        current = null
+        return k
+    }
+}
+
+// ================================================================ Nefes egzersizi
+
+object BreathSession {
+    var active by mutableStateOf(false)
+        private set
+    var startedAt = 0L
+        private set
+
+    fun start() { startedAt = android.os.SystemClock.uptimeMillis(); active = true }
+    fun stop() { active = false }
+
+    /** Desen: (al, tut, ver, tut) saniye. */
+    fun pattern(i: Int): FloatArray = when (i) {
+        1 -> floatArrayOf(4f, 7f, 8f, 0f)       // uyku (4-7-8)
+        2 -> floatArrayOf(4f, 4f, 4f, 4f)       // kutu nefesi
+        else -> floatArrayOf(4f, 4f, 4f, 0f)    // sakin
+    }
+}

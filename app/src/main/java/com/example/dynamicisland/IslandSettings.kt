@@ -432,6 +432,15 @@ data class PlaySettings(
     val playBirthDay: Int = 0,                // doğum günü (gün, 0 = yok)
     val playBirthMonth: Int = 1,              // doğum günü (ay)
     val playDoodle: Boolean = false,          // boştaki adada kendi çizimin
+    val playVisitors: Boolean = false,        // günde birkaç kez gelen ziyaretçiler; dokununca yakalanır, albüme eklenir
+    val playDice: Boolean = false,            // telefonu iki kez sallayınca zar / yazı-tura
+    val playDiceMode: Int = 0,                // 0 tek zar, 1 iki zar, 2 yazı-tura
+    val playBreath: Boolean = false,          // nefes egzersizi
+    val playBreathPattern: Int = 0,           // 0 sakin 4-4-4, 1 uyku 4-7-8, 2 kutu 4-4-4-4
+    val playBreathMin: Float = 2f,            // egzersiz süresi (dakika)
+    val playNightLight: Boolean = false,      // gece şarjdayken sıcak ışık + büyük saat
+    val playNightAmt: Float = 0.7f,           // gece lambası parlaklığı
+    val playShadow: Boolean = false,          // telefonu eğdikçe kayan gölge
 )
 
 val IslandSettings.playPhysics get() = play.playPhysics
@@ -465,6 +474,15 @@ val IslandSettings.playParty get() = play.playParty
 val IslandSettings.playBirthDay get() = play.playBirthDay
 val IslandSettings.playBirthMonth get() = play.playBirthMonth
 val IslandSettings.playDoodle get() = play.playDoodle
+val IslandSettings.playVisitors get() = play.playVisitors
+val IslandSettings.playDice get() = play.playDice
+val IslandSettings.playDiceMode get() = play.playDiceMode
+val IslandSettings.playBreath get() = play.playBreath
+val IslandSettings.playBreathPattern get() = play.playBreathPattern
+val IslandSettings.playBreathMin get() = play.playBreathMin
+val IslandSettings.playNightLight get() = play.playNightLight
+val IslandSettings.playNightAmt get() = play.playNightAmt
+val IslandSettings.playShadow get() = play.playShadow
 
 class SettingsRepository(context: Context) {
     private val store = context.applicationContext.islandStore
@@ -506,6 +524,9 @@ class SettingsRepository(context: Context) {
         val PL_FLING = booleanPreferencesKey("pl_fling"); val PL_TALK = booleanPreferencesKey("pl_talk"); val PL_PLANT = booleanPreferencesKey("pl_plant")
         val PL_SEASON = booleanPreferencesKey("pl_season"); val PL_SEASON_M = intPreferencesKey("pl_season_m"); val PL_RHY = booleanPreferencesKey("pl_rhy"); val PL_RHYS = stringPreferencesKey("pl_rhys")
         val PL_PARTY = booleanPreferencesKey("pl_party"); val PL_BD = intPreferencesKey("pl_bd"); val PL_BM = intPreferencesKey("pl_bm"); val PL_DOODLE = booleanPreferencesKey("pl_doodle")
+        val PL_VIS = booleanPreferencesKey("pl_vis"); val PL_DICE = booleanPreferencesKey("pl_dice"); val PL_DICE_M = intPreferencesKey("pl_dice_m")
+        val PL_BREATH = booleanPreferencesKey("pl_breath"); val PL_BREATH_P = intPreferencesKey("pl_breath_p"); val PL_BREATH_M = floatPreferencesKey("pl_breath_m")
+        val PL_NIGHT = booleanPreferencesKey("pl_night"); val PL_NIGHT_A = floatPreferencesKey("pl_night_a"); val PL_SHADOW = booleanPreferencesKey("pl_shadow")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val INV_ISLAND = booleanPreferencesKey("inv_island")
         val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below"); val LAND_IN_ISLAND = booleanPreferencesKey("land_in_island")
@@ -688,6 +709,9 @@ class SettingsRepository(context: Context) {
                 playRhythm = p[K.PL_RHY] ?: d.playRhythm, playRhythms = p[K.PL_RHYS] ?: d.playRhythms,
                 playParty = p[K.PL_PARTY] ?: d.playParty, playBirthDay = p[K.PL_BD] ?: d.playBirthDay, playBirthMonth = p[K.PL_BM] ?: d.playBirthMonth,
                 playDoodle = p[K.PL_DOODLE] ?: d.playDoodle,
+                playVisitors = p[K.PL_VIS] ?: d.playVisitors, playDice = p[K.PL_DICE] ?: d.playDice, playDiceMode = p[K.PL_DICE_M] ?: d.playDiceMode,
+                playBreath = p[K.PL_BREATH] ?: d.playBreath, playBreathPattern = p[K.PL_BREATH_P] ?: d.playBreathPattern, playBreathMin = p[K.PL_BREATH_M] ?: d.playBreathMin,
+                playNightLight = p[K.PL_NIGHT] ?: d.playNightLight, playNightAmt = p[K.PL_NIGHT_A] ?: d.playNightAmt, playShadow = p[K.PL_SHADOW] ?: d.playShadow,
             ),
             launchSpeed = p[K.LA_SPD] ?: d.launchSpeed,
             musicOpenAnim = p[K.MO_ANIM] ?: d.musicOpenAnim,
@@ -820,7 +844,9 @@ class SettingsRepository(context: Context) {
             it[K.PL_LIQ] = s.playLiquid; it[K.PL_EAT] = s.playEater; it[K.PL_EAT_F] = s.playEaterFull; it[K.PL_PULL] = s.playPull
             it[K.PL_DAY] = s.playDaylight; it[K.PL_DAY_A] = s.playDaylightAmt; it[K.PL_GAME] = s.playGame;
             it[K.PL_FLING] = s.playFling; it[K.PL_TALK] = s.playPetTalk; it[K.PL_PLANT] = s.playPlant; it[K.PL_SEASON] = s.playSeason; it[K.PL_SEASON_M] = s.playSeasonMode
-            it[K.PL_RHY] = s.playRhythm; it[K.PL_RHYS] = s.playRhythms; it[K.PL_PARTY] = s.playParty; it[K.PL_BD] = s.playBirthDay; it[K.PL_BM] = s.playBirthMonth; it[K.PL_DOODLE] = s.playDoodle; it[K.HIDE_MUSIC] = s.hideInMusicApp
+            it[K.PL_RHY] = s.playRhythm; it[K.PL_RHYS] = s.playRhythms; it[K.PL_PARTY] = s.playParty; it[K.PL_BD] = s.playBirthDay; it[K.PL_BM] = s.playBirthMonth; it[K.PL_DOODLE] = s.playDoodle;
+            it[K.PL_VIS] = s.playVisitors; it[K.PL_DICE] = s.playDice; it[K.PL_DICE_M] = s.playDiceMode; it[K.PL_BREATH] = s.playBreath; it[K.PL_BREATH_P] = s.playBreathPattern
+            it[K.PL_BREATH_M] = s.playBreathMin; it[K.PL_NIGHT] = s.playNightLight; it[K.PL_NIGHT_A] = s.playNightAmt; it[K.PL_SHADOW] = s.playShadow; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.INV_ISLAND] = s.invertedIsland
             it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow; it[K.LAND_IN_ISLAND] = s.landscapeEventsInIsland

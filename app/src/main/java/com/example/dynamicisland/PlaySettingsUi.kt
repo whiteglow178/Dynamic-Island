@@ -170,3 +170,27 @@ private fun SingleAppPicker(onDismiss: () -> Unit, onPick: (String) -> Unit) {
         dismissButton = { TextButton(onDismiss) { Text("İptal") } },
     )
 }
+
+// ================================================================ Ziyaretçi albümü
+
+/** Yakalanan ziyaretçiler: tür, nadirlik, kaç kez. Hiç yakalanmayanlar "???" görünür. */
+@Composable
+fun VisitorAlbum() {
+    val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    LaunchedEffect(Unit) { VisitorStore.load(ctx) }
+    val counts = VisitorStore.counts
+    val found = counts.size
+    Text("Albüm: $found / ${VisitorKind.entries.size} tür", color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    VisitorKind.entries.forEach { k ->
+        val n = counts[k] ?: 0
+        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(if (n > 0) k.title else "???", color = if (n > 0) cs.onSurface else cs.onSurfaceVariant, fontSize = 14.sp,
+                    fontWeight = if (n > 0) FontWeight.Medium else FontWeight.Normal)
+                Text(k.rarity + if (k.night) " · yalnızca gece" else "", color = cs.onSurfaceVariant, fontSize = 11.sp)
+            }
+            Text(if (n > 0) "×$n" else "—", color = if (n > 0) cs.primary else cs.onSurfaceVariant, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}

@@ -803,6 +803,46 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 if (DoodleStore.strokes.isNotEmpty()) IslandActionButton("Çizimi sil", { DoodleStore.save(ctx, emptyList()) })
             }
         }
+        sec("Ada ziyaretçileri", "Gelen misafirleri yakala, albümü doldur") {
+            SwitchRow("Ada ziyaretçileri", "Günde birkaç kez adanın yanına bir misafir gelir: kelebek, serçe, uğur böceği, arı; gece ateş böceği ve kayan yıldız; çok nadiren UFO ya da altın kelebek. Yaklaşık 25 saniye kalır. O sırada adaya dokunursan yakalarsın",
+                draft.playVisitors) { draft = draft.copy(play = draft.play.copy(playVisitors = it)) }
+            if (draft.playVisitors) {
+                IslandActionButton("Şimdi bir ziyaretçi çağır", { VisitorStore.maybeVisit(ctx, force = true) })
+                VisitorAlbum()
+            }
+        }
+        sec("Salla, zar at", "Telefonu iki kez salla") {
+            SwitchRow("Salla, zar at", "Telefonu kısa aralıkla iki kez sallayınca adanın altına zar düşer, yuvarlanıp sonucu gösterir. Evcil sonucu söyler",
+                draft.playDice) { draft = draft.copy(play = draft.play.copy(playDice = it)) }
+            if (draft.playDice) {
+                SegmentedTabs(listOf("Tek zar", "İki zar", "Yazı-tura"), draft.playDiceMode) { draft = draft.copy(play = draft.play.copy(playDiceMode = it)) }
+                IslandActionButton("Şimdi dene", { PlayFx.emit(PlayEvent.Dice) })
+            }
+        }
+        sec("Nefes egzersizi", "Ada seninle nefes alır") {
+            SwitchRow("Nefes egzersizi", "Başlatınca ada yavaşça şişip söner, altında \"Nefes al / Tut / Nefes ver\" yazar. Evcil de seninle nefes alır. Boştaki adayı basılı tutarak da başlatabilirsin (basılı tutmanın başka işi yoksa). Bitirmek için adaya dokun",
+                draft.playBreath) { draft = draft.copy(play = draft.play.copy(playBreath = it)) }
+            if (draft.playBreath) {
+                SegmentedTabs(listOf("Sakin 4-4-4", "Uyku 4-7-8", "Kutu 4-4-4-4"), draft.playBreathPattern) { draft = draft.copy(play = draft.play.copy(playBreathPattern = it)) }
+                SliderRow("Süre", draft.playBreathMin, 1f..10f, "${kotlin.math.round(draft.playBreathMin).toInt()} dk") {
+                    draft = draft.copy(play = draft.play.copy(playBreathMin = kotlin.math.round(it)))
+                }
+                IslandActionButton(if (BreathSession.active) "Durdur" else "Şimdi başlat", {
+                    if (BreathSession.active) BreathSession.stop() else BreathSession.start()
+                }, tonal = false)
+            }
+        }
+        sec("Gece lambası", "Gece şarjda sıcak ışık ve büyük saat") {
+            SwitchRow("Gece lambası", "Saat 22:00 ile 07:00 arasında telefon şarjdayken ve ekran açıkken adanın çevresi sıcak bir ışıkla parlar, altında büyük bir saat, gün ve şarj yüzdesi görünür",
+                draft.playNightLight) { draft = draft.copy(play = draft.play.copy(playNightLight = it)) }
+            if (draft.playNightLight) {
+                SliderRow("Parlaklık", draft.playNightAmt, 0.1f..1f, "%${(draft.playNightAmt * 100).toInt()}") { draft = draft.copy(play = draft.play.copy(playNightAmt = it)) }
+            }
+        }
+        sec("Ada gölgesi", "Ada ekranın üstünde yüzüyormuş gibi") {
+            SwitchRow("Ada gölgesi", "Adanın altında yumuşak bir gölge olur. Telefonu eğdikçe gölge kayar, ada ekranın üstünde yüzüyormuş gibi derinlik kazanır. Koyu duvar kağıtlarında daha az fark edilir",
+                draft.playShadow) { draft = draft.copy(play = draft.play.copy(playShadow = it)) }
+        }
         sec("Cep hissi", "Ekran açılınca ada yerine düşer") {
             SwitchRow("Cep hissi", "Ekran açılınca ada kamera deliğinden düşüp yaylanarak yerine oturur. Uzun süre boş kalınca küçülüp kamera deliğine girer, bir olay gelince fırlayıp çıkar",
                 draft.playPocket) { draft = draft.copy(play = draft.play.copy(playPocket = it)) }

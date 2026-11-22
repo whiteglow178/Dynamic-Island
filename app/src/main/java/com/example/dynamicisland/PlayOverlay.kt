@@ -88,7 +88,8 @@ class PlayOverlay(
     private var tries = 0
 
     fun wanted(s: IslandSettings) = s.playPet || s.playMagnet || s.playRipple || s.playPuff || s.playEater || s.playDaylight ||
-        s.playFling || s.playPlant || s.playSeason || s.playParty
+        s.playFling || s.playPlant || s.playSeason || s.playParty ||
+        s.playVisitors || s.playDice || s.playBreath || s.playNightLight || s.playShadow
 
     fun attach() {
         if (view != null || !wanted(settings.value)) return
@@ -166,7 +167,10 @@ private fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow
     val anchor = a ?: return
     if (!anchor.shown) return
     Box(Modifier.fillMaxSize()) {
+        if (s.playShadow) ShadowFx(anchor)
+        if (s.playNightLight) NightLightFx(anchor, s.playNightAmt)
         if (s.playDaylight) DaylightFx(anchor, s.playDaylightAmt)
+        if (s.playBreath) BreathFx(anchor, s.playBreathPattern, s.playBreathMin)
         if (s.playSeason) SeasonFx(anchor, seasonOf(s.playSeasonMode))
         if (s.playPlant) PlantFx(anchor)
         if (s.playEater) EaterFx(anchor)
@@ -174,17 +178,19 @@ private fun PlayLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFlow
         if (s.playMagnet) MagnetFx(anchor)
         if (s.playPuff) PuffDustFx(anchor)
         if (s.playPet) PetFx(anchor, s.playPetTalk, s.playPlant)
+        if (s.playVisitors) VisitorFx(anchor)
+        if (s.playDice) DiceFx(anchor, s.playDiceMode)
         if (s.playParty) PartyFx(anchor)
         if (s.playFling) FlingFx(anchor)
     }
 }
 
 /** Adanın (fizik / cep kaymasıyla birlikte) anlık merkezi ve alt kenarı. */
-private fun PlayAnchor.liveCx() = cx + PlayFx.slideX
-private fun PlayAnchor.liveCy() = top + h / 2f + PlayFx.dropY
+internal fun PlayAnchor.liveCx() = cx + PlayFx.slideX
+internal fun PlayAnchor.liveCy() = top + h / 2f + PlayFx.dropY
 /** Adanın ekranın ortasına bakan kenarı (normalde alt, ters adada üst) ve o yönün işareti. */
-private fun PlayAnchor.edgeY() = if (inverted) top + PlayFx.dropY else top + h + PlayFx.dropY
-private fun PlayAnchor.dir() = if (inverted) -1f else 1f
+internal fun PlayAnchor.edgeY() = if (inverted) top + PlayFx.dropY else top + h + PlayFx.dropY
+internal fun PlayAnchor.dir() = if (inverted) -1f else 1f
 
 // ================================================================ 8) Dalga
 
@@ -396,6 +402,7 @@ private fun PetFx(a: PlayAnchor, talk: Boolean, plantOn: Boolean) {
                 PlayEvent.Water -> speak("Teşekkürler!")
                 PlayEvent.Puff -> speak("Uçuyoruuum!")
                 PlayEvent.Fling -> speak("Vuuuu!")
+                is PlayEvent.Caught -> speak("Yakaladın: ${e.kind.title}!")
                 is PlayEvent.Say -> speak(e.text)
                 else -> Unit
             }
@@ -422,7 +429,7 @@ private fun PetFx(a: PlayAnchor, talk: Boolean, plantOn: Boolean) {
     Canvas(Modifier.fillMaxSize()) {
         val time = t
         val h = a.h
-        val R = h * 0.42f
+        val R = h * 0.42f * (1f + 0.14f * PlayFx.breath)              // nefes egzersizinde evcil de nefes alır
         val dir = a.dir()
         val now = System.currentTimeMillis()
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
