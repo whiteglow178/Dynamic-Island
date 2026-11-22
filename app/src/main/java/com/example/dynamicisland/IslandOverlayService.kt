@@ -1539,6 +1539,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             Bg.Notif -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse((settings.value.notifExpandedSec * 1000f).toLong()) }
             Bg.Privacy -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(4_000) }
             Bg.Shazam -> Unit
+            Bg.Live -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(8_000) }
         }
     }
 
