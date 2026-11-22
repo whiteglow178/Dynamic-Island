@@ -553,6 +553,13 @@ data class MoreSettings(
     val trashIsland: Boolean = false,       // silinen bildirim adaya uçar, ada yutar
     val appLockEnabled: Boolean = false,    // seçili uygulamalar açılınca adada Face ID animasyonu (yalnızca görsel; doğrulama yok)
     val appLockPkgs: String = "",
+    // ---- İkinci türetme turu
+    val notifFlow: Boolean = false,         // bildirim yazısı kelime kelime adadan dökülür, sonra geri çekilir
+    val thumbFan: Boolean = false,          // başparmak adasına basılı tutunca favoriler yelpaze gibi açılır
+    val islandShape: Int = 0,               // boştaki ada şekli: 0 hap, 1 kalp, 2 bulut, 3 kedi, 4 elmas
+    val coverPortal: Boolean = false,       // küçük müzik adasında albüm kapağı eğimle kayan derinlikli zemin olur
+    val chargeRing: Boolean = false,        // şarja takınca adada dolan yeşil şarj halkası
+    val notifBirds: Boolean = false,        // bildirim gelince uygulamanın ziyaretçisi adaya konar; dokununca bildirim açılır
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -669,6 +676,8 @@ class SettingsRepository(context: Context) {
         val NT_TR = booleanPreferencesKey("nt_tr"); val NT_TR_TGT = stringPreferencesKey("nt_tr_tgt"); val CONTRAST = booleanPreferencesKey("contrast")
         val MOOD = booleanPreferencesKey("mood"); val DRW_ON = booleanPreferencesKey("drw_on"); val DRW_TRIG = intPreferencesKey("drw_trig")
         val TRASH = booleanPreferencesKey("trash"); val AL_ON = booleanPreferencesKey("al_on"); val AL_PKGS = stringPreferencesKey("al_pkgs")
+        val NFLOW = booleanPreferencesKey("nflow"); val TFAN = booleanPreferencesKey("tfan"); val ISHAPE = intPreferencesKey("ishape")
+        val CPORTAL = booleanPreferencesKey("cportal"); val CRING = booleanPreferencesKey("cring"); val NBIRD = booleanPreferencesKey("nbird")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -934,6 +943,12 @@ class SettingsRepository(context: Context) {
                 trashIsland = p[K.TRASH] ?: d.more.trashIsland,
                 appLockEnabled = p[K.AL_ON] ?: d.more.appLockEnabled,
                 appLockPkgs = p[K.AL_PKGS] ?: d.more.appLockPkgs,
+                notifFlow = p[K.NFLOW] ?: d.more.notifFlow,
+                thumbFan = p[K.TFAN] ?: d.more.thumbFan,
+                islandShape = (p[K.ISHAPE] ?: d.more.islandShape).coerceIn(0, 4),
+                coverPortal = p[K.CPORTAL] ?: d.more.coverPortal,
+                chargeRing = p[K.CRING] ?: d.more.chargeRing,
+                notifBirds = p[K.NBIRD] ?: d.more.notifBirds,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1049,6 +1064,8 @@ class SettingsRepository(context: Context) {
             it[K.NT_TR] = m.notifTranslate; it[K.NT_TR_TGT] = m.notifTranslateTgt; it[K.CONTRAST] = m.contrastEnabled
             it[K.MOOD] = m.musicMood; it[K.DRW_ON] = m.drawerEnabled; it[K.DRW_TRIG] = m.drawerTrigger
             it[K.TRASH] = m.trashIsland; it[K.AL_ON] = m.appLockEnabled; it[K.AL_PKGS] = m.appLockPkgs
+            it[K.NFLOW] = m.notifFlow; it[K.TFAN] = m.thumbFan; it[K.ISHAPE] = m.islandShape
+            it[K.CPORTAL] = m.coverPortal; it[K.CRING] = m.chargeRing; it[K.NBIRD] = m.notifBirds
         }
     }
 

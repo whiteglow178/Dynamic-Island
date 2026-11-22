@@ -67,6 +67,9 @@ sealed interface PlayEvent {
     data class Say(val text: String) : PlayEvent   // evcil bir şey söylesin
     data object Dice : PlayEvent          // telefon iki kez sallandı: zar at
     data class Caught(val kind: VisitorKind) : PlayEvent   // ziyaretçi yakalandı
+    data class NotifText(val title: String, val text: String) : PlayEvent   // adadan akan bildirim
+    data class BirdLand(val kind: VisitorKind) : PlayEvent   // bildirim kuşu adaya konar
+    data object BirdAway : PlayEvent                          // bildirim kuşu uçup gider
     data class Trashed(val icon: androidx.compose.ui.graphics.ImageBitmap?) : PlayEvent   // bildirim silindi: simgesi adaya uçar (çöp kutusu ada)
 }
 

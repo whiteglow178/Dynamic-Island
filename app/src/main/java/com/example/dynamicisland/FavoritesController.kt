@@ -31,6 +31,13 @@ class FavoritesController(private val host: IslandHost) {
         host.scope.launch(Dispatchers.Default) { missing.forEach { favApp(it) } }
     }
 
+    /** Başparmak yelpazesi için: favori uygulamalar (önbellekte olmayanların simgesi bu çağrıda yüklenir). */
+    fun appsNow(): List<FavApp> {
+        val s = host.settings
+        if (s.favoritePkgList().isEmpty()) return emptyList()
+        return s.favoritePkgList().mapNotNull { favApp(it) }
+    }
+
     fun open() {
         val s = host.settings
         if (!s.favoritesReady()) return

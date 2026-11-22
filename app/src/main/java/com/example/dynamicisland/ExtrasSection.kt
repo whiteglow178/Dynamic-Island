@@ -127,6 +127,7 @@ fun ExtrasSections() {
 
     // ---------------------------------------------------------------- Mevcut özelliklerden türetilenler
     RemixSections()
+    CreativeSections()
 }
 
 /** Bildirim çevirisi, şarkının havası, ada çekmecesi, çöp kutusu ada, uygulama kilidi. */
@@ -185,6 +186,60 @@ private fun RemixSections() {
             HiddenAppsPicker(cur.appLockList(), title = "Animasyon oynayacak uygulamalar") { list -> set(cur.copy(appLockPkgs = list.joinToString(","))) }
         }
         Text("Hangi uygulamanın açıldığını erişilebilirlik servisi bildirir; servis açık olmalı.", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+}
+
+/** Adadan akan bildirim, yelpaze menü, ada şekli, kapak portalı, şarj halkası, bildirim kuşları. */
+@Composable
+private fun CreativeSections() {
+    val ctx = LocalContext.current
+    val repo = remember { SettingsRepository(ctx.applicationContext) }
+    var m by remember { mutableStateOf<MoreSettings?>(null) }
+    LaunchedEffect(Unit) { m = repo.flow.first().more }
+    LaunchedEffect(m) {
+        val v = m ?: return@LaunchedEffect
+        delay(250)
+        repo.update { s ->
+            s.copy(more = s.more.copy(
+                notifFlow = v.notifFlow, thumbFan = v.thumbFan, islandShape = v.islandShape,
+                coverPortal = v.coverPortal, chargeRing = v.chargeRing, notifBirds = v.notifBirds,
+            ))
+        }
+    }
+    val cur = m ?: return
+    val set: (MoreSettings) -> Unit = { m = it }
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant
+
+    SectionCard("Ada şekli", "Boştaki ada hap yerine başka bir şekle bürünür") {
+        SegmentedTabs(ISLAND_SHAPE_NAMES, cur.islandShape) { set(cur.copy(islandShape = it)) }
+        Text("Ada boştayken seçtiğin şekle akarak dönüşür; bildirim, müzik ya da başka bir şey gelince yeniden hapa döner ve normal açılır. Nokta modunda kullanılmaz.",
+            color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+
+    SectionCard("Adadan akan bildirim", "Bildirimin yazısı kelime kelime adadan dökülür") {
+        SwitchRow("Adadan akan bildirim", "Bildirim gelince başlık ve metnin ilk kelimeleri adadan sıvı gibi damlayarak ekrana dökülür, birkaç saniye okunur, sonra adaya geri çekilir. Adadaki bildirim her zamanki gibi görünmeye devam eder",
+            cur.notifFlow) { set(cur.copy(notifFlow = it)) }
+    }
+
+    SectionCard("Bildirim kuşları", "Bildirim gelince adanın yanına bir kuş konar") {
+        SwitchRow("Bildirim kuşları", "Bildirim gelince uygulamaya göre bir serçe, kelebek, uğur böceği ya da arı uçup adanın yanına konar ve bekler. Ada boştayken adaya dokununca o bildirim açılır, kuş uçup gider. Bir dakika sonra kendiliğinden uçar",
+            cur.notifBirds) { set(cur.copy(notifBirds = it)) }
+    }
+
+    SectionCard("Kapak portalı", "Müzik çalarken kısa adada derin albüm kapağı") {
+        SwitchRow("Kapak portalı", "Müzik çalarken kısa adanın içi bir pencereye dönüşür ve arkasında albüm kapağı katmanlar halinde durur; telefonu eğdikçe katmanlar farklı hızda kayar, derinlik hissi verir. Kapağı olmayan şarkılarda normal görünür",
+            cur.coverPortal) { set(cur.copy(coverPortal = it)) }
+    }
+
+    SectionCard("Şarj halkası", "Şarja takınca ada kareye açılır, halka dolar") {
+        SwitchRow("Şarj halkası", "Şarja takınca ada kare bir kutuya açılır, yeşil halka pil yüzdesine kadar dolar ve yüzde sayılır; sonra ada eski haline döner. Ekran açıkken ve ada boştayken ya da müzik çalarken oynar",
+            cur.chargeRing) { set(cur.copy(chargeRing = it)) }
+    }
+
+    SectionCard("Yelpaze menü", "Başparmak adasına basılı tut, favoriler yay gibi açılsın") {
+        SwitchRow("Yelpaze menü", "Başparmak modundaki aşağıdaki adaya basılı tutunca favori uygulamalar adanın çevresinde yay şeklinde açılır. Parmağını kaldırmadan bir simgeye kaydırıp bırakınca uygulama açılır; boşta bırakırsan kapanır",
+            cur.thumbFan) { set(cur.copy(thumbFan = it)) }
+        Text("Başparmak modu açık olmalı. Uygulamalar Favori uygulamalar listesinden gelir.", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
     }
 }
 

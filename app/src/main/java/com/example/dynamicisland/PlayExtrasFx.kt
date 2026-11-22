@@ -54,7 +54,7 @@ private val TAU_F = (2.0 * PI).toFloat()
 
 /** Ekran açıkken sürekli kare isteyen efektler için zaman sayacı (yalnızca [on] iken çalışır). */
 @Composable
-private fun rememberClock(on: Boolean, fpsCap: Int = 60): Float {
+internal fun rememberClock(on: Boolean, fpsCap: Int = 60): Float {
     var t by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(on) {
         if (!on) return@LaunchedEffect
@@ -360,7 +360,7 @@ internal fun VisitorFx(a: PlayAnchor) {
     }
 }
 
-private fun DrawScope.drawVisitor(k: VisitorKind, c: Offset, d: Float, t: Float) {
+internal fun DrawScope.drawVisitor(k: VisitorKind, c: Offset, d: Float, t: Float) {
     when (k) {
         VisitorKind.Butterfly, VisitorKind.GoldButterfly -> {
             val gold = k == VisitorKind.GoldButterfly

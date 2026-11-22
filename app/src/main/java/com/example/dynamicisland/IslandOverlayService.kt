@@ -285,6 +285,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     e.pkg, tr?.first ?: e.title, tr?.second ?: e.text, icon, e.intent, e.key, e.avatar, e.messaging, accent,
                     translatedFrom = tr?.third.orEmpty(),
                 )
+                // Adadan akan bildirim: kelimeler adadan dökülür (efekt penceresi)
+                if (st.more.notifFlow) PlayFx.emit(PlayEvent.NotifText(n.title, n.text))
+                // Bildirim kuşları: bir kuş adanın yanına konar; adaya dokununca bu bildirim açılır
+                if (st.more.notifBirds) perchBird(n)
                 // iOS tarzı banner açıksa bildirim adada değil cam banner olarak gösterilir; pencere eklenemezse adaya düşer
                 if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
             }
@@ -773,7 +777,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             IslandContent.Idle -> {
                 val s = settings.value
-                if (s.designPhotoReady() && s.more.designPhotoTrigger == 0) openPhoto()
+                val bird = perchedNotif
+                if (s.more.notifBirds && bird != null) { birdAway(); openNotification(bird) }
+                else if (s.designPhotoReady() && s.more.designPhotoTrigger == 0) openPhoto()
                 else if (s.more.drawerEnabled && s.showIdle && s.more.drawerTrigger == 0) openDrawer()
                 else if (s.translateReady() && s.translateTrigger == 0) openTranslate()
                 else if (s.favoritesReady() && s.favoritesTrigger == 0) favorites.open()
@@ -816,7 +822,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val thumb by lazy {
         ThumbIsland(this, this, this, wm, settings, ui,
             onTap = { onPillTap() },
-            onReturn = { ThumbStore.set(this, false) })
+            onReturn = { ThumbStore.set(this, false) },
+            favApps = { favorites.appsNow() },
+            onLaunch = { pkg -> launchFavorite(pkg) })
     }
 
     private fun startExtras() {
@@ -837,6 +845,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { while (true) { delay(10_000L); runCatching { checkCapsule() } } }
         // Kamuflaj: boştaki adanın yanındaki rengi düzenli aralıklarla oku
         scope.launch { while (true) { delay(1_500L); runCatching { sampleCamo() } } }
+        // Şarj halkası: şarja takılınca
+        runCatching {
+            val f = android.content.IntentFilter(Intent.ACTION_POWER_CONNECTED)
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(chargeReceiver, f, Context.RECEIVER_EXPORTED) else registerReceiver(chargeReceiver, f)
+        }
     }
 
     private fun setThumb(on: Boolean) {
@@ -914,6 +927,65 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 inverted = s.invertedIsland,
             )
         )
+    }
+
+    // ---------------------------------------------------------------- Bildirim kuşları
+    private var perchedNotif: IslandContent.Notif? = null
+    private var birdJob: Job? = null
+
+    private fun birdKindFor(pkg: String): VisitorKind {
+        val p = pkg.lowercase()
+        return when {
+            "whatsapp" in p || "telegram" in p || "messag" in p || "sms" in p || "signal" in p || "mms" in p -> VisitorKind.Bird
+            "mail" in p || "gm" == p.substringAfterLast('.') || "outlook" in p -> VisitorKind.Butterfly
+            "instagram" in p -> VisitorKind.Ladybug
+            else -> listOf(VisitorKind.Bird, VisitorKind.Butterfly, VisitorKind.Ladybug, VisitorKind.Bee)[(pkg.hashCode() and 0x7fffffff) % 4]
+        }
+    }
+
+    private fun perchBird(n: IslandContent.Notif) {
+        perchedNotif = n
+        PlayFx.emit(PlayEvent.BirdLand(birdKindFor(n.pkg)))
+        scope.launch { syncWindow(winKey(ui.value)) }      // boştaki adaya dokunulabilsin
+        birdJob?.cancel()
+        birdJob = scope.launch { delay(60_000L); perchedNotif = null }
+    }
+
+    private fun birdAway() {
+        perchedNotif = null
+        birdJob?.cancel()
+        PlayFx.emit(PlayEvent.BirdAway)
+    }
+
+    // ---------------------------------------------------------------- Şarj halkası
+    private var chargeRingHidden = false
+    private val chargeRing by lazy {
+        ChargeRingFlash(this, this, this, wm) { on ->
+            chargeRingHidden = on
+            applyMainHidden()
+        }
+    }
+    private val chargeReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            if (i?.action != Intent.ACTION_POWER_CONNECTED) return
+            val s = settings.value
+            if (!s.more.chargeRing || landscape.active || appHide.hidden || assistantActive || call.active) return
+            if (ui.value.content !is IslandContent.Idle && ui.value.content !is IslandContent.Media) return
+            if (getSystemService(android.os.PowerManager::class.java)?.isInteractive != true) return
+            val pct = getSystemService(android.os.BatteryManager::class.java)
+                ?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: return
+            val sw = wm.currentWindowMetrics.bounds.width()
+            chargeRing.play(
+                FaceIdAnchor(
+                    cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+                    cy = islandCenterYPx(s).toFloat(),
+                    pillW = dp(compactWidthFor(s, false)).toFloat(),
+                    pillH = dp(s.compactHeightDp).toFloat(),
+                    inverted = s.invertedIsland,
+                ),
+                pct,
+            )
+        }
     }
 
     // ---------------------------------------------------------------- Ada çekmecesi
@@ -1053,7 +1125,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         applyMainHidden()
     }
     private fun applyMainHidden() {
-        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden || thumbHidden || faceFlashHidden) View.INVISIBLE else View.VISIBLE }
+        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden || thumbHidden || faceFlashHidden || chargeRingHidden) View.INVISIBLE else View.VISIBLE }
         refreshDecor()
     }
 
@@ -1552,6 +1624,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     /** Bildirime dokununca: bildirimin kendi hedefi (ör. ilgili sohbet) açılır; yoksa uygulamanın ana ekranı. */
     private fun openNotification(n: IslandContent.Notif) {
         notif.clear()      // açılan bildirim adada kalmaz
+        if (perchedNotif?.key == n.key && n.key.isNotEmpty()) birdAway()      // konan kuş da uçar
         val open: () -> Unit = {
             val pi = n.intent
             val sent = pi != null && runCatching {
@@ -2187,7 +2260,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
         val playTouch = k.kind == 0 && s.showIdle &&
             (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant || s.playVisitors || s.playBreath)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && (s.more.thumbEnabled || s.more.drawerEnabled)) || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden && !thumbHidden)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && (s.more.thumbEnabled || s.more.drawerEnabled || s.more.notifBirds)) || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden && !thumbHidden)
         when {
             k.stackH > 0 -> {
                 // Yığın görünümü: pencere kartların toplam boyutunda
@@ -2402,6 +2475,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandAccessibilityService.onChanged = null
         DrawerBridge.onKey = null
         runCatching { faceFlash.release() }
+        runCatching { chargeRing.release() }
+        runCatching { unregisterReceiver(chargeReceiver) }
         runCatching { thumb.detach() }
         TranslateSession.closeRequest = null
         TranslateSession.onLangsChanged = null

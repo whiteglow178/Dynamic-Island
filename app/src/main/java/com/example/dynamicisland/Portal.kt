@@ -55,8 +55,11 @@ object PortalTilt {
  * Uzak katmanlar az, yakın katmanlar çok kayar (paralaks); kenarlardaki iç gölge "delik" hissi verir.
  * Sensör yalnızca bu çizim ekrandayken ve ekran açıkken dinlenir.
  */
+/**
+ * Eğim sensörünü dinler ve [PortalTilt]'i günceller (ekran kapalıyken dinlemez). Portal ada ve kapak portalı kullanır.
+ */
 @Composable
-fun PortalScene(scene: Int, depth: Float, modifier: Modifier = Modifier) {
+fun PortalSensor() {
     val ctx = LocalContext.current
     DisposableEffect(Unit) {
         val sm = ctx.getSystemService(SensorManager::class.java)
@@ -101,6 +104,11 @@ fun PortalScene(scene: Int, depth: Float, modifier: Modifier = Modifier) {
             runCatching { ctx.unregisterReceiver(screen) }
         }
     }
+}
+
+@Composable
+fun PortalScene(scene: Int, depth: Float, modifier: Modifier = Modifier) {
+    PortalSensor()
     val tr = rememberInfiniteTransition(label = "portal")
     val time by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(24_000, easing = LinearEasing)), label = "portalT")
     val rnd = remember(scene) { PortalRandom(scene + 3) }
@@ -385,4 +393,41 @@ private fun moonPhase(nowMs: Long): Float {
     val synodic = 29.530588853 * 86_400_000.0
     val p = ((nowMs - known) / synodic) % 1.0
     return (if (p < 0) p + 1.0 else p).toFloat()
+}
+
+// ================================================================ Kapak portalı
+
+/**
+ * Kapak portalı: kısa müzik adasının içinde albüm kapağı derinlikli bir pencere gibi durur.
+ * Arkada bulanık ve büyütülmüş kapak yavaş, önde net kapak hızlı kayar; telefonu eğdikçe derinlik hissi verir.
+ */
+@Composable
+fun CoverPortal(art: androidx.compose.ui.graphics.ImageBitmap, modifier: Modifier = Modifier) {
+    PortalSensor()
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        val iw = art.width.toFloat().coerceAtLeast(1f); val ih = art.height.toFloat().coerceAtLeast(1f)
+        val tx = PortalTilt.x; val ty = PortalTilt.y
+        // Arka katman: kapağı genişliğe sığdır (fazlası taşar), yavaş kayar ve koyulaştırılır
+        fun layer(scale: Float, shift: Float, alpha: Float) {
+            val s = maxOf(w / iw, h / ih) * scale
+            val dw = iw * s; val dh = ih * s
+            val ox = (w - dw) / 2f + tx * h * shift
+            val oy = (h - dh) / 2f + ty * h * shift * 0.7f
+            drawImage(
+                art,
+                srcOffset = androidx.compose.ui.unit.IntOffset.Zero,
+                srcSize = androidx.compose.ui.unit.IntSize(art.width, art.height),
+                dstOffset = androidx.compose.ui.unit.IntOffset(ox.toInt(), oy.toInt()),
+                dstSize = androidx.compose.ui.unit.IntSize(dw.toInt().coerceAtLeast(1), dh.toInt().coerceAtLeast(1)),
+                alpha = alpha,
+            )
+        }
+        layer(1.6f, 0.25f, 1f)                  // uzak: çok büyük, az kayar
+        drawRect(Color.Black.copy(alpha = 0.35f))
+        layer(1.15f, 0.9f, 0.55f)               // yakın: daha net, çok kayar
+        // Kenar karartması (pencere derinliği) ve içerik okunsun diye hafif perde
+        drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)), Offset(w / 2f, h / 2f), maxOf(w, h) * 0.6f))
+        drawRect(Color.Black.copy(alpha = 0.25f))
+    }
 }

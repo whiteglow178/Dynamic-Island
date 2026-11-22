@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.drawText
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
@@ -94,7 +96,12 @@ class ThumbIsland(
     private val ui: StateFlow<IslandUiState>,
     private val onTap: () -> Unit,
     private val onReturn: () -> Unit,
+    /** Yelpaze menü: favori uygulamalar ve seçileni açma. */
+    private val favApps: () -> List<FavApp> = { emptyList() },
+    private val onLaunch: (String) -> Unit = {},
 ) {
+    private val fan by lazy { ThumbFan(ctx, lifecycleOwner, registryOwner, wm) }
+
     private var view: ComposeView? = null
     private var host: WindowManager? = null
     private var lp: WindowManager.LayoutParams? = null
@@ -129,6 +136,7 @@ class ThumbIsland(
 
     fun detach() {
         handler.removeCallbacksAndMessages(null)
+        runCatching { fan.close(false) }
         val v = view ?: return
         runCatching { (host ?: wm).removeView(v) }
         v.disposeComposition()
@@ -206,16 +214,40 @@ class ThumbIsland(
         private var dragging = false
         private var lastUp = 0L
         private val single = Runnable { onTap() }
+        private var fanOpen = false
+        private var downView: android.view.View? = null
+        private val longPress = Runnable {
+            val v = downView ?: return@Runnable
+            val p = lp ?: return@Runnable
+            val apps = runCatching { favApps() }.getOrDefault(emptyList())
+            if (apps.isEmpty()) {
+                android.widget.Toast.makeText(ctx, "Yelpaze için önce Favori uygulamaları seç", android.widget.Toast.LENGTH_SHORT).show()
+                return@Runnable
+            }
+            handler.removeCallbacks(single)
+            lastUp = 0L
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            fanOpen = fan.open(apps, p.x + p.width / 2f, p.y + p.height / 2f)
+        }
 
         override fun onTouch(v: android.view.View, e: MotionEvent): Boolean {
             val p = lp ?: return false
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     dx0 = e.rawX; dy0 = e.rawY; x0 = p.x; y0 = p.y; dragging = false
+                    fanOpen = false
+                    downView = v
+                    handler.removeCallbacks(longPress)
+                    if (settings.value.more.thumbFan) handler.postDelayed(longPress, 420L)
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (fanOpen) {
+                        // Yelpaze açık: parmağın altındaki uygulama vurgulanır (sürükleyip bırak)
+                        if (fan.point(e.rawX, e.rawY)) v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                        return true
+                    }
                     val mx = e.rawX - dx0; val my = e.rawY - dy0
-                    if (!dragging && hypot(mx, my) > slop) { dragging = true; handler.removeCallbacks(single) }
+                    if (!dragging && hypot(mx, my) > slop) { dragging = true; handler.removeCallbacks(single); handler.removeCallbacks(longPress) }
                     if (dragging) {
                         val b = wm.currentWindowMetrics.bounds
                         p.x = (x0 + mx).roundToInt().coerceIn(0, (b.width() - p.width).coerceAtLeast(0))
@@ -224,6 +256,15 @@ class ThumbIsland(
                     }
                 }
                 MotionEvent.ACTION_UP -> {
+                    handler.removeCallbacks(longPress)
+                    if (fanOpen) {
+                        fanOpen = false
+                        val pick = fan.selected()
+                        fan.close(pick != null)
+                        if (pick != null) onLaunch(pick)
+                        dragging = false
+                        return true
+                    }
                     if (dragging) {
                         val b = wm.currentWindowMetrics.bounds
                         ThumbStore.savePosition(ctx, (p.x + p.width / 2f) / b.width(), (p.y + p.height / 2f) / b.height())
@@ -241,7 +282,11 @@ class ThumbIsland(
                     }
                     dragging = false
                 }
-                MotionEvent.ACTION_CANCEL -> dragging = false
+                MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(longPress)
+                    if (fanOpen) { fanOpen = false; fan.close(false) }
+                    dragging = false
+                }
             }
             return true
         }
@@ -296,6 +341,192 @@ private fun ThumbPill(shown: Boolean, settingsFlow: StateFlow<IslandSettings>, u
                     Box(Modifier.align(Alignment.CenterEnd)) {
                         Equalizer(Color.White, height = 12.dp, barWidth = 2.5.dp, animate = media.playing)
                     }
+                }
+            }
+        }
+    }
+}
+
+// ================================================================ Yelpaze menü
+
+private const val FAN_RADIUS_DP = 112f
+private const val FAN_ICON_DP = 46f
+private const val FAN_STEP_DEG = 34f
+
+/**
+ * Başparmak adasına basılı tutunca favori uygulamalar adanın çevresinde yay şeklinde açılır.
+ * Parmağı kaldırmadan bir simgeye kaydırıp bırakınca o uygulama açılır. Dokunuş almayan tam ekran pencere;
+ * parmak hareketlerini başparmak adası iletir.
+ */
+internal class ThumbFan(
+    private val ctx: Context,
+    private val lifecycleOwner: LifecycleOwner,
+    private val registryOwner: SavedStateRegistryOwner,
+    private val wm: WindowManager,
+) {
+    private var view: ComposeView? = null
+    private var host: WindowManager? = null
+    private val apps = mutableStateOf<List<FavApp>>(emptyList())
+    private val center = mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
+    private val hover = androidx.compose.runtime.mutableIntStateOf(-1)
+    private val openState = mutableStateOf(false)
+    private val launched = mutableStateOf(false)
+    private var points: List<androidx.compose.ui.geometry.Offset> = emptyList()
+    private val handler = Handler(Looper.getMainLooper())
+    private val remove = Runnable { detach() }
+
+    private fun px(v: Float) = v * ctx.resources.displayMetrics.density
+
+    fun open(list: List<FavApp>, cx: Float, cy: Float): Boolean {
+        val b = wm.currentWindowMetrics.bounds
+        val n = list.size.coerceAtMost(8)
+        val items = list.take(n)
+        val r = px(FAN_RADIUS_DP)
+        // Ada ekranın üst kısmındaysa yelpaze aşağı, değilse yukarı açılır; kenara yakınsa içe doğru döner
+        var base = if (cy < b.height() * 0.32f) 90f else -90f
+        val edge = r + px(FAN_ICON_DP) / 2f
+        if (cx > b.width() - edge) base += if (base < 0f) -38f else 38f
+        else if (cx < edge) base += if (base < 0f) 38f else -38f
+        val step = if (n <= 1) 0f else minOf(FAN_STEP_DEG, 170f / (n - 1))
+        val start = base - step * (n - 1) / 2f
+        points = List(n) { i ->
+            val ang = Math.toRadians((start + step * i).toDouble())
+            androidx.compose.ui.geometry.Offset(cx + (r * kotlin.math.cos(ang)).toFloat(), cy + (r * kotlin.math.sin(ang)).toFloat())
+        }
+        apps.value = items
+        center.value = androidx.compose.ui.geometry.Offset(cx, cy)
+        hover.intValue = -1
+        launched.value = false
+        handler.removeCallbacks(remove)
+        if (view == null && !attach()) return false
+        openState.value = true
+        return true
+    }
+
+    /** Parmak konumu (ekran px). Vurgulanan değiştiyse true (titreşim için). */
+    fun point(x: Float, y: Float): Boolean {
+        val lim = px(FAN_ICON_DP) * 0.95f
+        var best = -1; var bd = Float.MAX_VALUE
+        points.forEachIndexed { i, p ->
+            val d = hypot(p.x - x, p.y - y)
+            if (d < bd) { bd = d; best = i }
+        }
+        val h = if (bd <= lim) best else -1
+        if (h == hover.intValue) return false
+        hover.intValue = h
+        return h >= 0
+    }
+
+    fun selected(): String? = apps.value.getOrNull(hover.intValue)?.pkg
+
+    fun close(withLaunch: Boolean) {
+        if (view == null) return
+        launched.value = withLaunch
+        openState.value = false
+        handler.removeCallbacks(remove)
+        handler.postDelayed(remove, 260L)
+    }
+
+    private fun attach(): Boolean {
+        val v = ComposeView(ctx).apply {
+            setViewTreeLifecycleOwner(lifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(registryOwner)
+            setContent { FanContent() }
+        }
+        fun params(type: Int) = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0; y = 0
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+        var added = false
+        IslandAccessibilityService.instance?.let { a11y ->
+            runCatching {
+                val h2 = a11y.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                h2.addView(v, params(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)); host = h2; added = true
+            }
+        }
+        if (!added) added = runCatching {
+            wm.addView(v, params(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)); host = wm
+        }.isSuccess
+        if (!added) { v.disposeComposition(); return false }
+        view = v
+        return true
+    }
+
+    private fun detach() {
+        val v = view ?: return
+        view = null
+        runCatching { (host ?: wm).removeView(v) }
+        v.disposeComposition()
+        host = null
+    }
+
+    @Composable
+    private fun FanContent() {
+        val open by openState
+        val prog = remember { Animatable(0f) }
+        LaunchedEffect(open) {
+            if (open) prog.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium))
+            else prog.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+        }
+        val hov = hover.intValue
+        val hoverAnim = remember { Animatable(0f) }
+        LaunchedEffect(hov) { hoverAnim.snapTo(0f); hoverAnim.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium)) }
+        val tm = androidx.compose.ui.text.rememberTextMeasurer()
+        val list = apps.value
+        val c = center.value
+        val pts = points
+        val launch = launched.value
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val pr = prog.value
+            if (pr <= 0.001f) return@Canvas
+            // Arka plan hafif kararır, adanın çevresinde yumuşak hale
+            drawRect(Color.Black.copy(alpha = 0.28f * pr.coerceIn(0f, 1f)))
+            val icon = FAN_ICON_DP.dp.toPx()
+            pts.forEachIndexed { i, p ->
+                val app = list.getOrNull(i) ?: return@forEachIndexed
+                // Her simge adadan sırayla, hafif gecikmeyle fırlar
+                val local = ((pr - i * 0.04f) / (1f - i * 0.04f).coerceAtLeast(0.2f)).coerceIn(-0.2f, 1.2f)
+                val pos = c + (p - c) * local
+                val isHov = i == hov
+                val chosenFade = if (launch && !open) (if (isHov) 1f else pr) else 1f
+                val sc = (0.3f + 0.7f * local.coerceIn(0f, 1.2f)) * (if (isHov) 1f + 0.32f * hoverAnim.value else 1f)
+                val sz = icon * sc
+                val alpha = (local.coerceIn(0f, 1f) * chosenFade).coerceIn(0f, 1f)
+                drawCircle(Color.Black.copy(alpha = 0.35f * alpha), sz * 0.56f, pos + androidx.compose.ui.geometry.Offset(0f, 2.dp.toPx()))
+                val ic = app.icon
+                if (ic != null) {
+                    drawImage(
+                        ic,
+                        dstOffset = androidx.compose.ui.unit.IntOffset((pos.x - sz / 2f).roundToInt(), (pos.y - sz / 2f).roundToInt()),
+                        dstSize = androidx.compose.ui.unit.IntSize(sz.roundToInt().coerceAtLeast(1), sz.roundToInt().coerceAtLeast(1)),
+                        alpha = alpha,
+                    )
+                } else drawCircle(Color.White.copy(alpha = alpha), sz / 2f, pos)
+                if (isHov && open) {
+                    val t = tm.measure(
+                        app.label,
+                        androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        maxLines = 1,
+                    )
+                    val tw = t.size.width.toFloat(); val th = t.size.height.toFloat()
+                    val ty = pos.y - sz / 2f - th - 10.dp.toPx()
+                    drawRoundRect(
+                        Color.Black.copy(alpha = 0.75f),
+                        androidx.compose.ui.geometry.Offset(pos.x - tw / 2f - 8.dp.toPx(), ty - 3.dp.toPx()),
+                        androidx.compose.ui.geometry.Size(tw + 16.dp.toPx(), th + 6.dp.toPx()),
+                        androidx.compose.ui.geometry.CornerRadius((th + 6.dp.toPx()) / 2f),
+                    )
+                    drawText(t, topLeft = androidx.compose.ui.geometry.Offset(pos.x - tw / 2f, ty))
                 }
             }
         }

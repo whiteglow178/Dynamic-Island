@@ -790,7 +790,17 @@ fun IslandPill(
     val isMediaNow by rememberUpdatedState(content is IslandContent.Media)
     val isNotifNow by rememberUpdatedState(content is IslandContent.Notif)
     val notifSideNow by rememberUpdatedState(onNotifSwipeSide)
-    val shape: Shape = if (assistant) AssistantShape(cornerT) else PillShape
+    // Ada şekli: boştayken seçilen şekle (kalp / bulut / kedi / elmas) akarak dönüşür, bir şey gelince hapa döner
+    val shapeStyle = if (!assistant && !cfg.dotMode) cfg.more.islandShape else 0
+    val shapeMorph by animateFloatAsState(
+        if (shapeStyle != 0 && content is IslandContent.Idle) 1f else 0f,
+        spring(dampingRatio = 0.62f, stiffness = 260f), label = "shapeMorph",
+    )
+    val shape: Shape = when {
+        assistant -> AssistantShape(cornerT)
+        shapeStyle != 0 && shapeMorph > 0.001f -> IslandMorphShape(shapeStyle, shapeMorph)
+        else -> PillShape
+    }
     val accent = remember(cfg.accentArgb) { Color(cfg.accentArgb) }
     val rb = rememberRainbowStyle(cfg)
     val media = content as? IslandContent.Media
@@ -846,7 +856,7 @@ fun IslandPill(
                 layout(w, h) { placeable.place(0, 0) }
             }
             .onGloballyPositioned { fx.origin = it }
-            .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
+            .islandGlow(cfg.glowEnabled && shapeMorph < 0.02f, glow, cfg.glowIntensity)      // şekilli adada hap halesi çizilmez
             .islandNeon(cfg)              // renkli çerçeve (neon / gökkuşağı / ateş) -> IslandDecor.kt
             .islandSurface(cfg, body, shape, cornerT, if (cfg.borderArtColor && artColor != null) brightTone(artColor) else null)
             .pointerInput(Unit) {
@@ -937,6 +947,9 @@ fun IslandPill(
         if (portalIdle && !swallow) {
             // Portal ada: boştaki adanın içinde eğimle kayan derinlikli sahne
             PortalScene(cfg.more.portalScene, cfg.more.portalDepth, Modifier.fillMaxSize())
+        } else if (cfg.more.coverPortal && media?.art != null && !swallow && !cfg.dotMode) {
+            // Kapak portalı: kısa müzik adasının içinde eğimle kayan derin albüm kapağı
+            CoverPortal(media.art, Modifier.fillMaxSize().graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) })
         } else if (dsOn && !swallow && !camoOn && (dsFull || cfg.more.designAlways)) {
             DesignFill(
                 cfg.more.designStyle, dsPhoto,
