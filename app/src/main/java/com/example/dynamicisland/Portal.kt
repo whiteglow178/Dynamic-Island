@@ -38,7 +38,7 @@ import kotlin.math.abs
 import kotlin.math.sin
 
 /** Ana Sayfa'daki sahne adları (sıra [MoreSettings.portalScene] ile aynı). */
-val PORTAL_NAMES = listOf("Uzay", "Akvaryum", "Gece şehri")
+val PORTAL_NAMES = listOf("Uzay", "Akvaryum", "Gece şehri", "Gökyüzü")
 
 /**
  * Telefonun anlık eğimi (-1..1). Tutuş açısı yavaşça "merkez" kabul edilir: telefonu nasıl tutarsan tut sahne ortalanır,
@@ -113,6 +113,7 @@ fun PortalScene(scene: Int, depth: Float, modifier: Modifier = Modifier) {
         when (scene) {
             1 -> drawAquarium(w, h, sx, sy, time, rnd)
             2 -> drawCity(w, h, sx, sy, time, rnd)
+            3 -> drawSky(w, h, sx, sy, time, rnd, System.currentTimeMillis())
             else -> drawSpace(w, h, sx, sy, time, rnd)
         }
         // Delik hissi: kenarlarda iç gölge
@@ -276,4 +277,111 @@ private fun DrawScope.drawCity(w: Float, h: Float, sx: Float, sy: Float, t: Floa
     }
     buildings(0.3f, 30, 0, Color(0xFF1C1A40), 0.35f, 0.75f, Color(0xAAFFD27A))
     buildings(0.8f, 22, 40, Color(0xFF0B0A1C), 0.25f, 0.6f, Color(0xFFFFE09A))
+}
+
+// ---------------------------------------------------------------- Canlı gökyüzü (hava durumu yok; yalnızca saat ve tarih)
+/**
+ * Gün doğumu / batımı internet ya da konum kullanmadan, yılın gününe göre yaklaşık hesaplanır
+ * (orta enlemler: yazın gün ~15 saat, kışın ~9 saat; öğle ~12:45). Ayın evresi gerçek takvimden hesaplanır.
+ */
+private fun lerpC(a: Color, b: Color, t: Float): Color = androidx.compose.ui.graphics.lerp(a, b, t.coerceIn(0f, 1f))
+
+private fun DrawScope.drawSky(w: Float, h: Float, sx: Float, sy: Float, t: Float, r: PortalRandom, nowMs: Long) {
+    val cal = java.util.Calendar.getInstance().apply { timeInMillis = nowMs }
+    val doy = cal.get(java.util.Calendar.DAY_OF_YEAR)
+    val hour = cal.get(java.util.Calendar.HOUR_OF_DAY) + cal.get(java.util.Calendar.MINUTE) / 60f + cal.get(java.util.Calendar.SECOND) / 3600f
+    val dayLen = 12f + 3f * kotlin.math.cos(TAU * (doy - 172) / 365f)
+    val noon = 12.75f
+    val rise = noon - dayLen / 2f
+    val set = noon + dayLen / 2f
+    val isDay = hour in rise..set
+    val dayFrac = ((hour - rise) / dayLen).coerceIn(0f, 1f)
+    val alt = if (isDay) sin(PI.toFloat() * dayFrac) else 0f
+    // Alacakaranlık: gün doğumuna / batımına 1 saatten yakın gece saatleri (1 = tam o an)
+    val fromEvent = if (isDay) 0f else minOf(abs(hour - set).let { minOf(it, 24f - it) }, abs(hour - rise).let { minOf(it, 24f - it) })
+    val twi = if (isDay) 0f else (1f - fromEvent).coerceIn(0f, 1f)
+
+    val nightTop = Color(0xFF060A22); val nightBot = Color(0xFF151B45)
+    val dawnTop = Color(0xFF33306E); val dawnBot = Color(0xFFF2895B)
+    val dayTop = Color(0xFF2B78DE); val dayBot = Color(0xFFA6D4FF)
+    val top: Color
+    val bot: Color
+    if (isDay) {
+        val low = 1f - (alt / 0.35f).coerceIn(0f, 1f)
+        top = lerpC(dayTop, dawnTop, low * 0.6f); bot = lerpC(dayBot, dawnBot, low)
+    } else {
+        top = lerpC(nightTop, dawnTop, twi); bot = lerpC(nightBot, dawnBot, twi)
+    }
+    drawRect(Brush.verticalGradient(listOf(top, bot)))
+
+    // Yıldızlar: gece görünür, alacakaranlıkta solar
+    val starA = if (isDay) 0f else (1f - twi)
+    if (starA > 0.01f) layer(0.2f, sx, sy) {
+        for (i in 0 until 50) {
+            val tw = 0.6f + 0.4f * sin(TAU * (t * (2f + r.a[i + 100] * 5f) + r.a[i + 30]))
+            drawCircle(Color.White.copy(alpha = starA * tw * (0.3f + r.a[i + 90] * 0.6f)), radius = h * (0.012f + r.a[i + 45] * 0.018f),
+                center = Offset((r.a[i] * 1.3f - 0.15f) * w, r.a[i + 60] * h * 0.75f))
+        }
+    }
+    layer(0.35f, sx, sy) {
+        if (isDay) {
+            // Güneş: doğudan (sol) batıya (sağ) yay çizer
+            val c = Offset(w * (-0.05f + 1.1f * dayFrac), h * (0.95f - 0.75f * alt))
+            val sr = h * 0.17f
+            drawCircle(Brush.radialGradient(listOf(Color(0x88FFE7A0), Color.Transparent), center = c, radius = sr * 4f), radius = sr * 4f, center = c)
+            drawCircle(lerpC(Color(0xFFFFF4D6), Color(0xFFFFB45E), 1f - alt), radius = sr, center = c)
+        } else {
+            // Ay: gece boyunca soldan sağa geçer; evresi gerçek takvimden
+            val nightLen = 24f - dayLen
+            val sinceSet = ((hour - set) + 24f) % 24f
+            val nf = (sinceSet / nightLen).coerceIn(0f, 1f)
+            val c = Offset(w * (0.05f + 0.9f * nf), h * (0.85f - 0.55f * sin(PI.toFloat() * nf)))
+            val mr = h * 0.16f
+            drawCircle(Brush.radialGradient(listOf(Color(0x55FFF6D8), Color.Transparent), center = c, radius = mr * 3f), radius = mr * 3f, center = c)
+            drawCircle(Color(0xFFF4EFD9), radius = mr, center = c)
+            val p = moonPhase(nowMs)        // 0 yeni ay, 0.5 dolunay
+            val dx = if (p < 0.5f) -2f * mr * (p / 0.5f) else 2f * mr * ((1f - p) / 0.5f)
+            val moon = Path().apply { addOval(androidx.compose.ui.geometry.Rect(c, mr)) }
+            androidx.compose.ui.graphics.drawscope.clipPath(moon) {
+                drawCircle(Color(0xE60A0D24), radius = mr * 1.02f, center = Offset(c.x + dx, c.y))
+            }
+        }
+    }
+    // Bulutlar: gündüz beyaz, alacakaranlıkta pembe, gece koyu ve soluk
+    val cloudCol = when {
+        isDay -> lerpC(Color.White, Color(0xFFFFC2A8), 1f - (alt / 0.35f).coerceIn(0f, 1f))
+        else -> lerpC(Color(0xFF2A3060), Color(0xFFE59A8A), twi)
+    }
+    layer(0.6f, sx, sy) {
+        for (i in 0 until 4) {
+            val x = ((r.a[i + 140] + t * (0.6f + r.a[i + 144] * 0.6f)) % 1.4f - 0.2f) * w
+            val y = h * (0.2f + r.a[i + 148] * 0.35f)
+            val cw = h * (0.9f + r.a[i + 152] * 0.8f)
+            val a = if (isDay) 0.85f else 0.55f
+            drawOval(cloudCol.copy(alpha = a), Offset(x, y), Size(cw, h * 0.22f))
+            drawOval(cloudCol.copy(alpha = a), Offset(x + cw * 0.2f, y - h * 0.1f), Size(cw * 0.55f, h * 0.24f))
+        }
+    }
+    // Ön planda tepeler: gündüz yeşilimsi, gece koyu
+    val light = if (isDay) (0.35f + alt * 0.65f) else twi * 0.3f
+    layer(1f, sx, sy) {
+        val hill = Path().apply {
+            moveTo(-w * 0.2f, h * 1.2f)
+            var x = -w * 0.2f
+            val step = h * 0.15f
+            while (x <= w * 1.2f + step) {
+                lineTo(x, h * 0.86f - h * 0.08f * sin(x / w * 7f) - h * 0.05f * sin(x / w * 17f + 2f)); x += step
+            }
+            lineTo(w * 1.2f, h * 1.2f); close()
+        }
+        drawPath(hill, lerpC(Color(0xFF0A0D1C), Color(0xFF3E6A42), light))
+    }
+}
+
+/** Ayın evresi (0 = yeni ay, 0.5 = dolunay, 1 = tekrar yeni ay). Bilinen bir yeni aydan (6 Ocak 2000) sinodik aya göre. */
+private fun moonPhase(nowMs: Long): Float {
+    val known = 947_182_440_000L          // 2000-01-06 18:14 UTC yeni ay
+    val synodic = 29.530588853 * 86_400_000.0
+    val p = ((nowMs - known) / synodic) % 1.0
+    return (if (p < 0) p + 1.0 else p).toFloat()
 }

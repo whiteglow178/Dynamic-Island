@@ -79,7 +79,9 @@ fun ExtrasSections() {
             val shape = RoundedCornerShape(50)
             PortalScene(cur.portalScene, cur.portalDepth, Modifier.padding(top = 14.dp).size(width = 170.dp, height = 46.dp).clip(shape))
         }
-        Text("Önizlemeyi görmek için telefonu sağa sola, öne arkaya eğ.", color = dim, fontSize = 12.sp)
+        Text("Önizlemeyi görmek için telefonu sağa sola, öne arkaya eğ." +
+            if (cur.portalScene == 3) " Gökyüzü saate göre değişir: sabah gün doğar, öğlen mavi gök, akşam gün batımı, gece yıldızlar ve gerçek evresinde ay. İnternet ve konum kullanılmaz." else "",
+            color = dim, fontSize = 12.sp, lineHeight = 17.sp)
         SwitchRow("Portal ada", "Boştaki adanın içi pencere gibi olur; arkasında uzak ve yakın katmanlar farklı hızda kayar. Ekran kapalıyken sensör dinlenmez. Açıkken özel tasarım ve kamuflaj boştaki adada görünmez",
             cur.portalEnabled) { set(cur.copy(portalEnabled = it, camoEnabled = if (it) false else cur.camoEnabled)) }
         SegmentedTabs(PORTAL_NAMES, cur.portalScene) { set(cur.copy(portalScene = it)) }

@@ -536,7 +536,7 @@ data class MoreSettings(
     val lyricsSide: Boolean = false,        // açık müzik adası: kontroller solda, şarkı sözleri sağda
     // ---- Portal ada: boştaki adanın içinde, telefonu eğdikçe kayan derinlikli sahne
     val portalEnabled: Boolean = false,
-    val portalScene: Int = 0,               // 0 uzay, 1 akvaryum, 2 gece şehri
+    val portalScene: Int = 0,               // 0 uzay, 1 akvaryum, 2 gece şehri, 3 canlı gökyüzü (saate göre)
     val portalDepth: Float = 1f,            // eğime tepki (derinlik) çarpanı
     // ---- Başparmak modu: boştaki ada aşağı çekilince başparmağın altına iner
     val thumbEnabled: Boolean = false,
@@ -904,7 +904,7 @@ class SettingsRepository(context: Context) {
                 favStar = p[K.FAV_STAR] ?: d.more.favStar,
                 lyricsSide = p[K.LY_SIDE] ?: d.more.lyricsSide,
                 portalEnabled = p[K.PT_ON] ?: d.more.portalEnabled,
-                portalScene = (p[K.PT_SCENE] ?: d.more.portalScene).coerceIn(0, 2),
+                portalScene = (p[K.PT_SCENE] ?: d.more.portalScene).coerceIn(0, 3),
                 portalDepth = (p[K.PT_DEPTH] ?: d.more.portalDepth).coerceIn(0.2f, 2f),
                 thumbEnabled = p[K.TH_ON] ?: d.more.thumbEnabled,
                 camoEnabled = p[K.CAMO_ON] ?: d.more.camoEnabled,
