@@ -8,18 +8,17 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -116,35 +115,39 @@ fun CustomDesignSection() {
 
         SwitchRow("Özel tasarım", "Boştaki ada seçtiğin desenle ya da fotoğrafla dolar", cur.designEnabled) { set(cur.copy(designEnabled = it)) }
 
-        // Desen seçimi: yuvarlak örnekler + fotoğraf
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            for (i in 0..DESIGN_PHOTO) {
-                val sel = cur.designEnabled && cur.designStyle == i
-                val ring = if (sel) MaterialTheme.colorScheme.primary else Color.Transparent
-                Box(
-                    Modifier.size(54.dp).border(2.5.dp, ring, CircleShape).padding(5.dp).clip(CircleShape)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                            if (i == DESIGN_PHOTO && cur.designPhotoUri.isEmpty()) pickPhoto()
-                            else set(cur.copy(designStyle = i, designEnabled = true))
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (i == DESIGN_PHOTO && photo == null) {
-                        // Henüz fotoğraf yok: "+" düğmesi
-                        val plusColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape))
-                        Canvas(Modifier.size(18.dp)) {
-                            val w = size.width
-                            drawLine(plusColor, Offset(w / 2f, 0f), Offset(w / 2f, w), strokeWidth = 2.4.dp.toPx(), cap = StrokeCap.Round)
-                            drawLine(plusColor, Offset(0f, w / 2f), Offset(w, w / 2f), strokeWidth = 2.4.dp.toPx(), cap = StrokeCap.Round)
+        // Desen seçimi: yuvarlak örnekler (5'li ızgara) + en sonda fotoğraf
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (rowItems in DESIGN_ORDER.chunked(5)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    for (i in rowItems) {
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            val sel = cur.designEnabled && cur.designStyle == i
+                            val ring = if (sel) MaterialTheme.colorScheme.primary else Color.Transparent
+                            Box(
+                                Modifier.size(54.dp).border(2.5.dp, ring, CircleShape).padding(5.dp).clip(CircleShape)
+                                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                        if (i == DESIGN_PHOTO && cur.designPhotoUri.isEmpty()) pickPhoto()
+                                        else set(cur.copy(designStyle = i, designEnabled = true))
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (i == DESIGN_PHOTO && photo == null) {
+                                    // Henüz fotoğraf yok: "+" düğmesi
+                                    val plusColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape))
+                                    Canvas(Modifier.size(18.dp)) {
+                                        val w = size.width
+                                        drawLine(plusColor, Offset(w / 2f, 0f), Offset(w / 2f, w), strokeWidth = 2.4.dp.toPx(), cap = StrokeCap.Round)
+                                        drawLine(plusColor, Offset(0f, w / 2f), Offset(w, w / 2f), strokeWidth = 2.4.dp.toPx(), cap = StrokeCap.Round)
+                                    }
+                                } else {
+                                    DesignFill(i, photo, Modifier.size(44.dp).clip(CircleShape))
+                                }
+                            }
                         }
-                    } else {
-                        DesignFill(i, photo, Modifier.size(44.dp).clip(CircleShape))
                     }
+                    // Son satır eksikse boşlukla doldur (öğeler hizalı kalsın)
+                    repeat(5 - rowItems.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }

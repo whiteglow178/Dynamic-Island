@@ -285,7 +285,10 @@ internal fun LowBatteryCardContent(c: IslandContent.Status, rb: RainbowStyle?) {
 
 // ================================================================ Özel ada tasarımı
 /** Ana Sayfa'daki seçenek adları (sıra [MoreSettings.designStyle] ile aynı). */
-val DESIGN_NAMES = listOf("Siyah", "Yıldızlı gece", "Zebra dalga", "Turkuaz mandala", "Gün batımı", "Sarı mozaik", "Fotoğraf")
+val DESIGN_NAMES = listOf(
+    "Siyah", "Yıldızlı gece", "Zebra dalga", "Turkuaz mandala", "Gün batımı", "Sarı mozaik", "Fotoğraf",
+    "Kuzey ışıkları", "Okyanus", "Neon ızgara", "Mermer", "Karbon fiber", "Kiraz çiçeği", "Galaksi", "Holografik", "Leopar", "Art deco",
+)
 
 /**
  * Seçilen deseni (ya da fotoğrafı) verilen alanı kaplayacak şekilde çizer. Desenler kodla çizilir (görsel dosyası yoktur),
@@ -315,7 +318,7 @@ private fun DrawScope.drawDesign(style: Int) {
         3 -> drawMandala(w, h)
         4 -> drawSunset(w, h)
         5 -> drawMosaic(w, h)
-        else -> drawRect(Color.Black)
+        else -> drawExtraDesign(style, w, h)      // 7 ve sonrası: DesignPatterns.kt
     }
 }
 

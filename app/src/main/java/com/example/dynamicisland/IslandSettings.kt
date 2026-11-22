@@ -513,7 +513,7 @@ val IslandSettings.playShadow get() = play.playShadow
 data class MoreSettings(
     // ---- Özel ada tasarımı (Ana Sayfa): boştaki ada seçilen desenle ya da fotoğrafla dolar
     val designEnabled: Boolean = false,
-    val designStyle: Int = 0,               // 0 siyah, 1 yıldızlı gece, 2 zebra dalga, 3 turkuaz mandala, 4 gün batımı, 5 sarı mozaik, 6 fotoğraf
+    val designStyle: Int = 0,               // 0 siyah, 1 yıldızlı gece, 2 zebra dalga, 3 turkuaz mandala, 4 gün batımı, 5 sarı mozaik, 6 fotoğraf, 7+ ek desenler (bkz. DESIGN_NAMES)
     val designPhotoUri: String = "",        // boş = fotoğraf seçilmedi (galerideki adres; kopyalanmaz)
     val designAlways: Boolean = false,      // olay varken de (kapalı adada) desen görünsün
     val designPhotoExpand: Boolean = true,  // fotoğraf tasarımında: boştaki adaya dokununca ada genişleyip fotoğrafı gösterir
@@ -536,7 +536,7 @@ data class MoreSettings(
     val lyricsSide: Boolean = false,        // açık müzik adası: kontroller solda, şarkı sözleri sağda
     // ---- Portal ada: boştaki adanın içinde, telefonu eğdikçe kayan derinlikli sahne
     val portalEnabled: Boolean = false,
-    val portalScene: Int = 0,               // 0 uzay, 1 akvaryum, 2 gece şehri, 3 canlı gökyüzü (saate göre)
+    val portalScene: Int = 0,               // 0 uzay, 1 akvaryum, 2 gece şehri, 3 canlı gökyüzü (saate göre), 4+ ek sahneler (bkz. PORTAL_NAMES)
     val portalDepth: Float = 1f,            // eğime tepki (derinlik) çarpanı
     // ---- Başparmak modu: boştaki ada aşağı çekilince başparmağın altına iner
     val thumbEnabled: Boolean = false,
@@ -919,7 +919,7 @@ class SettingsRepository(context: Context) {
             colorOverrides = p[K.CE_MAP] ?: d.colorOverrides,
             more = MoreSettings(
                 designEnabled = p[K.DS_ON] ?: d.more.designEnabled,
-                designStyle = (p[K.DS_STYLE] ?: d.more.designStyle).coerceIn(0, DESIGN_PHOTO),
+                designStyle = (p[K.DS_STYLE] ?: d.more.designStyle).coerceIn(0, DESIGN_COUNT - 1),
                 designPhotoUri = p[K.DS_PHOTO] ?: d.more.designPhotoUri,
                 designAlways = p[K.DS_ALW] ?: d.more.designAlways,
                 designPhotoExpand = p[K.DS_EXP] ?: d.more.designPhotoExpand,
@@ -938,7 +938,7 @@ class SettingsRepository(context: Context) {
                 favStar = p[K.FAV_STAR] ?: d.more.favStar,
                 lyricsSide = p[K.LY_SIDE] ?: d.more.lyricsSide,
                 portalEnabled = p[K.PT_ON] ?: d.more.portalEnabled,
-                portalScene = (p[K.PT_SCENE] ?: d.more.portalScene).coerceIn(0, 3),
+                portalScene = (p[K.PT_SCENE] ?: d.more.portalScene).coerceIn(0, PORTAL_NAMES.size - 1),
                 portalDepth = (p[K.PT_DEPTH] ?: d.more.portalDepth).coerceIn(0.2f, 2f),
                 thumbEnabled = p[K.TH_ON] ?: d.more.thumbEnabled,
                 camoEnabled = p[K.CAMO_ON] ?: d.more.camoEnabled,

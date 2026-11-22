@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -39,7 +40,7 @@ import kotlin.math.abs
 import kotlin.math.sin
 
 /** Ana Sayfa'daki sahne adları (sıra [MoreSettings.portalScene] ile aynı). */
-val PORTAL_NAMES = listOf("Uzay", "Akvaryum", "Gece şehri", "Gökyüzü")
+val PORTAL_NAMES = listOf("Uzay", "Akvaryum", "Gece şehri", "Gökyüzü", "Orman", "Karlı dağ", "Neon yol", "Çöl", "Kutup ışığı")
 
 /**
  * Telefonun anlık eğimi (-1..1). Tutuş açısı yavaşça "merkez" kabul edilir: telefonu nasıl tutarsan tut sahne ortalanır,
@@ -123,6 +124,11 @@ fun PortalScene(scene: Int, depth: Float, modifier: Modifier = Modifier) {
             1 -> drawAquarium(w, h, sx, sy, time, rnd)
             2 -> drawCity(w, h, sx, sy, time, rnd)
             3 -> drawSky(w, h, sx, sy, time, rnd, System.currentTimeMillis())
+            4 -> drawForest(w, h, sx, sy, time, rnd)
+            5 -> drawSnowPeaks(w, h, sx, sy, time, rnd)
+            6 -> drawNeonRoad(w, h, sx, sy, time, rnd)
+            7 -> drawDesert(w, h, sx, sy, time, rnd)
+            8 -> drawPolar(w, h, sx, sy, time, rnd)
             else -> drawSpace(w, h, sx, sy, time, rnd)
         }
         // Delik hissi: kenarlarda iç gölge
@@ -393,6 +399,254 @@ private fun moonPhase(nowMs: Long): Float {
     val synodic = 29.530588853 * 86_400_000.0
     val p = ((nowMs - known) / synodic) % 1.0
     return (if (p < 0) p + 1.0 else p).toFloat()
+}
+
+// ---------------------------------------------------------------- Orman (gece, ateşböcekleri)
+private fun DrawScope.drawPine(x: Float, baseY: Float, ph: Float, color: Color) {
+    val wd = ph * 0.42f
+    for (k in 0 until 3) {
+        val top = baseY - ph + k * ph * 0.24f
+        val bot = baseY - ph * 0.28f + k * ph * 0.24f
+        val half = wd * (0.55f + k * 0.25f)
+        val p = Path().apply { moveTo(x, top); lineTo(x + half, bot); lineTo(x - half, bot); close() }
+        drawPath(p, color)
+    }
+    drawRect(color, Offset(x - wd * 0.07f, baseY - ph * 0.1f), Size(wd * 0.14f, ph * 0.2f))
+}
+
+private fun DrawScope.drawForest(w: Float, h: Float, sx: Float, sy: Float, t: Float, r: PortalRandom) {
+    drawRect(Brush.verticalGradient(listOf(Color(0xFF0B1F2E), Color(0xFF12352B), Color(0xFF071710))))
+    layer(0.08f, sx, sy) {
+        val mc = Offset(w * 0.78f, h * 0.28f)
+        drawCircle(Brush.radialGradient(listOf(Color(0x55E8FFD8), Color.Transparent), center = mc, radius = h * 0.9f), radius = h * 0.9f, center = mc)
+        drawCircle(Color(0xFFEFF7DA), radius = h * 0.14f, center = mc)
+    }
+    layer(0.25f, sx, sy) {
+        var x = -w * 0.2f; var i = 0
+        while (x < w * 1.2f) { drawPine(x, h * 1.02f, h * (0.55f + r.a[i % 160] * 0.3f), Color(0xFF0F2E22)); x += h * 0.22f; i++ }
+    }
+    layer(0.55f, sx, sy) {
+        var x = -w * 0.2f; var i = 20
+        while (x < w * 1.2f) { drawPine(x, h * 1.1f, h * (0.8f + r.a[i % 160] * 0.35f), Color(0xFF08201A)); x += h * 0.38f; i++ }
+    }
+    layer(0.75f, sx, sy) {
+        // ateşböcekleri: yavaşça dolaşır, yanıp söner
+        for (i in 0 until 18) {
+            val bx = (r.a[i + 40] * 1.3f - 0.15f) * w
+            val by = h * (0.25f + r.a[i + 60] * 0.6f)
+            val x = bx + sin(TAU * (t * (1f + r.a[i + 80] * 2f) + r.a[i])) * h * 0.25f
+            val y = by + sin(TAU * (t * (1.5f + r.a[i + 100] * 2f) + r.a[i + 120])) * h * 0.12f
+            val blink = (0.5f + 0.5f * sin(TAU * (t * (6f + r.a[i + 140] * 8f) + r.a[i + 20]))).let { it * it }
+            val c = Offset(x, y)
+            drawCircle(Brush.radialGradient(listOf(Color(0xAAE4FF6B).copy(alpha = 0.6f * blink), Color.Transparent), center = c, radius = h * 0.12f), radius = h * 0.12f, center = c)
+            drawCircle(Color(0xFFF4FF9C).copy(alpha = blink), radius = h * 0.022f, center = c)
+        }
+    }
+    layer(1f, sx, sy) {
+        val g = Path().apply {
+            moveTo(-w * 0.2f, h * 1.2f)
+            var x = -w * 0.2f
+            while (x <= w * 1.2f) { lineTo(x, h * 0.9f - h * 0.06f * sin(x / w * 9f) - h * 0.04f * sin(x / w * 23f)); x += h * 0.12f }
+            lineTo(w * 1.2f, h * 1.2f); close()
+        }
+        drawPath(g, Color(0xFF020A06))
+        drawPine(w * 0.08f, h * 1.15f, h * 1.25f, Color(0xFF020A06))
+        drawPine(w * 0.93f, h * 1.15f, h * 1.1f, Color(0xFF020A06))
+    }
+}
+
+// ---------------------------------------------------------------- Karlı dağ (kar yağışı)
+private fun mountainPath(w: Float, h: Float, base: Float, peak: Float, step: Float, r: PortalRandom, off: Int): Path = Path().apply {
+    moveTo(-w * 0.3f, h * 1.3f)
+    var x = -w * 0.3f; var i = off; var up = true
+    while (x <= w * 1.3f + step) {
+        val y = if (up) h * (peak + r.a[i % 160] * 0.18f) else h * (base - r.a[(i + 3) % 160] * 0.12f)
+        lineTo(x, y); x += step * (0.7f + r.a[(i + 7) % 160] * 0.6f); i++; up = !up
+    }
+    lineTo(w * 1.3f, h * 1.3f); close()
+}
+
+private fun DrawScope.drawSnowPeaks(w: Float, h: Float, sx: Float, sy: Float, t: Float, r: PortalRandom) {
+    drawRect(Brush.verticalGradient(listOf(Color(0xFF1B2A4A), Color(0xFF51709E), Color(0xFFB9CCE6))))
+    layer(0.12f, sx, sy) {
+        val far = mountainPath(w, h, 0.85f, 0.18f, h * 0.7f, r, 0)
+        drawPath(far, Color(0xFF8DA4C6))
+        clipPath(far) { drawRect(Color.White.copy(alpha = 0.85f), Offset(-w, -h), Size(w * 3f, h * 1.42f)) }
+    }
+    layer(0.3f, sx, sy) {
+        for (i in 0 until 30) {
+            val p = (r.a[i] + t * (4f + r.a[i + 30] * 3f)) % 1f
+            drawCircle(Color.White.copy(alpha = 0.5f), radius = h * 0.012f,
+                center = Offset((r.a[i + 60] * 1.3f - 0.15f) * w + sin(TAU * (p + r.a[i + 90])) * h * 0.05f, -h * 0.1f + p * h * 1.2f))
+        }
+    }
+    layer(0.45f, sx, sy) {
+        val mid = mountainPath(w, h, 1.0f, 0.42f, h * 0.55f, r, 40)
+        drawPath(mid, Color(0xFF3E5577))
+        clipPath(mid) { drawRect(Color(0xFFE6EEF8), Offset(-w, -h), Size(w * 3f, h * 1.6f)) }
+    }
+    layer(1f, sx, sy) {
+        val g = Path().apply {
+            moveTo(-w * 0.2f, h * 1.2f)
+            var x = -w * 0.2f
+            while (x <= w * 1.2f) { lineTo(x, h * 0.88f - h * 0.07f * sin(x / w * 5f + 1f)); x += h * 0.15f }
+            lineTo(w * 1.2f, h * 1.2f); close()
+        }
+        drawPath(g, Brush.verticalGradient(listOf(Color(0xFFF4F8FF), Color(0xFFC9D8EE)), startY = h * 0.8f, endY = h))
+        // yakın, iri kar taneleri
+        for (i in 0 until 14) {
+            val p = (r.a[i + 120] + t * (7f + r.a[i + 134] * 4f)) % 1f
+            drawCircle(Color.White.copy(alpha = 0.9f), radius = h * (0.025f + r.a[i + 140] * 0.02f),
+                center = Offset((r.a[i + 100] * 1.3f - 0.15f) * w + sin(TAU * (p * 1.5f + r.a[i])) * h * 0.1f, -h * 0.15f + p * h * 1.3f))
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Neon yol (synthwave, akan ızgara)
+private fun DrawScope.drawNeonRoad(w: Float, h: Float, sx: Float, sy: Float, t: Float, r: PortalRandom) {
+    val hy = h * 0.56f
+    drawRect(Brush.verticalGradient(0f to Color(0xFF12052E), 0.7f to Color(0xFF6A1B9A), 1f to Color(0xFFFF4E9A), endY = hy), size = Size(w, hy + 1f))
+    layer(0.1f, sx, sy) {
+        for (i in 0 until 26) {
+            drawCircle(Color.White.copy(alpha = 0.3f + r.a[i] * 0.5f), radius = h * 0.01f,
+                center = Offset((r.a[i + 30] * 1.3f - 0.15f) * w, r.a[i + 60] * hy * 0.6f))
+        }
+        val c = Offset(w * 0.5f, hy)
+        val sr = h * 0.42f
+        drawCircle(Brush.radialGradient(listOf(Color(0x66FF9A5B), Color.Transparent), center = c, radius = sr * 2f), radius = sr * 2f, center = c)
+        clipRect(-w, -h, w * 2f, hy) {
+            drawCircle(Brush.verticalGradient(listOf(Color(0xFFFFE66D), Color(0xFFFF3D8B)), startY = c.y - sr, endY = c.y), radius = sr, center = c)
+            for (i in 0 until 5) {
+                drawRect(Color(0xFF8A1E8C), Offset(c.x - sr, c.y - sr * (0.1f + i * 0.15f)), Size(sr * 2f, sr * (0.06f - i * 0.008f)))
+            }
+        }
+    }
+    layer(0.3f, sx, sy) {
+        val m = mountainPath(w, h, 0.58f, 0.36f, h * 0.45f, r, 90)
+        drawPath(m, Color(0xFF1C0638))
+        drawPath(m, Color(0xFF00E5FF).copy(alpha = 0.8f), style = Stroke(width = h * 0.015f))
+    }
+    layer(1f, sx, sy) {
+        drawRect(Color(0xFF0D0020), Offset(-w * 0.3f, hy), Size(w * 1.6f, h))
+        val grid = Color(0xFFFF2BD6)
+        val sw = h * 0.016f
+        drawLine(grid, Offset(-w * 0.3f, hy), Offset(w * 1.3f, hy), strokeWidth = sw * 1.5f)
+        // yatay çizgiler bize doğru akar
+        val n = 7
+        for (i in 0 until n) {
+            val p = ((i + t * 40f) % n) / n
+            val y = hy + (h * 1.05f - hy) * p * p
+            drawLine(grid.copy(alpha = 0.3f + 0.7f * p), Offset(-w * 0.3f, y), Offset(w * 1.3f, y), strokeWidth = sw * (0.6f + p))
+        }
+        val lines = 14
+        for (i in -lines..lines) {
+            drawLine(grid.copy(alpha = 0.75f), Offset(w * 0.5f + i * h * 0.08f, hy), Offset(w * 0.5f + i * h * 0.75f, h * 1.1f), strokeWidth = sw)
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Çöl (gün batımı, kum rüzgârı)
+private fun DrawScope.duneLayer(w: Float, h: Float, base: Float, amp: Float, freq: Float, ph: Float, color: Color) {
+    val p = Path().apply {
+        moveTo(-w * 0.3f, h * 1.3f)
+        var x = -w * 0.3f
+        val step = h * 0.1f
+        while (x <= w * 1.3f + step) { lineTo(x, h * base - h * amp * sin(x / w * freq + ph)); x += step }
+        lineTo(w * 1.3f, h * 1.3f); close()
+    }
+    drawPath(p, color)
+}
+
+private fun DrawScope.drawDesert(w: Float, h: Float, sx: Float, sy: Float, t: Float, r: PortalRandom) {
+    drawRect(Brush.verticalGradient(listOf(Color(0xFF2E1A47), Color(0xFFB1405F), Color(0xFFF79D65), Color(0xFFFFD58A))))
+    layer(0.08f, sx, sy) {
+        val c = Offset(w * 0.32f, h * 0.62f)
+        drawCircle(Brush.radialGradient(listOf(Color(0x88FFE3A3), Color.Transparent), center = c, radius = h * 1.1f), radius = h * 1.1f, center = c)
+        drawCircle(Color(0xFFFFE9B0), radius = h * 0.24f, center = c)
+        // uzakta uçan kuşlar
+        for (i in 0 until 3) {
+            val p = (r.a[i] + t * 1.5f) % 1f
+            val bx = w * (-0.1f + p * 1.2f); val by = h * (0.2f + r.a[i + 3] * 0.2f)
+            val flap = sin(TAU * (t * 30f + r.a[i + 6])) * h * 0.03f
+            val bs = h * 0.06f
+            val b = Path().apply { moveTo(bx - bs, by - flap); quadraticBezierTo(bx - bs * 0.4f, by - bs * 0.4f, bx, by); quadraticBezierTo(bx + bs * 0.4f, by - bs * 0.4f, bx + bs, by - flap) }
+            drawPath(b, Color(0xFF3A1E3A), style = Stroke(width = h * 0.015f, cap = StrokeCap.Round))
+        }
+    }
+    layer(0.3f, sx, sy) { duneLayer(w, h, 0.74f, 0.08f, 4.5f, 0.6f, Color(0xFFD9774A)) }
+    layer(0.6f, sx, sy) { duneLayer(w, h, 0.86f, 0.10f, 3.2f, 2.1f, Color(0xFFB0532F)) }
+    layer(0.85f, sx, sy) {
+        // rüzgârla savrulan kum
+        for (i in 0 until 22) {
+            val p = (r.a[i + 20] + t * (5f + r.a[i + 50] * 5f)) % 1f
+            val x = w * (1.2f - p * 1.4f)
+            val y = h * (0.6f + r.a[i + 80] * 0.4f) + sin(TAU * (p * 2f + r.a[i])) * h * 0.04f
+            drawLine(Color(0xFFFFD9A0).copy(alpha = 0.5f), Offset(x, y), Offset(x + h * 0.08f, y), strokeWidth = h * 0.012f, cap = StrokeCap.Round)
+        }
+    }
+    layer(1f, sx, sy) {
+        duneLayer(w, h, 1.0f, 0.12f, 2.4f, 4.0f, Color(0xFF6E2C1A))
+        // kaktüs
+        val cx = w * 0.82f; val base = h * 0.98f
+        val col = Color(0xFF2E1410)
+        val sw = h * 0.09f
+        drawLine(col, Offset(cx, base), Offset(cx, base - h * 0.6f), strokeWidth = sw, cap = StrokeCap.Round)
+        drawLine(col, Offset(cx, base - h * 0.28f), Offset(cx - h * 0.16f, base - h * 0.28f), strokeWidth = sw * 0.8f, cap = StrokeCap.Round)
+        drawLine(col, Offset(cx - h * 0.16f, base - h * 0.28f), Offset(cx - h * 0.16f, base - h * 0.45f), strokeWidth = sw * 0.8f, cap = StrokeCap.Round)
+        drawLine(col, Offset(cx, base - h * 0.36f), Offset(cx + h * 0.14f, base - h * 0.36f), strokeWidth = sw * 0.8f, cap = StrokeCap.Round)
+        drawLine(col, Offset(cx + h * 0.14f, base - h * 0.36f), Offset(cx + h * 0.14f, base - h * 0.5f), strokeWidth = sw * 0.8f, cap = StrokeCap.Round)
+    }
+}
+
+// ---------------------------------------------------------------- Kutup ışığı (dalgalanan aurora, göl yansıması)
+private fun DrawScope.drawPolar(w: Float, h: Float, sx: Float, sy: Float, t: Float, r: PortalRandom) {
+    drawRect(Brush.verticalGradient(listOf(Color(0xFF01040F), Color(0xFF06142B), Color(0xFF0B2240))))
+    layer(0.12f, sx, sy) {
+        for (i in 0 until 45) {
+            val tw = 0.6f + 0.4f * sin(TAU * (t * (2f + r.a[i + 100] * 5f) + r.a[i + 30]))
+            drawCircle(Color.White.copy(alpha = tw * (0.3f + r.a[i + 90] * 0.6f)), radius = h * (0.01f + r.a[i + 45] * 0.015f),
+                center = Offset((r.a[i] * 1.3f - 0.15f) * w, r.a[i + 60] * h * 0.7f))
+        }
+    }
+    val auroraCols = listOf(Color(0xFF2CFFA8), Color(0xFF34E0FF), Color(0xFFC77DFF))
+    val step = h * 0.08f
+    layer(0.3f, sx, sy) {
+        for (k in auroraCols.indices) {
+            val baseY = h * (0.15f + k * 0.08f)
+            val amp = h * 0.14f
+            val band = h * (0.5f - k * 0.08f)
+            val ph = TAU * t * (2f + k) + k * 1.7f
+            val p = Path()
+            var x = -w * 0.3f
+            p.moveTo(x, baseY)
+            while (x <= w * 1.3f + step) { p.lineTo(x, baseY + amp * sin(x / w * (5f + k * 2f) + ph)); x += step }
+            x = w * 1.3f + step
+            while (x >= -w * 0.3f) { p.lineTo(x, baseY + band + amp * sin(x / w * (5f + k * 2f) + ph)); x -= step }
+            p.close()
+            val c = auroraCols[k]
+            drawPath(p, Brush.verticalGradient(0f to Color.Transparent, 0.3f to c.copy(alpha = 0.5f), 1f to Color.Transparent,
+                startY = baseY - amp, endY = baseY + band + amp))
+        }
+    }
+    layer(0.6f, sx, sy) {
+        val m = mountainPath(w, h, 0.8f, 0.48f, h * 0.6f, r, 120)
+        drawPath(m, Color(0xFF0A1424))
+        clipPath(m) { drawRect(Color(0xFF9FB6D6).copy(alpha = 0.5f), Offset(-w, -h), Size(w * 3f, h * 1.56f)) }
+        // göl ve yansıyan ışık
+        drawRect(Brush.verticalGradient(listOf(Color(0xFF0C2A3E), Color(0xFF030A14)), startY = h * 0.8f, endY = h * 1.2f), Offset(-w * 0.3f, h * 0.8f), Size(w * 1.6f, h * 0.5f))
+        for (i in 0 until 6) {
+            val y = h * (0.84f + i * 0.04f)
+            val x0 = (r.a[i + 150] * 1.2f - 0.1f) * w + sin(TAU * (t * 6f + i * 0.3f)) * h * 0.05f
+            drawLine(auroraCols[i % 3].copy(alpha = 0.35f), Offset(x0, y), Offset(x0 + h * 0.5f, y), strokeWidth = h * 0.012f, cap = StrokeCap.Round)
+        }
+    }
+    layer(1f, sx, sy) {
+        var x = -w * 0.25f; var i = 0
+        while (x < w * 1.25f) {
+            if (r.a[(i * 7) % 160] > 0.35f) drawPine(x, h * 1.12f, h * (0.6f + r.a[(i * 11) % 160] * 0.4f), Color(0xFF01050A))
+            x += h * 0.3f; i++
+        }
+    }
 }
 
 // ================================================================ Kapak portalı
