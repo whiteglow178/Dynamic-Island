@@ -51,7 +51,7 @@ data class IslandSettings(
     val customBgExpandedUri: String = "",
     // Özel albüm kapağı (galeriden): adadaki kapak yerine bu fotoğraf gösterilir
     val customBgVideoUri: String = "",       // boş = video seçilmedi; doluysa videonun adresi (kopyalanmaz). Doluysa fotoğrafın yerine çalar
-    val musicBottomFx: Boolean = true,       // müzik çalarken adanın altında albüm renginde hareketli ışık
+    val musicBottomFx: Boolean = false,      // müzik çalarken adanın altında albüm renginde hareketli ışık
     // Ada olayları (genişletilmiş müzik adasında): hava durumu, şimşek, donma, erime, kırılma
     val fxWeather: Int = 0,                  // 0 kapalı, 1 yağmur, 2 kar, 3 asit yağmuru
     val fxIntensity: Float = 0.6f,
@@ -163,7 +163,13 @@ data class IslandSettings(
     val sfxCall: SoundCue = SoundCue(),
     val musicExpandedSec: Float = 8f,        // müzik adası genişletilince açık kalma süresi (sn); 0 = kendiliğinden kapanmasın
     val sideTapPromote: Boolean = false,     // baloncuğa dokununca o olay kalıcı olarak ortaya geçsin (kapalıysa yalnızca paneli açılır)
-    val invertedIsland: Boolean = false,     // ters ada: ada ekranın ÜSTÜNDE değil ALTINDA durur; içerik düz kalır, panel yukarı doğru açılır
+    val invertedIsland: Boolean = false,
+    // Ters adaya özel konum ve boyut (açıksa ters adada normal ada ölçüleri yerine bunlar kullanılır)
+    val invCustom: Boolean = false,
+    val invWidthDp: Float = 120f,
+    val invHeightDp: Float = 32f,
+    val invOffsetXDp: Float = 0f,
+    val invOffsetYDp: Float = 5f,     // ters ada: ada ekranın ÜSTÜNDE değil ALTINDA durur; içerik düz kalır, panel yukarı doğru açılır
     val landscapeMode: Boolean = false,      // yatay mod: telefon yan çevrilince ada kenarda DİKEY hap olur; olaylar (bildirim, şarj...) simgesi düz duran yan baloncuk olarak animasyonla çıkar
     val landscapeBubbleBelow: Boolean = false, // yatay mod: baloncuklar adanın altında (false: üstünde) sıralansın
     val landscapeEventsInIsland: Boolean = false, // yatay mod: olay adanın içinde de görünsün; ada doluysa gelen yeni olaylar baloncuk olur (en çok 2 baloncuk)
@@ -305,7 +311,16 @@ data class IslandSettings(
      * Servisin / arayüzün kullandığı etkin ayarlar. Üç nokta modunda kapalı ada, ortadaki noktanın çapında bir daire olur;
      * kullanıcının kaydedilmiş ada boyutları değişmez (yalnızca bu kopya değişir).
      */
-    fun effective(): IslandSettings = when {
+    fun effective(): IslandSettings {
+        // Ters ada + özel ölçüler: kapalı ada boyutu ve konumu ters adanın kendi ayarlarından gelir
+        val base = if (invertedIsland && invCustom) copy(
+            compactWidthDp = invWidthDp, compactHeightDp = invHeightDp,
+            offsetXDp = invOffsetXDp, offsetYDp = invOffsetYDp,
+        ) else this
+        return base.effectiveModes()
+    }
+
+    private fun effectiveModes(): IslandSettings = when {
         dotMode -> copy(
             compactWidthDp = dotMidDp, compactHeightDp = dotMidDp,
             offsetXDp = offsetXDp + dotOffsetXDp, offsetYDp = offsetYDp + dotOffsetYDp,
@@ -529,6 +544,8 @@ class SettingsRepository(context: Context) {
         val PL_NIGHT = booleanPreferencesKey("pl_night"); val PL_NIGHT_A = floatPreferencesKey("pl_night_a"); val PL_SHADOW = booleanPreferencesKey("pl_shadow")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val INV_ISLAND = booleanPreferencesKey("inv_island")
+        val INV_C = booleanPreferencesKey("inv_custom"); val INV_W = floatPreferencesKey("inv_w"); val INV_H = floatPreferencesKey("inv_h")
+        val INV_X = floatPreferencesKey("inv_x"); val INV_Y = floatPreferencesKey("inv_y")
         val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below"); val LAND_IN_ISLAND = booleanPreferencesKey("land_in_island")
         val NEON_ST = intPreferencesKey("neon_st"); val NEON_C1 = intPreferencesKey("neon_c1"); val NEON_C2 = intPreferencesKey("neon_c2")
         val NEON_W = floatPreferencesKey("neon_w"); val NEON_G = floatPreferencesKey("neon_g"); val NEON_SP = floatPreferencesKey("neon_sp")
@@ -680,6 +697,11 @@ class SettingsRepository(context: Context) {
             notifCompactSec = p[K.NT_CMP_S] ?: d.notifCompactSec,
             hideStatusBar = p[K.HIDE_SB] ?: d.hideStatusBar,
             invertedIsland = p[K.INV_ISLAND] ?: d.invertedIsland,
+            invCustom = p[K.INV_C] ?: d.invCustom,
+            invWidthDp = p[K.INV_W] ?: d.invWidthDp,
+            invHeightDp = p[K.INV_H] ?: d.invHeightDp,
+            invOffsetXDp = p[K.INV_X] ?: d.invOffsetXDp,
+            invOffsetYDp = p[K.INV_Y] ?: d.invOffsetYDp,
             landscapeMode = p[K.LAND_ON] ?: d.landscapeMode,
             landscapeBubbleBelow = p[K.LAND_BELOW] ?: d.landscapeBubbleBelow,
             landscapeEventsInIsland = p[K.LAND_IN_ISLAND] ?: d.landscapeEventsInIsland,
@@ -849,6 +871,8 @@ class SettingsRepository(context: Context) {
             it[K.PL_BREATH_M] = s.playBreathMin; it[K.PL_NIGHT] = s.playNightLight; it[K.PL_NIGHT_A] = s.playNightAmt; it[K.PL_SHADOW] = s.playShadow; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.INV_ISLAND] = s.invertedIsland
+            it[K.INV_C] = s.invCustom; it[K.INV_W] = s.invWidthDp; it[K.INV_H] = s.invHeightDp
+            it[K.INV_X] = s.invOffsetXDp; it[K.INV_Y] = s.invOffsetYDp
             it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow; it[K.LAND_IN_ISLAND] = s.landscapeEventsInIsland
             it[K.NEON_ST] = s.neonStyle; it[K.NEON_C1] = s.neonColor1Argb; it[K.NEON_C2] = s.neonColor2Argb
             it[K.NEON_W] = s.neonWidthDp; it[K.NEON_G] = s.neonGlow; it[K.NEON_SP] = s.neonSpeed

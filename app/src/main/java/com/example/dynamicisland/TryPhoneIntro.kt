@@ -562,37 +562,20 @@ private fun DrawScope.drawLockScreen(sx: Float, sy: Float, sw: Float, sh: Float,
         drawCircle(Color(0xFF2B3A66).copy(alpha = 0.8f), 0.38f, Offset(cx + 7.0f, itop + ih / 2f - 0.25f))
     }
 
-    // Durum çubuğu (sağ üst): sinyal, wifi, pil
     val white = Color.White.copy(alpha = 0.92f)
-    val iy = itop + ih / 2f
-    val sx0 = sx + sw - 21.5f
-    val hs = floatArrayOf(1.2f, 1.9f, 2.6f, 3.3f)
-    for (i in 0 until 4) {
-        drawRoundRect(white, Offset(sx0 + i * 1.35f, iy + 1.65f - hs[i]), Size(0.9f, hs[i]), CornerRadius(0.25f))
-    }
-    val wx = sx0 + 8.6f
-    val wy = iy + 1.7f
-    for (r in floatArrayOf(1.1f, 2.1f, 3.1f)) {
-        drawArc(white, 225f, 90f, false, Offset(wx - r, wy - r), Size(2 * r, 2 * r), style = Stroke(0.55f, cap = StrokeCap.Round))
-    }
-    drawCircle(white, 0.45f, Offset(wx, wy))
-    val bx = sx + sw - 8.8f
-    drawRoundRect(white.copy(alpha = 0.45f), Offset(bx, iy - 1.6f), Size(6.2f, 3.2f), CornerRadius(1.0f), style = Stroke(0.35f))
-    drawRoundRect(white, Offset(bx + 0.5f, iy - 1.1f), Size(5.2f, 2.2f), CornerRadius(0.6f))
-    drawRoundRect(white.copy(alpha = 0.5f), Offset(bx + 6.5f, iy - 0.5f), Size(0.5f, 1.0f), CornerRadius(0.2f))
 
-    // Tarih ve saat
-    drawIntoCanvas { c ->
+    // Tarih ve saat: yalnızca 3 boyutlu tanıtım telefonunda (ayarlar önizlemesinde ekran boş kalır)
+    if (withIsland) drawIntoCanvas { c ->
         val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
         p.textAlign = android.graphics.Paint.Align.CENTER
         p.color = android.graphics.Color.argb(225, 255, 255, 255)
         p.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         p.textSize = 4.4f
-        c.nativeCanvas.drawText("Salı, 12 Eylül", cx, sy + 25f, p)
+        c.nativeCanvas.drawText("Pazartesi, 9 Kasım", cx, sy + 25f, p)
         p.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         p.color = android.graphics.Color.argb(235, 255, 255, 255)
         p.textSize = 23f
-        c.nativeCanvas.drawText("9:41", cx, sy + 47f, p)
+        c.nativeCanvas.drawText("10:43", cx, sy + 47f, p)
     }
 
     // Alttaki fener / kamera düğmeleri ve ana ekran çubuğu

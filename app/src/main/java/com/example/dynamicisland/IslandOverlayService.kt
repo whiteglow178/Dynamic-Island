@@ -242,6 +242,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if ((swallowSlot.shown || stretchSlot.shown) && isPlayingMediaApp(e.to)) abortExit()   // müzik uygulamasına geri dönüldü
                 val wasMusic = inMusicApp
                 appHide.update(e.to)           // seçili uygulamada ada gizlenir
+                runCatching { privacy.onForeground(e.to) }   // kamera uygulaması açık: fotoğraf modunda da yeşil nokta
                 updateInMusicApp(e.to)          // önce "müzik uygulamasında mıyım" güncellenir
                 val started = onAppSwitched(e.from)   // çıkış animasyonu varsa ada yutma durumuna geçer (gizleme atlanır)
                 if (started) exitHold = settings.value.hideInMusicApp && wasMusic   // panel sürerken gelen ikinci olay gizlemeyi bozmasın

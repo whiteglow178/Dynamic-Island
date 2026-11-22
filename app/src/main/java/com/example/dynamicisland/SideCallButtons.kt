@@ -43,7 +43,14 @@ data class SideCallPrefs(
     val enabled: Boolean = false,
     val side: Int = 1,               // 0 = sol, 1 = sağ, 2 = ikisi de
     val transparency: Float = 0.25f, // 0 = tam siyah, 1 = tamamen saydam
-)
+    val centerFrac: Float = SIDE_Y_FRACTION, // dikey konum: kapsül merkezinin ekran yüksekliğine oranı (0 = üst, 1 = alt)
+    val scale: Float = 1f,           // boyut: genişlik + tuşlar (0.7 .. 1.5)
+    val heightMul: Float = 1f,       // yükseklik: kapsülün boyu (boyuttan bağımsız, 0.8 .. 2)
+    val marginDp: Float = SIDE_MARGIN_DP, // kenardan uzaklık (dp)
+) {
+    val wDp: Float get() = SIDE_W_DP * scale
+    val hDp: Float get() = SIDE_H_DP * scale * heightMul
+}
 
 /** Ayarlar SharedPreferences'ta saklanır; uygulama ve servis aynı akışı paylaşır. */
 object SideCallStore {
@@ -64,7 +71,9 @@ object SideCallStore {
         runCatching {
             ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
                 .putBoolean("enabled", n.enabled).putInt("side", n.side)
-                .putFloat("transparency", n.transparency).apply()
+                .putFloat("transparency", n.transparency)
+                .putFloat("center", n.centerFrac).putFloat("scale", n.scale)
+                .putFloat("heightMul", n.heightMul).putFloat("margin", n.marginDp).apply()
         }
     }
 
@@ -75,6 +84,10 @@ object SideCallStore {
             enabled = sp.getBoolean("enabled", d.enabled),
             side = sp.getInt("side", d.side).coerceIn(0, 2),
             transparency = sp.getFloat("transparency", d.transparency).coerceIn(0f, 1f),
+            centerFrac = sp.getFloat("center", d.centerFrac).coerceIn(0.05f, 0.95f),
+            scale = sp.getFloat("scale", d.scale).coerceIn(0.7f, 1.5f),
+            heightMul = sp.getFloat("heightMul", d.heightMul).coerceIn(0.8f, 2f),
+            marginDp = sp.getFloat("margin", d.marginDp).coerceIn(0f, 40f),
         )
     }
 }
@@ -131,10 +144,12 @@ class SideCallOverlay(
     private fun build(p: SideCallPrefs, left: Boolean, onAnswer: () -> Unit, onDecline: () -> Unit): Entry {
         val density = ctx.resources.displayMetrics.density
         fun dp(v: Float) = (v * density).roundToInt()
-        val w = dp(SIDE_W_DP); val h = dp(SIDE_H_DP)
+        val w = dp(p.wDp); val h = dp(p.hDp)
         val screenH = wm.currentWindowMetrics.bounds.height()
+        // Kapsül ekrandan taşmasın
+        val wantY = ((screenH * p.centerFrac).toInt() - h / 2).coerceIn(dp(8f), (screenH - h - dp(8f)).coerceAtLeast(dp(8f)))
         // Yatay modda kamera kenarındaki tuşlar adanın bölgesine binmesin
-        val y = LandscapeZone.fit(left, (screenH * SIDE_Y_FRACTION).toInt() - h / 2, h, screenH, dp(8f), shrink = false).first
+        val y = LandscapeZone.fit(left, wantY, h, screenH, dp(8f), shrink = false).first
 
         val view = ComposeView(ctx).apply {
             setViewTreeLifecycleOwner(lifecycleOwner)
@@ -149,7 +164,7 @@ class SideCallOverlay(
             setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
             setBackgroundDrawable(GradientDrawable().apply {
                 setColor(android.graphics.Color.TRANSPARENT)
-                cornerRadius = dp(SIDE_W_DP / 2f).toFloat()
+                cornerRadius = dp(p.wDp / 2f).toFloat()
             })
             clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             addFlags(
@@ -173,7 +188,7 @@ class SideCallOverlay(
         dlg.window?.decorView?.let { stripInsets(it) }
         dlg.show()
         dlg.window?.decorView?.let { stripInsets(it) }
-        val e = Entry(dlg, view, w, h, dp(SIDE_MARGIN_DP), y)
+        val e = Entry(dlg, view, w, h, dp(p.marginDp), y)
         applyGeometry(e)
         scheduleCalibrate(e)
         return e
@@ -235,17 +250,18 @@ internal fun SideCallPill(p: SideCallPrefs, onAnswer: () -> Unit, onDecline: () 
             .clip(RoundedCornerShape(50))
             .background(Pal.c("side_pill_bg").copy(alpha = (1f - p.transparency).coerceIn(0f, 1f))),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        // Boy uzayınca tuşlar kapsülün içine eşit aralıkla yayılır (varsayılan boyda eskisiyle aynı: 8 dp aralık)
+        verticalArrangement = Arrangement.SpaceEvenly,
     ) {
-        SideBtn(SideGreen, onAnswer) { PhoneIcon(0f, Modifier.size(23.dp)) }
-        SideBtn(SideRed, onDecline) { PhoneIcon(135f, Modifier.size(23.dp)) }
+        SideBtn(SideGreen, p.scale, onAnswer) { PhoneIcon(0f, Modifier.size((23f * p.scale).dp)) }
+        SideBtn(SideRed, p.scale, onDecline) { PhoneIcon(135f, Modifier.size((23f * p.scale).dp)) }
     }
 }
 
 @Composable
-private fun SideBtn(color: Color, onClick: () -> Unit, icon: @Composable () -> Unit) {
+private fun SideBtn(color: Color, scale: Float, onClick: () -> Unit, icon: @Composable () -> Unit) {
     Box(
-        Modifier.size(46.dp).clip(CircleShape).background(color, CircleShape)
+        Modifier.size((46f * scale).dp).clip(CircleShape).background(color, CircleShape)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { icon() }
@@ -271,6 +287,23 @@ fun SideCallSettingsSection() {
             SliderRow("Şeffaflık", p.transparency, 0f..1f, "%${(p.transparency * 100).roundToInt()}") { v ->
                 SideCallStore.update(ctx) { it.copy(transparency = v) }
             }
+            SectionDivider()
+            SubHeader("Konum ve boyut")
+            SliderRow("Dikey konum", p.centerFrac, 0.05f..0.95f, "%${(p.centerFrac * 100).roundToInt()}") { v ->
+                SideCallStore.update(ctx) { it.copy(centerFrac = v) }
+            }
+            SliderRow("Kenardan uzaklık", p.marginDp, 0f..40f, "${p.marginDp.roundToInt()} dp") { v ->
+                SideCallStore.update(ctx) { it.copy(marginDp = v) }
+            }
+            SliderRow("Boyut", p.scale, 0.7f..1.5f, "%${(p.scale * 100).roundToInt()}") { v ->
+                SideCallStore.update(ctx) { it.copy(scale = v) }
+            }
+            SliderRow("Yükseklik", p.heightMul, 0.8f..2f, "${p.hDp.roundToInt()} dp") { v ->
+                SideCallStore.update(ctx) { it.copy(heightMul = v) }
+            }
+            IslandActionButton("Varsayılan konum ve boyut", {
+                SideCallStore.update(ctx) { it.copy(centerFrac = SIDE_Y_FRACTION, scale = 1f, heightMul = 1f, marginDp = SIDE_MARGIN_DP) }
+            })
         }
     }
 }

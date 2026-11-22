@@ -192,7 +192,7 @@ private fun SideCallScene(cfg: IslandSettings) {
     val ctx = LocalContext.current
     val p by SideCallStore.flow(ctx).collectAsState()
     val open = if (p.enabled) rememberLoopOpen() else false
-    val slide by animateDpAsState(if (open) 0.dp else 72.dp, spring(0.8f, Spring.StiffnessLow), label = "sideSlide")
+    val slide by animateDpAsState(if (open) 0.dp else (p.wDp + p.marginDp + 10f).dp, spring(0.8f, Spring.StiffnessLow), label = "sideSlide")
 
     // Gelen arama adası: gerçek IslandPill + gerçek CallContent (IslandUi.kt ile aynı geometri: açık yükseklik 74 dp)
     val call = remember {
@@ -201,20 +201,20 @@ private fun SideCallScene(cfg: IslandSettings) {
     val geo = islandGeo(cfg, false).copy(eh = 74.dp)
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // Gerçek pencere: kenardan SIDE_MARGIN_DP boşluk, dikey konum ekran yüksekliğinin SIDE_Y_FRACTION'ı
-        val y = maxHeight * SIDE_Y_FRACTION - SIDE_H_DP.dp / 2
-        val m = SIDE_MARGIN_DP.dp
+        // Gerçek pencere ile aynı: ayarlardaki kenar boşluğu, dikey konum, boyut ve yükseklik
+        val y = maxHeight * p.centerFrac - p.hDp.dp / 2
+        val m = p.marginDp.dp
 
         PreviewPill(call, open, geo, cfg, Modifier.align(Alignment.TopCenter))
 
         // Gerçek SideCallPill (ayarlardaki şeffaflıkla); servis her kenar için ayrı pencere açar
         if (p.enabled && (p.side == 0 || p.side == 2)) {
-            Box(Modifier.align(Alignment.TopStart).offset(x = m - slide, y = y).size(SIDE_W_DP.dp, SIDE_H_DP.dp)) {
+            Box(Modifier.align(Alignment.TopStart).offset(x = m - slide, y = y).size(p.wDp.dp, p.hDp.dp)) {
                 SideCallPill(p, {}, {})
             }
         }
         if (p.enabled && (p.side == 1 || p.side == 2)) {
-            Box(Modifier.align(Alignment.TopEnd).offset(x = -m + slide, y = y).size(SIDE_W_DP.dp, SIDE_H_DP.dp)) {
+            Box(Modifier.align(Alignment.TopEnd).offset(x = -m + slide, y = y).size(p.wDp.dp, p.hDp.dp)) {
                 SideCallPill(p, {}, {})
             }
         }

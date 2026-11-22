@@ -1,6 +1,8 @@
 package com.example.dynamicisland
 
+import android.content.Intent
 import android.hardware.camera2.CameraManager
+import android.provider.MediaStore
 import android.media.AudioManager
 import android.media.AudioRecordingConfiguration
 import android.os.Handler
@@ -9,6 +11,12 @@ import android.os.Looper
 /**
  * Kamera / mikrofon göstergesi (nokta modundan bağımsız ayrı ayar). Servisten taşındı; davranış aynıdır.
  * Kamera: CameraManager "kullanılamıyor" bildirimi; mikrofon: AudioRecordingCallback. İkisi de izin gerektirmez.
+ *
+ * Fotoğraf modu: birçok üreticinin kamera uygulaması fotoğraf modunda üçüncü taraf uygulamalara bildirilmeyen
+ * gizli (üreticiye özel) bir kamera kimliği açar; video modunda ise standart kamerayı açtığı için yalnızca videoda
+ * nokta çıkıyordu. Bu yüzden iki ek sinyal daha kullanılır (ikisi de izin gerektirmez):
+ *  - Fener "kullanılamaz" oldu (kamera açıkken flaş başka uygulamaya kilitlenir),
+ *  - Ön plandaki uygulama telefonun kamera uygulaması (erişilebilirlik servisinin bildirdiği ön plan değişimi).
  */
 class PrivacyController(private val host: IslandHost) {
 
@@ -17,7 +25,26 @@ class PrivacyController(private val host: IslandHost) {
         private set
 
     private val camBusy = HashSet<String>()
+    private val torchBusy = HashSet<String>()
+    private var camAppFront = false
     private var micBusy = false
+    private var torchCb: CameraManager.TorchCallback? = null
+    private val cameraPkgs: Set<String> by lazy {
+        val pm = host.context.packageManager
+        val out = HashSet<String>()
+        for (a in listOf(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA, MediaStore.INTENT_ACTION_VIDEO_CAMERA, MediaStore.ACTION_IMAGE_CAPTURE)) {
+            runCatching { pm.queryIntentActivities(Intent(a), 0).forEach { out.add(it.activityInfo.packageName) } }
+        }
+        out
+    }
+
+    /** Erişilebilirlik servisinden gelen ön plan değişimi: kamera uygulaması açıldıysa kamera kullanılıyor sayılır. */
+    fun onForeground(pkg: String) {
+        val front = pkg in cameraPkgs
+        if (front == camAppFront) return
+        camAppFront = front
+        runCatching { refresh() }
+    }
     private var camCb: CameraManager.AvailabilityCallback? = null
     private var micCb: AudioManager.AudioRecordingCallback? = null
 
@@ -31,6 +58,13 @@ class PrivacyController(private val host: IslandHost) {
         }
         camCb = cb
         runCatching { cm.registerAvailabilityCallback(cb, h) }
+        // Flaş kilitlendi = bir uygulama arka kamerayı açtı (gizli kamera kimliğiyle açılsa da çoğu cihazda gelir)
+        val tcb = object : CameraManager.TorchCallback() {
+            override fun onTorchModeUnavailable(cameraId: String) { if (torchBusy.add(cameraId)) runCatching { refresh() } }
+            override fun onTorchModeChanged(cameraId: String, enabled: Boolean) { if (torchBusy.remove(cameraId)) runCatching { refresh() } }
+        }
+        torchCb = tcb
+        runCatching { cm.registerTorchCallback(tcb, h) }
         val am = ctx.getSystemService(AudioManager::class.java)
         val mcb = object : AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>) {
@@ -47,6 +81,8 @@ class PrivacyController(private val host: IslandHost) {
     fun stop() {
         val ctx = host.context
         camCb?.let { cb -> runCatching { ctx.getSystemService(CameraManager::class.java).unregisterAvailabilityCallback(cb) } }
+        torchCb?.let { cb -> runCatching { ctx.getSystemService(CameraManager::class.java).unregisterTorchCallback(cb) } }
+        torchCb = null
         micCb?.let { cb -> runCatching { ctx.getSystemService(AudioManager::class.java).unregisterAudioRecordingCallback(cb) } }
         camCb = null; micCb = null
     }
@@ -54,7 +90,7 @@ class PrivacyController(private val host: IslandHost) {
     /** Kamera / mikrofon durumuna göre göstergeyi günceller: başlayınca kısa süre panel açılır, sonra nokta olarak kalır. */
     fun refresh() {
         val on = host.settings.privacyIndicator
-        val cam = on && camBusy.isNotEmpty()
+        val cam = on && (camBusy.isNotEmpty() || torchBusy.isNotEmpty() || camAppFront)
         val mic = on && micBusy
         val next = if (!cam && !mic) null else IslandContent.Status(
             kind = if (cam) StatusKind.Camera else StatusKind.Mic,

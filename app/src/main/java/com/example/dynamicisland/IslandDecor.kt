@@ -612,16 +612,30 @@ private fun HangDecor(kind: Int, a: DecorAnchor, vis: Float) {
         val rope = Color(0xFF2B2B2B).copy(alpha = vis)
         when (kind) {
             1 -> { // Salıncakta civciv
-                val ang = sin(tau * t.value) * 16f
-                val pivot = Offset(a.cx, edge)
-                val len = h * 2.1f * dir
-                rotate(ang, pivot) {
-                    val sx = h * 0.45f
-                    drawLine(rope, Offset(a.cx - sx, edge), Offset(a.cx - sx, edge + len), h * 0.05f)
-                    drawLine(rope, Offset(a.cx + sx, edge), Offset(a.cx + sx, edge + len), h * 0.05f)
-                    drawRoundRect(Color(0xFF8B5A2B).copy(alpha = vis), Offset(a.cx - sx - h * 0.1f, edge + len - h * 0.05f),
-                        Size(sx * 2 + h * 0.2f, h * 0.14f), CornerRadius(h * 0.07f))
-                    translate(a.cx, edge + len - h * 0.38f) { drawPetAlpha(2, h * 0.95f, vis) }
+                // Gerçek salıncak gibi: her ip adadaki KENDİ bağlantı noktasından sallanır (paralelkenar).
+                // Eskiden iki ip ortadaki tek nokta etrafında döndürülüyordu; sallanırken bir ipin üst ucu adadan
+                // aşağı kopup görünüyordu. Artık üst uçlar adaya sabit, oturak yatay kalır.
+                val angDeg = sin(tau * t.value) * 16f
+                val rad = angDeg * PI.toFloat() / 180f
+                val ropeLen = h * 2.1f
+                val sx = h * 0.45f
+                val dx = sin(rad) * ropeLen * -dir      // ters adada (yukarı doğru) aynalanır
+                val dy = cos(rad) * ropeLen * dir
+                val ropeW = h * 0.05f
+                for (side in listOf(-1f, 1f)) {
+                    val top0 = Offset(a.cx + side * sx, edge)
+                    val end = Offset(top0.x + dx, edge + dy)
+                    drawLine(rope, top0, end, ropeW, cap = StrokeCap.Round)
+                    // Adaya bağlandığı yerde küçük halka: ip ucu kesik görünmesin
+                    drawCircle(rope, ropeW * 1.3f, top0)
+                }
+                val seatX = a.cx + dx
+                val seatY = edge + dy
+                drawRoundRect(Color(0xFF8B5A2B).copy(alpha = vis), Offset(seatX - sx - h * 0.1f, seatY - h * 0.05f),
+                    Size(sx * 2 + h * 0.2f, h * 0.14f), CornerRadius(h * 0.07f))
+                // Civciv oturakta: salınımla hafifçe öne arkaya yatar
+                rotate(angDeg * 0.35f, Offset(seatX, seatY)) {
+                    translate(seatX, seatY - h * 0.38f) { drawPetAlpha(2, h * 0.95f, vis) }
                 }
             }
             else -> { // Yıldızlar / yılbaşı topları / kalpler: üç ip, farklı uzunlukta
@@ -718,30 +732,114 @@ private fun Drip(a: DecorAnchor, color: Color, everySec: Float, active: Boolean)
         }
     }
     if (drips.isEmpty()) return
+    val path = remember { Path() }
     Canvas(Modifier.fillMaxSize()) {
         val p = prog.value
         val edge = if (dirUp) a.top else a.top + a.h
         val sgn = if (dirUp) -1f else 1f
-        for (d in drips) {
+        val dark = lerp(color, Color.Black, 0.45f)
+        val light = lerp(color, Color.White, 0.22f)
+
+        // Adanın alt yüzünü kaplayan ince sıvı tabakası: damlalar bunun içinden doğar (sıvı adaya yapışık görünür)
+        val r = a.h / 2f
+        val lipT = (p / 0.25f).coerceIn(0f, 1f) * (1f - ((p - 0.85f) / 0.15f).coerceIn(0f, 1f))
+        if (lipT > 0f) {
+            val lx0 = a.cx - a.w / 2f + r * 0.55f
+            val lx1 = a.cx + a.w / 2f - r * 0.55f
+            val th = a.h * 0.07f * lipT
+            path.reset()
+            path.moveTo(lx0, edge)
+            path.cubicTo(lx0 + r * 0.4f, edge, lx0 + r * 0.5f, edge + sgn * th, lx0 + r, edge + sgn * th)
+            path.lineTo(lx1 - r, edge + sgn * th)
+            path.cubicTo(lx1 - r * 0.5f, edge + sgn * th, lx1 - r * 0.4f, edge, lx1, edge)
+            path.close()
+            drawPath(path, color.copy(alpha = color.alpha * lipT))
+        }
+
+        for ((idx, d) in drips.withIndex()) {
             val local = ((p - d.delay) / (1f - d.delay)).coerceIn(0f, 1f)
             if (local <= 0f) continue
-            // 0..0.65: önce yavaş sarkar sonra hızlanır (koyu sıvı), 0.65..1: kısa damla geri çekilir, uzun damlanın izi incelip söner
-            val grow = (local / 0.65f).coerceIn(0f, 1f)
-            val ease = grow * grow * grow
-            val fade = ((local - 0.65f) / 0.35f).coerceIn(0f, 1f)
-            val len = if (d.long) d.len * ease else d.len * ease * (1f - fade)
-            val w = if (d.long) d.width * (1f - 0.75f * fade) else d.width
-            val alpha = if (d.long) 1f - fade * fade else 1f
-            val col = color.copy(alpha = color.alpha * alpha)
-            // Adaya bağlandığı yer: yumuşak bir kabarıklık (sıvının adadan kopmadığı görünsün)
-            drawOval(col, Offset(d.x - w * 1.3f, edge - w * 0.6f), Size(w * 2.6f, w * 1.3f))
-            if (len > 0.5f) {
-                val y0 = edge
-                val y1 = edge + sgn * len
-                drawRect(col, Offset(d.x - w / 2f, min(y0, y1)), Size(w, abs(y1 - y0)))
-                // ucunda damla
-                val bulb = w * (0.85f + 0.25f * (1f - fade))
-                if (!(d.long && fade > 0.4f)) drawCircle(col, bulb, Offset(d.x, y1))
+            // 0..0.6: önce yavaş sarkar sonra hızlanır (koyu, yapışkan sıvı).
+            // Kısa damla 0.6..1 arasında yüzey geriliminle geri çekilir; uzun damla ekranın altına kadar akar, ardında incelen bir iz bırakır.
+            val grow = (local / 0.6f).coerceIn(0f, 1f)
+            val ease = grow * grow * (3f - 2f * grow) * grow          // yavaş başlar, hızlanır
+            val back = ((local - 0.6f) / 0.4f).coerceIn(0f, 1f)
+            val backE = back * back * (3f - 2f * back)
+            val len = if (d.long) d.len * ease else d.len * ease * (1f - backE)
+            val ws = d.width * (if (d.long) 1f - 0.7f * backE else 1f - 0.3f * backE)   // akış kalınlığı
+            var rb = d.width * (0.75f + 0.45f * ease)                                     // uçtaki damla yarıçapı
+            if (!d.long) rb *= (1f - 0.55f * backE)
+            val alpha = if (d.long) 1f - backE * backE else 1f - ((local - 0.9f) / 0.1f).coerceIn(0f, 1f)
+            if (alpha <= 0.01f) continue
+            val flare = d.width * 1.9f                                                     // adaya yapıştığı yerde genişleme
+            val seed = idx * 1.7f + d.x * 0.013f
+            val tip = len.coerceAtLeast(rb * 0.4f)
+            val tearTop = tip - rb * 2.6f
+
+            // Profil: her y (adadan uzaklık) için yarım genişlik; akış + adaya yapışma kavisi + damla ucu
+            fun half(y: Float): Float {
+                val stream = ws / 2f * (1f + 0.10f * sin(y / (a.h * 0.32f) + seed))
+                val fillet = (flare - ws) / 2f * kotlin.math.exp(-y / (ws * 1.1f + 0.001f))
+                var hw = stream + fillet
+                if (y >= tearTop) {
+                    val tear = if (y <= tip) {
+                        val u = ((y - tearTop) / (tip - tearTop).coerceAtLeast(0.001f)).coerceIn(0f, 1f)
+                        rb * Math.pow(sin(u * PI / 2.0), 1.4).toFloat()
+                    } else {
+                        val v = (y - tip) / rb
+                        if (v >= 1f) 0f else rb * kotlin.math.sqrt(1f - v * v)
+                    }
+                    hw = max(hw, tear)
+                }
+                return hw
+            }
+
+            val bottom = tip + rb
+            // Örnek noktaları: akış boyunca seyrek, damla ucunda sık (uç yuvarlak kalsın)
+            val splitY = tearTop.coerceIn(0f, bottom)
+            val nA = 22
+            val nB = 30
+            fun sampleY(i: Int): Float = if (i <= nA) splitY * i / nA else splitY + (bottom - splitY) * (i - nA) / nB
+            val n = nA + nB
+            path.reset()
+            // sol kenar: yukarıdan aşağı
+            for (i in 0..n) {
+                val y = sampleY(i)
+                val px = d.x - half(y)
+                if (i == 0) path.moveTo(px, edge - sgn * 1f) else path.lineTo(px, edge + sgn * y)
+            }
+            // sağ kenar: aşağıdan yukarı
+            for (i in n downTo 0) {
+                val y = sampleY(i)
+                path.lineTo(d.x + half(y), if (i == 0) edge - sgn * 1f else edge + sgn * y)
+            }
+            path.close()
+
+            // Hacim: kenarlar koyu, ortası hafif açık (silindir / küre gibi)
+            val span = max(rb, flare / 2f)
+            val brush = Brush.horizontalGradient(
+                0f to dark.copy(alpha = color.alpha * alpha),
+                0.30f to color.copy(alpha = color.alpha * alpha),
+                0.42f to light.copy(alpha = color.alpha * alpha),
+                0.62f to color.copy(alpha = color.alpha * alpha),
+                1f to dark.copy(alpha = color.alpha * alpha),
+                startX = d.x - span, endX = d.x + span,
+            )
+            drawPath(path, brush)
+
+            // Işık yansımaları: damlanın üst-sol tarafında parlak nokta, akışın sol kenarında ince parlama
+            if (len > rb * 0.6f) {
+                val bc = Offset(d.x - rb * 0.32f, edge + sgn * (tip - rb * 0.25f))
+                drawCircle(Color.White.copy(alpha = 0.55f * alpha), rb * 0.22f, bc)
+                drawCircle(Color.White.copy(alpha = 0.18f * alpha), rb * 0.42f, bc)
+                if (tearTop > ws * 2f) {
+                    drawLine(
+                        Color.White.copy(alpha = 0.16f * alpha),
+                        Offset(d.x - ws * 0.18f, edge + sgn * ws * 1.5f),
+                        Offset(d.x - ws * 0.18f, edge + sgn * tearTop),
+                        (ws * 0.16f).coerceAtLeast(1f), cap = StrokeCap.Round,
+                    )
+                }
             }
         }
     }

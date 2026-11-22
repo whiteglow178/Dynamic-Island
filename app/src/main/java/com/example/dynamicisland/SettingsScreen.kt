@@ -224,6 +224,20 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SliderRow("Yatay", draft.offsetXDp, -60f..60f, "${draft.offsetXDp.toInt()} dp") { draft = draft.copy(offsetXDp = it) }
             SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
             SwitchRow("Ters ada", "Ada ekranın üstünde değil en altında durur. Olaylar ve bildirimler düz görünür; adaya basınca panel aşağı değil yukarı doğru açılır. Dikey konum ayarı alttan ölçülür", draft.invertedIsland) { draft = draft.copy(invertedIsland = it) }
+            if (draft.invertedIsland) {
+                SwitchRow("Ters adaya özel konum ve boyut", "Açıkken ters ada, üstteki Kapalı ada ve Konum ayarlarını değil aşağıdaki kendi ayarlarını kullanır (ekranın altında farklı bir boyut / yer isteyebilirsin)", draft.invCustom) { draft = draft.copy(invCustom = it) }
+                if (draft.invCustom) {
+                    SubHeader("Ters ada boyutu")
+                    SliderRow("Genişlik", draft.invWidthDp, 60f..220f, "${draft.invWidthDp.toInt()} dp") { draft = draft.copy(invWidthDp = it) }
+                    SliderRow("Yükseklik", draft.invHeightDp, 20f..60f, "${draft.invHeightDp.toInt()} dp") { draft = draft.copy(invHeightDp = it) }
+                    SubHeader("Ters ada konumu")
+                    SliderRow("Yatay", draft.invOffsetXDp, -160f..160f, "${draft.invOffsetXDp.toInt()} dp") { draft = draft.copy(invOffsetXDp = it) }
+                    SliderRow("Alttan uzaklık", draft.invOffsetYDp, -20f..200f, "${draft.invOffsetYDp.toInt()} dp") { draft = draft.copy(invOffsetYDp = it) }
+                    IslandActionButton("Normal adanın ölçülerini kopyala", {
+                        draft = draft.copy(invWidthDp = draft.compactWidthDp, invHeightDp = draft.compactHeightDp, invOffsetXDp = draft.offsetXDp, invOffsetYDp = draft.offsetYDp)
+                    })
+                }
+            }
             SwitchRow("Yatay mod", "Telefonu yan çevirince ada kamera kenarında dikey bir hap olur. Gelen bildirim, şarj, arama gibi olaylar adanın yanında, simgesi düz duran küçük baloncuk olarak animasyonla ayrılır. Bildirimde uygulamanın simgesi görünür", draft.landscapeMode) { draft = draft.copy(landscapeMode = it) }
             if (draft.landscapeMode) {
                 SwitchRow("Baloncuklar adanın altında", "Açıkken baloncuklar adanın altına, kapalıyken üstüne dizilir", draft.landscapeBubbleBelow) { draft = draft.copy(landscapeBubbleBelow = it) }
@@ -1041,8 +1055,10 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
     // Tam telefon gerektiren ayarlarda önizleme kartı telefonun tamamını gösterecek şekilde büyür
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
-            PreviewCard(
+            // ---- Sabit canlı önizleme (kaydırırken de görünür kalır); arama satırındaki göz tuşuyla gizlenebilir
+            val uiPrefs = remember { ctx.getSharedPreferences("settings_ui", android.content.Context.MODE_PRIVATE) }
+            var previewHidden by remember { mutableStateOf(uiPrefs.getBoolean("preview_hidden", false)) }
+            if (!previewHidden) PreviewCard(
                 draft.effective(), mode, { mode = it }, expanded, { expanded = !expanded },
                 kind = kind, hint = hint, showBig = showBig,
                 onSmallTap = { if (needsBig) bigDismissed = false }, onBigTap = { bigDismissed = true },
@@ -1056,6 +1072,32 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             val cs0 = MaterialTheme.colorScheme
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 SearchField(query, { query = it; if (it.isNotEmpty()) menuOpen = false }, Modifier.weight(1f))
+                // Önizlemeyi gizle / göster
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                        .background(if (previewHidden) cs0.primary else cs0.surfaceVariant)
+                        .clickable(role = Role.Button) {
+                            previewHidden = !previewHidden
+                            uiPrefs.edit().putBoolean("preview_hidden", previewHidden).apply()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val ic = if (previewHidden) cs0.onPrimary else cs0.onSurfaceVariant
+                    androidx.compose.foundation.Canvas(Modifier.size(20.dp)) {
+                        val w = size.width; val h = size.height
+                        val st = androidx.compose.ui.graphics.drawscope.Stroke(w * 0.09f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                        val eye = androidx.compose.ui.graphics.Path().apply {
+                            moveTo(w * 0.04f, h * 0.5f)
+                            quadraticBezierTo(w * 0.5f, h * 0.02f, w * 0.96f, h * 0.5f)
+                            quadraticBezierTo(w * 0.5f, h * 0.98f, w * 0.04f, h * 0.5f)
+                            close()
+                        }
+                        drawPath(eye, ic, style = st)
+                        drawCircle(ic, w * 0.13f, androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.5f))
+                        // Gizliyken üstü çizili göz
+                        if (previewHidden) drawLine(ic, androidx.compose.ui.geometry.Offset(w * 0.12f, h * 0.1f), androidx.compose.ui.geometry.Offset(w * 0.88f, h * 0.9f), w * 0.09f, androidx.compose.ui.graphics.StrokeCap.Round)
+                    }
+                }
                 Box(
                     Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
                         .background(if (menuOpen) cs0.primary else cs0.surfaceVariant)

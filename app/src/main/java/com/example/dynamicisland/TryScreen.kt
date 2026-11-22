@@ -657,9 +657,12 @@ private fun DrawScope.drawMetalBand(
         ),
     )
     // Altta parmak silueti (düğmeye basan parmak)
-    val archTop = cy + ph * 0.5f + 175.dp.toPx()
-    val archH = ph * 1.2f
-    val archW = pw * 1.04f
+    // Konum ve boy, giriş / gösterim animasyonundaki 3 boyutlu telefonun ses (+) tuşuyla birebir aynı:
+    // Eylem Düğmesi (hap, 7 mm) merkezinden 7,5 mm aşağıda başlar, 11 mm uzunluğunda, aynı kalınlıkta.
+    // (Eskiden sabit 175 dp idi; ekran boyuna göre animasyondaki tuşla kayıyordu.)
+    val archTop = cy + ph * (7.5f / 7f)
+    val archH = ph * (11f / 7f)
+    val archW = pw
     // Alttaki tuş: metalik bantla aynı renk, kenarında ince siyah çizgi
     drawRoundRect(
         bandBrush,

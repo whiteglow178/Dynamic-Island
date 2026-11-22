@@ -949,9 +949,11 @@ fun IslandPill(
             Box(
                 Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
-                contentAlignment = Alignment.CenterEnd,
+                contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.padding(end = 12.dp).size(8.dp).background(statusColor(content), RoundedCornerShape(50)))
+                // iOS gibi: adanın sağ ucunda değil, ortadaki kamera deliğinin hemen sağında (adanın içinde, biraz sağda)
+                val dotX = (geo.ch * 0.85f).coerceAtMost(geo.cw / 2f - geo.ch * 0.35f)
+                Box(Modifier.offset(x = dotX).size(8.dp).background(statusColor(content), RoundedCornerShape(50)))
             }
         }
 
