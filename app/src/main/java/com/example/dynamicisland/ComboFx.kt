@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -218,19 +219,26 @@ private fun hrnd(i: Int, j: Int, k: Int): Float {
 internal fun DissolveArt(art: ImageBitmap?, modifier: Modifier = Modifier) {
     var cur by remember { mutableStateOf<ImageBitmap?>(null) }
     var prev by remember { mutableStateOf<ImageBitmap?>(null) }
+    var transId by remember { mutableIntStateOf(0) }
     val curSig = remember { arrayOfNulls<IntArray>(1) }
     val prog = remember { Animatable(1f) }
+    // 1) Gelen kapağı değerlendirir (askıya alınmaz, hemen biter). Medya oturumu aynı kapağı sık sık yeni bir görüntü
+    //    nesnesi olarak gönderir; yalnızca görüntünün İÇERİĞİ değiştiyse yeni bir geçiş başlatılır. Aynı kapaksa
+    //    görüntü sessizce değiştirilir ve süren geçiş kesilmez.
     LaunchedEffect(art) {
         if (art == null || art === cur) return@LaunchedEffect
         val c0 = cur
         if (c0 == null) { cur = art; curSig[0] = artSig(art); return@LaunchedEffect }
-        // Medya oturumu aynı kapağı sık sık yeni bir görüntü nesnesi olarak gönderir (oynatma durumu, süre güncellemesi...).
-        // Yalnızca görüntünün İÇERİĞİ değiştiyse (gerçekten yeni şarkının kapağı) animasyon oynar; aynı kapaksa sessizce değiştirilir.
         val sig = artSig(art)
         if (sameArt(curSig[0], sig, c0, art)) { cur = art; curSig[0] = sig; return@LaunchedEffect }
         prev = c0
         cur = art
         curSig[0] = sig
+        transId++
+    }
+    // 2) Geçiş animasyonu ayrı yürür: yalnızca yeni bir geçiş (gerçekten farklı kapak) onu yeniden başlatır.
+    LaunchedEffect(transId) {
+        if (transId == 0) return@LaunchedEffect
         prog.snapTo(0f)
         prog.animateTo(1f, tween(1150, easing = LinearEasing))
         prev = null
