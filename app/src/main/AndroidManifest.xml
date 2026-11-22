@@ -3,6 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Erişim noktası açıldı / kapandı göstergesi (izin penceresi açılmaz) -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- İsteğe bağlı: kulaklık kartında pil yüzdesi. Yalnızca kullanıcı "Pil yüzdesi" ayarını açarsa istenir -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
