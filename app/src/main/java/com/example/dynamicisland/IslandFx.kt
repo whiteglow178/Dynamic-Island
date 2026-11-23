@@ -762,7 +762,10 @@ private class FxSim {
         if (weather >= FXW_METEOR) scenes.step(weather, dt, now, W, H, d, inten, targets, fx.targets, tilt, shook, cue)
         else scenes.idle(targets)
         // Ada sakinleri: her olayda (olay kapalıyken de) yaşar
-        if (cfg.more.fxPets) pets.step(cfg.more.fxPetCount, weather, dt, now, W, H, d, targets, fx.targets, scenes, tilt, shook, cue, flash > 0.6f)
+        if (cfg.more.fxPets) pets.step(
+            cfg.more.fxPetCount, weather, dt, W, H, d, targets, fx.targets, scenes, tilt, shook, cue, flash > 0.6f,
+            socialOn = cfg.more.petSocial, growthOn = cfg.more.petGrowth, ballOn = cfg.more.petBall, ballTilt = FxMotion.tiltX,
+        )
         else pets.clear()
 
         if (weather == 1 && cfg.fxLightning) {
@@ -923,7 +926,9 @@ fun FxLayer(
     val scanBusy = remember { BooleanArray(1) }
     SideEffect { fx.live = live }
     // Eğilen dünya: eğim ve sallama sensörü yalnızca panel tam açıkken dinlenir
-    if (cfg.more.fxTilt && expandedFull) FxMotionSensor()
+    if ((cfg.more.fxTilt || (cfg.more.fxPets && cfg.more.petBall)) && expandedFull) FxMotionSensor()
+    val petCtx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(cfg.more.fxPets && cfg.more.petGrowth) { if (cfg.more.fxPets && cfg.more.petGrowth) PetLife.init(petCtx) }
 
     /** Sıradaki öğenin piksellerini tarar ve gerçek şeklini çıkarır. */
     fun scanNext(now: Long) {
@@ -1187,6 +1192,22 @@ fun FxLayer(
             )
         }
 
+        // Ada sakinleri: her hayvanın ve topun üstünde küçük, görünmez dokunma alanı (katmanın geri kalanı dokunuşu
+        // geçirir; kapak ve düğmeler çalışır). Sürüklerken alan yerinde kalır, parmak dışarı çıksa da izlenir.
+        if (cfg.more.fxPets && cfg.more.petTouch) {
+            val n = cfg.more.fxPetCount.coerceIn(1, FX_PET_KINDS)
+            for (i in 0 until n) key("pet", i) {
+                PetTouchBox(dens, { tick }, { sim.pets.hitOrigin(i, d) }, 32.dp, 30.dp,
+                    onDown = { sim.pets.grab(i, it) }, onMove = { sim.pets.dragTo(i, it) },
+                    onTap = { sim.pets.tap(i) }, onFling = { vx, vy -> sim.pets.release(i, vx, vy) })
+            }
+            if (cfg.more.petBall) key("ball") {
+                PetTouchBox(dens, { tick }, { sim.pets.ballOrigin(d) ?: Offset(-9999f, -9999f) }, 28.dp, 28.dp,
+                    onDown = { sim.pets.grabBall(it) }, onMove = { sim.pets.dragBall(it) },
+                    onTap = { sim.pets.releaseBall(0f, -400f * d) }, onFling = { vx, vy -> sim.pets.releaseBall(vx, vy) })
+            }
+        }
+
         // Donmuş / erimiş / kopmuş öğelerin altındaki gerçek düğmeler çalışmaz: dokunuşu bu katman alır
         for (t in blockedList) {
             key(t.id) {
@@ -1295,4 +1316,56 @@ internal fun scanFxShape(bmp: ImageBitmap, w: Float, h: Float, colPx: Float): Fx
     val cw = w / cols
     val tight = if (l < 0) Rect.Zero else Rect(l * cw, tp, (r + 1) * cw, bt)
     return FxShape(top, bot, tight)
+}
+
+
+/**
+ * Ada sakinleri için hareketli dokunma alanı. Konumu her karede [origin]'den okunur ([tick] okunarak yeniden yerleşir).
+ * Basılınca alan o anki yerde sabitlenir; sürükleme ekran-ada koordinatıyla bildirilir, bırakınca hız verilir.
+ */
+@Composable
+private fun PetTouchBox(
+    dens: androidx.compose.ui.unit.Density, tick: () -> Long, origin: () -> Offset,
+    w: androidx.compose.ui.unit.Dp, h: androidx.compose.ui.unit.Dp,
+    onDown: (Offset) -> Unit, onMove: (Offset) -> Unit, onTap: () -> Unit, onFling: (Float, Float) -> Unit,
+) {
+    val frozen = remember { arrayOfNulls<Offset>(1) }
+    Box(
+        Modifier
+            .offset {
+                @Suppress("UNUSED_VARIABLE") val tk = tick()
+                val o = frozen[0] ?: origin()
+                IntOffset(o.x.roundToInt(), o.y.roundToInt())
+            }
+            .size(w, h)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val base = origin()
+                    if (base.x < -1000f) return@awaitEachGesture
+                    frozen[0] = base
+                    down.consume()
+                    val vt = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                    vt.addPosition(down.uptimeMillis, down.position)
+                    onDown(base + down.position)
+                    var moved = 0f
+                    var last = down.position
+                    var released = false
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val c = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!c.pressed) { released = true; break }
+                        moved += (c.position - last).getDistance()
+                        last = c.position
+                        vt.addPosition(c.uptimeMillis, c.position)
+                        onMove(base + c.position)
+                        c.consume()
+                    }
+                    frozen[0] = null
+                    val slop = with(dens) { 8.dp.toPx() }
+                    if (released && moved < slop) onTap()
+                    else { val v = vt.calculateVelocity(); onFling(v.x, v.y) }
+                }
+            }
+    )
 }

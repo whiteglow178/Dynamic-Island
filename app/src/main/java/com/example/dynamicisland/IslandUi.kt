@@ -784,6 +784,14 @@ fun IslandPill(
     val calWeather = if (cfg.more.calendarFx) calendarWeather(calTick) else -1
     val moodWeather = if (calWeather >= 0) calWeather else moodByArt
     SideEffect { FxPrefs.coverDissolve = cfg.more.coverDissolve }
+    // Ada sakinleri > Büyüme: gerçek adada müzik çaldıkça dakika sayılır (önizlemeler saymaz)
+    val petCtx = androidx.compose.ui.platform.LocalContext.current
+    val petListen = fxMode == 2 && cfg.more.fxPets && cfg.more.petGrowth && (content as? IslandContent.Media)?.playing == true
+    LaunchedEffect(petListen) {
+        if (!petListen) return@LaunchedEffect
+        PetLife.init(petCtx)
+        while (true) { delay(60_000L); PetLife.addMinutes(1f) }
+    }
     val effWeather = if (moodWeather >= 0) moodWeather else cfg.fxWeather
     val fxActive = fxMode != 0 && content is IslandContent.Media && (effWeather != 0 || cfg.fxBreak || cfg.more.fxPets) && !swallow && !cfg.dotMode
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz

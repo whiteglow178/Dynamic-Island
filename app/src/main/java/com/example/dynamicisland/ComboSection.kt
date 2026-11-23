@@ -33,6 +33,7 @@ fun ComboSections() {
                 progressIsland = v.progressIsland, scoreIsland = v.scoreIsland,
                 chargeEta = v.chargeEta, flipSilence = v.flipSilence,
                 fxPets = v.fxPets, fxPetCount = v.fxPetCount,
+                petTouch = v.petTouch, petCompact = v.petCompact, petGrowth = v.petGrowth, petSocial = v.petSocial, petBall = v.petBall,
             ))
         }
     }
@@ -46,6 +47,24 @@ fun ComboSections() {
         if (cur.fxPets) {
             Text("Kaç hayvan olsun?", color = dim, fontSize = 13.sp)
             ChipPicker((1..FX_PET_KINDS).map { it.toString() }, cur.fxPetCount - 1) { set(cur.copy(fxPetCount = it + 1)) }
+            SwitchRow("Dokunma", "Dokununca türüne göre tepki verir (kedi mırlar, tavşan zıplar, civciv cıvıldar, penguen karnı üstünde kayar, tilki kuyruğunu kovalar). Parmakla tutup fırlatabilirsin; takla atar, çarptığı öğeyi sarsar, sert düşerse sersemler",
+                cur.petTouch) { set(cur.copy(petTouch = it)) }
+            SwitchRow("Kapalı adada", "Ada kapalıyken hayvanlar kenarından tutunup sarkar ve sallanır, biri adanın arkasından arada kafasını çıkarır (ada alttaysa üstüne oturur). Bildirim gelince irkilirler",
+                cur.petCompact) { set(cur.copy(petCompact = it)) }
+            SwitchRow("Büyüme", "Müzik dinledikçe aksesuar açılır: 30 dk atkı, 2 sa şapka, 5 sa taç, 10 sa kanat. Gece 23.00'ten sonra uykulu olurlar; 6 saatten uzun görmezlerse adayı açınca sana koşarlar",
+                cur.petGrowth) { set(cur.copy(petGrowth = it)) }
+            if (cur.petGrowth) {
+                val ctx2 = LocalContext.current
+                LaunchedEffect(Unit) { PetLife.init(ctx2) }
+                val mins = PetLife.minutes.toInt()
+                val nx = PetLife.next()
+                Text("Dinleme: ${mins / 60} sa ${mins % 60} dk" + (nx?.let { " · Sıradaki: ${it.first} (${it.second / 60} sa ${it.second % 60} dk)" } ?: " · Tüm aksesuarlar açıldı"),
+                    color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+            SwitchRow("Kendi aralarında", "Havada çarpışıp sersemlerler; biri kardan adamın havucunu çalıp kaçar, diğeri kovalar ve sonunda geri getirir; uyuyan arkadaşının yanına gidip kıvrılırlar",
+                cur.petSocial) { set(cur.copy(petSocial = it)) }
+            SwitchRow("Top oyunu", "Genişletilmiş adada bir top belirir: telefonu eğerek yuvarlarsın, parmakla da fırlatabilirsin. Yıldıza değince konfeti patlar, hayvanlar sevinir. Hayvanlar da topu kovalayıp iter, bazen yıldıza doğru",
+                cur.petBall) { set(cur.copy(petBall = it)) }
         }
         SwitchRow("Eğilen dünya", "Telefonu eğince kar ve kum yığınları o yöne kayıp dökülür, kabarcıklar eğik yükselir, düşen parçacıklar yana savrulur. Telefonu sallayınca birikenler silkelenir, donmuş öğelerin buzu çatlar",
             cur.fxTilt) { set(cur.copy(fxTilt = it)) }

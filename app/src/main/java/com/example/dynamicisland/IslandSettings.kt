@@ -582,6 +582,11 @@ data class MoreSettings(
     val flipSilence: Boolean = false,       // telefon ters konunca Rahatsız Etmeyin (ChargeFlip.kt)
     val fxPets: Boolean = false,            // ada sakinleri: genişletilmiş müzik adasında yaşayan hayvanlar (IslandFxPets.kt)
     val fxPetCount: Int = 3,                // 1..5
+    val petTouch: Boolean = true,           // dokununca tepki, tutup fırlatma
+    val petCompact: Boolean = true,         // ada kapalıyken kenarında yaşarlar
+    val petGrowth: Boolean = true,          // müzik dinledikçe aksesuar, gece uykusu, özleyip koşma
+    val petSocial: Boolean = true,          // kendi aralarında: çarpışma, havuç hırsızlığı, yanına kıvrılma
+    val petBall: Boolean = false,           // eğerek oynanan top (hayvanlar da iter)
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -708,6 +713,8 @@ class SettingsRepository(context: Context) {
         val C_SCORE = booleanPreferencesKey("c_score")
         val C_ETA = booleanPreferencesKey("c_eta"); val C_FLIP = booleanPreferencesKey("c_flip")
         val C_PETS = booleanPreferencesKey("c_pets"); val C_PETN = intPreferencesKey("c_petn")
+        val C_PTOUCH = booleanPreferencesKey("c_ptouch"); val C_PCOMP = booleanPreferencesKey("c_pcomp"); val C_PGROW = booleanPreferencesKey("c_pgrow")
+        val C_PSOC = booleanPreferencesKey("c_psoc"); val C_PBALL = booleanPreferencesKey("c_pball")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -999,6 +1006,9 @@ class SettingsRepository(context: Context) {
                 flipSilence = p[K.C_FLIP] ?: d.more.flipSilence,
                 fxPets = p[K.C_PETS] ?: d.more.fxPets,
                 fxPetCount = (p[K.C_PETN] ?: d.more.fxPetCount).coerceIn(1, FX_PET_KINDS),
+                petTouch = p[K.C_PTOUCH] ?: d.more.petTouch, petCompact = p[K.C_PCOMP] ?: d.more.petCompact,
+                petGrowth = p[K.C_PGROW] ?: d.more.petGrowth, petSocial = p[K.C_PSOC] ?: d.more.petSocial,
+                petBall = p[K.C_PBALL] ?: d.more.petBall,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1124,6 +1134,8 @@ class SettingsRepository(context: Context) {
             it[K.C_SCORE] = m.scoreIsland
             it[K.C_ETA] = m.chargeEta; it[K.C_FLIP] = m.flipSilence
             it[K.C_PETS] = m.fxPets; it[K.C_PETN] = m.fxPetCount
+            it[K.C_PTOUCH] = m.petTouch; it[K.C_PCOMP] = m.petCompact; it[K.C_PGROW] = m.petGrowth
+            it[K.C_PSOC] = m.petSocial; it[K.C_PBALL] = m.petBall
         }
     }
 
