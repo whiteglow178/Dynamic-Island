@@ -784,6 +784,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandContent.Live -> {
                 // Kapalıyken dokununca kart açılır; açıkken dokununca uygulama (Haritalar / sipariş ekranı) açılır
                 val lv = cur.content as IslandContent.Live
+                if (lv.kind == LiveKind.Code) {
+                    // Doğrulama kodu: açık ya da kapalı, dokununca kopyalanır; kart kısa süre sonra kapanır
+                    val ok = OtpParse.copy(this, lv.big)
+                    val done = lv.copy(text = if (ok) "Kopyalandı ✓" else "Kopyalanamadı")
+                    liveContent = done
+                    update { it.copy(content = done, expanded = true) }
+                    liveEndJob?.cancel()
+                    liveEndJob = scope.launch { delay(1_400L); endLive() }
+                    return
+                }
                 if (cur.expanded) {
                     call.send(lv.intent ?: packageManager.getLaunchIntentForPackage(lv.pkg)?.let {
                         android.app.PendingIntent.getActivity(this, 0, it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), android.app.PendingIntent.FLAG_IMMUTABLE)
@@ -874,10 +884,32 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { settings.collect {
             LiveFlags.nav = it.more.navIsland; LiveFlags.delivery = it.more.deliveryIsland
             LiveFlags.progress = it.more.progressIsland; LiveFlags.score = it.more.scoreIsland
+            NotifFlags.otp = it.more.otpIsland; NotifFlags.history = it.more.notifHistory; NotifFlags.remind = it.more.unreadRemind
+            NotifFlags.important = it.more.importantOnly; NotifFlags.names = ImportantMatch.parse(it.more.importantNames)
+            NotifFlags.digest = it.more.silentDigest
+            if (!it.more.notifHistory) NotifVault.clearRemoved()
         } }
-        scope.launch { settings.map { listOf(it.more.navIsland, it.more.deliveryIsland, it.more.progressIsland, it.more.scoreIsland) }.distinctUntilChanged().collect { f ->
+        // Sessiz bildirim özeti: saatte bir, görülmemiş sessiz bildirim varsa adada kısa bir özet
+        scope.launch {
+            while (true) {
+                delay(60 * 60_000L)
+                val st = settings.value
+                if (!(st.more.silentDigest || st.more.importantOnly)) continue
+                val cnt = NotifVault.silentUnseen
+                if (cnt <= 0 || assistantActive || call.active || appHide.hidden) continue
+                val apps = NotifVault.unseenPkgs().take(4).map { p ->
+                    runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString() }.getOrDefault(p)
+                }
+                val open = packageManager.getLaunchIntentForPackage(packageName)?.let {
+                    android.app.PendingIntent.getActivity(this@IslandOverlayService, 77, it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), android.app.PendingIntent.FLAG_IMMUTABLE)
+                }
+                notif.show(IslandContent.Notif(packageName, "$cnt sessiz bildirim", apps.joinToString(", "), iconFor(packageName), open, ""))
+                NotifVault.markSilentSeen()
+            }
+        }
+        scope.launch { settings.map { listOf(it.more.navIsland, it.more.deliveryIsland, it.more.progressIsland, it.more.scoreIsland, it.more.otpIsland) }.distinctUntilChanged().collect { f ->
             val lv = liveContent ?: return@collect
-            val on = when (lv.kind) { LiveKind.Nav -> f[0]; LiveKind.Delivery -> f[1]; LiveKind.Progress -> f[2]; LiveKind.Score -> f[3] }
+            val on = when (lv.kind) { LiveKind.Nav -> f[0]; LiveKind.Delivery -> f[1]; LiveKind.Progress -> f[2]; LiveKind.Score -> f[3]; LiveKind.Code -> f[4] }
             if (!on) endLive()
         } }
         // Kulaklık kartı
@@ -981,13 +1013,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             LiveKind.Delivery -> s.more.deliveryIsland
             LiveKind.Progress -> s.more.progressIsland
             LiveKind.Score -> s.more.scoreIsland
+            LiveKind.Code -> s.more.otpIsland
         }
         if (!on || appHide.hidden) return
         val app = if (liveAppIcons.containsKey(raw.pkg)) liveAppIcons[raw.pkg] else iconFor(raw.pkg).also { liveAppIcons[raw.pkg] = it }
         var c = raw.copy(appIcon = app)
         val prev = liveContent
         // Öncelik: navigasyon > maç > sipariş > indirme. Düşük öncelikli yeni etkinlik, sürenin yerini almaz
-        fun rank(k: LiveKind) = when (k) { LiveKind.Nav -> 3; LiveKind.Score -> 2; LiveKind.Delivery -> 1; LiveKind.Progress -> 0 }
+        fun rank(k: LiveKind) = when (k) { LiveKind.Code -> 4; LiveKind.Nav -> 3; LiveKind.Score -> 2; LiveKind.Delivery -> 1; LiveKind.Progress -> 0 }
         // Maç: spor uygulamaları her gol için ayrı bildirim atabilir; aynı takımlarsa aynı etkinlik sayılır
         val sameMatch = prev != null && prev.kind == LiveKind.Score && c.kind == LiveKind.Score &&
             prev.teamA.equals(c.teamA, true) && prev.teamB.equals(c.teamB, true)
@@ -1005,8 +1038,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Bildirim kaldırılmadan kalırsa (ör. tek seferlik sipariş bildirimi) belirli bir süre sonra kendiliğinden biter
         liveJob?.cancel()
         liveJob = scope.launch {
-            delay(when (c.kind) { LiveKind.Nav -> 15 * 60_000L; LiveKind.Progress -> 20 * 60_000L; LiveKind.Score -> 150 * 60_000L; else -> 90 * 60_000L })
+            delay(when (c.kind) { LiveKind.Nav -> 15 * 60_000L; LiveKind.Progress -> 20 * 60_000L; LiveKind.Score -> 150 * 60_000L; LiveKind.Code -> 90_000L; else -> 90 * 60_000L })
             endLive()
+        }
+        // Doğrulama kodu: ada hemen açılıp kodu gösterir
+        if (c.kind == LiveKind.Code && first && !assistantActive && !call.active) {
+            syncBgOrder(); collapseJob?.cancel()
+            update { IslandUiState(c, expanded = true) }
+            scheduleCollapse(15_000)
+            return
         }
         // İndirme bitti: kısa süre "Tamam" görünür, sonra biter
         if (c.kind == LiveKind.Progress && c.progress >= 0.999f && (prev == null || prev.progress < 0.999f)) {

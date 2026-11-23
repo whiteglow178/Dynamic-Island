@@ -264,6 +264,7 @@ private fun LiveIcon(c: IslandContent.Live, size: Dp, preferApp: Boolean) {
                 LiveKind.Score -> drawBallGlyph(sc)
                 LiveKind.Progress -> drawDownGlyph(LIVE_GREEN, sc)
                 LiveKind.Delivery -> drawBoxGlyph(LIVE_GREEN, sc)
+                LiveKind.Code -> drawKeyGlyph(LIVE_GREEN, sc)
             }
         }
     }
@@ -275,6 +276,13 @@ private fun DrawScope.drawTurnArrow(color: Color, sc: Float) {
         lineTo(15f * sc, 22f * sc); lineTo(9f * sc, 22f * sc); lineTo(9f * sc, 11f * sc); lineTo(4f * sc, 11f * sc); close()
     }
     drawPath(p, color)
+}
+
+private fun DrawScope.drawKeyGlyph(color: Color, sc: Float) {
+    drawRoundRect(color, Offset(5f * sc, 10f * sc), Size(14f * sc, 11f * sc), CornerRadius(2.5f * sc))
+    drawArc(color, 180f, 180f, false, Offset(7.5f * sc, 3f * sc), Size(9f * sc, 12f * sc),
+        style = androidx.compose.ui.graphics.drawscope.Stroke(2.2f * sc))
+    drawCircle(Color(0xFF1C1C1E), 1.6f * sc, Offset(12f * sc, 15f * sc))
 }
 
 private fun DrawScope.drawBallGlyph(sc: Float) {
@@ -329,6 +337,7 @@ internal fun LiveCompact(c: IslandContent.Live, modifier: Modifier = Modifier) {
 @Composable
 internal fun LivePanel(c: IslandContent.Live, rb: RainbowStyle?) {
     if (c.kind == LiveKind.Score) { ScorePanel(c, rb); return }
+    if (c.kind == LiveKind.Code) { CodePanel(c, rb); return }
     if (c.kind == LiveKind.Nav) {
         Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
@@ -428,6 +437,26 @@ private fun ScorePanel(c: IslandContent.Live, rb: RainbowStyle?) {
             Text(status, color = if (c.phase == 2) Color.White.copy(alpha = 0.6f) else LIVE_GREEN, fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f))
             if (c.phase == 0) Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFFF453A)))
+        }
+    }
+}
+
+/** Doğrulama kodu kartı: büyük, aralıklı rakamlar; dokununca kopyalanır. */
+@Composable
+private fun CodePanel(c: IslandContent.Live, rb: RainbowStyle?) {
+    Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LiveIcon(c, 20.dp, preferApp = true)
+            Spacer(Modifier.width(8.dp))
+            Text(c.title, color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f))
+            Text(c.text, color = LIVE_GREEN, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            Text(
+                c.big.chunked(if (c.big.length == 6 || c.big.length == 8) c.big.length / 2 else c.big.length).joinToString("  "),
+                color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                letterSpacing = 3.sp, modifier = Modifier.rainbowFill(rb),
+            )
         }
     }
 }

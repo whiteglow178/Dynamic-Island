@@ -27,7 +27,7 @@ enum class StatusKind {
 fun IslandContent.Status.isCard(): Boolean = kind == StatusKind.LowBatteryCard || kind == StatusKind.Headphones
 
 /** Canlı etkinlik türü: navigasyon ya da sipariş / kargo takibi. */
-enum class LiveKind { Nav, Delivery, Progress, Score }
+enum class LiveKind { Nav, Delivery, Progress, Score, Code }
 
 /** Geniş, tek satırlık iOS hapları: ağ, uçak modu, zil sesi seviyesi ve ince düşük pil hapı. */
 fun IslandContent.Status.isSysPill(): Boolean =

@@ -399,7 +399,7 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
                     modifier = Modifier.size(sz).clip(RoundedCornerShape(sz * 0.28f)),
                 )
             } else {
-                Text(when (c.kind) { LiveKind.Nav -> "↑"; LiveKind.Score -> "⚽"; LiveKind.Progress -> "↓"; LiveKind.Delivery -> "📦" },
+                Text(when (c.kind) { LiveKind.Nav -> "↑"; LiveKind.Score -> "⚽"; LiveKind.Progress -> "↓"; LiveKind.Delivery -> "📦"; LiveKind.Code -> "🔑" },
                     color = Pal.c("side_text"), fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }

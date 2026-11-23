@@ -587,6 +587,13 @@ data class MoreSettings(
     val petGrowth: Boolean = true,          // müzik dinledikçe aksesuar, gece uykusu, özleyip koşma
     val petSocial: Boolean = true,          // kendi aralarında: çarpışma, havuç hırsızlığı, yanına kıvrılma
     val petBall: Boolean = false,           // eğerek oynanan top (hayvanlar da iter)
+    // ---- Bildirim araçları (NotifTools.kt)
+    val otpIsland: Boolean = false,         // doğrulama kodu adada; dokununca kopyalanır
+    val notifHistory: Boolean = false,      // silinen bildirimler 24 sa (yalnızca bellekte)
+    val unreadRemind: Boolean = false,      // 30 dk okunmayan sohbet hatırlatılır
+    val importantOnly: Boolean = false,     // yalnızca önemli kişilerin mesajları adada
+    val importantNames: String = "",        // virgülle ayrılmış adlar
+    val silentDigest: Boolean = false,      // düşük öncelikli bildirimler saatlik özet
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -715,6 +722,8 @@ class SettingsRepository(context: Context) {
         val C_PETS = booleanPreferencesKey("c_pets"); val C_PETN = intPreferencesKey("c_petn")
         val C_PTOUCH = booleanPreferencesKey("c_ptouch"); val C_PCOMP = booleanPreferencesKey("c_pcomp"); val C_PGROW = booleanPreferencesKey("c_pgrow")
         val C_PSOC = booleanPreferencesKey("c_psoc"); val C_PBALL = booleanPreferencesKey("c_pball")
+        val N_OTP = booleanPreferencesKey("n_otp"); val N_HIST = booleanPreferencesKey("n_hist"); val N_REM = booleanPreferencesKey("n_rem")
+        val N_IMP = booleanPreferencesKey("n_imp"); val N_NAMES = stringPreferencesKey("n_names"); val N_DIG = booleanPreferencesKey("n_dig")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1009,6 +1018,9 @@ class SettingsRepository(context: Context) {
                 petTouch = p[K.C_PTOUCH] ?: d.more.petTouch, petCompact = p[K.C_PCOMP] ?: d.more.petCompact,
                 petGrowth = p[K.C_PGROW] ?: d.more.petGrowth, petSocial = p[K.C_PSOC] ?: d.more.petSocial,
                 petBall = p[K.C_PBALL] ?: d.more.petBall,
+                otpIsland = p[K.N_OTP] ?: d.more.otpIsland, notifHistory = p[K.N_HIST] ?: d.more.notifHistory,
+                unreadRemind = p[K.N_REM] ?: d.more.unreadRemind, importantOnly = p[K.N_IMP] ?: d.more.importantOnly,
+                importantNames = p[K.N_NAMES] ?: d.more.importantNames, silentDigest = p[K.N_DIG] ?: d.more.silentDigest,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1136,6 +1148,8 @@ class SettingsRepository(context: Context) {
             it[K.C_PETS] = m.fxPets; it[K.C_PETN] = m.fxPetCount
             it[K.C_PTOUCH] = m.petTouch; it[K.C_PCOMP] = m.petCompact; it[K.C_PGROW] = m.petGrowth
             it[K.C_PSOC] = m.petSocial; it[K.C_PBALL] = m.petBall
+            it[K.N_OTP] = m.otpIsland; it[K.N_HIST] = m.notifHistory; it[K.N_REM] = m.unreadRemind
+            it[K.N_IMP] = m.importantOnly; it[K.N_NAMES] = m.importantNames; it[K.N_DIG] = m.silentDigest
         }
     }
 

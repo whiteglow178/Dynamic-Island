@@ -470,6 +470,7 @@ private fun HomeScreen() {
         }
         CustomDesignSection()      // özel ada tasarımı: desen / fotoğraf (DesignSection.kt)
         ExtrasSections()           // portal ada, başparmak modu, kamuflaj, zaman kapsülü (ExtrasSection.kt)
+        NotifToolsSections()       // bildirim araçları: doğrulama kodu, hatırlatıcı, önemli kişiler, sessiz özet, silinen geçmişi (NotifTools.kt)
         ComboSections()            // birleşik özellikler: eğim, söze tepki, takvim, dağılan kapak, canlı skor... (ComboSection.kt)
         SectionCard("Ada yenileme hızı", "Adanın animasyonları saniyede kaç kare çizilsin") {
             val hz by RefreshRateStore.flow(ctx).collectAsState()

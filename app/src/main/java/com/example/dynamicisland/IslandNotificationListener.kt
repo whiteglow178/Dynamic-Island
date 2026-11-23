@@ -576,9 +576,18 @@ class IslandNotificationListener : NotificationListenerService() {
     /** Kullanıcı bildirimi kaydırarak sildiyse (ya da tümünü temizlediyse) çöp kutusu ada animasyonu için haber verilir. */
     override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: NotificationListenerService.RankingMap, reason: Int) {
         super.onNotificationRemoved(sbn, rankingMap, reason)
+        runCatching { reminder.onRemoved(sbn.key) }
         runCatching {
             val n = sbn.notification
             val userGone = reason == NotificationListenerService.REASON_CANCEL || reason == NotificationListenerService.REASON_CANCEL_ALL
+            // Silinen bildirim geçmişi: yalnızca bellekte; kod içerenler ve gizli bildirimler tutulmaz
+            if (NotifFlags.history && userGone && (n.flags and Notification.FLAG_ONGOING_EVENT) == 0 &&
+                (n.flags and Notification.FLAG_GROUP_SUMMARY) == 0 && sbn.packageName != packageName && !NotifVault.sensitive(sbn)
+            ) {
+                val t = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+                val x = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+                if (t.isNotBlank() || x.isNotBlank()) NotifVault.addRemoved(NotifVault.Entry(sbn.packageName, t, x, System.currentTimeMillis(), n.contentIntent))
+            }
             val ongoing = (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
             val summary = (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0
             if (userGone && !ongoing && !summary && sbn.packageName != packageName) {
@@ -638,6 +647,18 @@ class IslandNotificationListener : NotificationListenerService() {
             handleCall(sbn)
             return
         }
+        // Doğrulama kodu: kod kartı olarak gösterilir (kod hiçbir yere kaydedilmez)
+        if (NotifFlags.otp && sbn.packageName != packageName && !sbn.isOngoing) {
+            val code = OtpParse.of(sbn)
+            if (code != null) {
+                val icon = runCatching { packageManager.getApplicationIcon(sbn.packageName).toBitmap(96, 96).asImageBitmap() }.getOrNull()
+                IslandBus.post(IslandEvent.LiveUpdate(IslandContent.Live(
+                    kind = LiveKind.Code, pkg = sbn.packageName, key = sbn.key, big = code,
+                    title = "Doğrulama kodu", text = "Dokun, kopyala", icon = icon, intent = n.contentIntent,
+                )))
+                return
+            }
+        }
         // Navigasyon / sipariş takibi: adada canlı etkinlik olarak kalır (özellik kapalıysa normal yoldan gider)
         if (sbn.packageName != packageName && LiveFlags.any && handleLive(sbn)) return
         if (sbn.packageName == packageName || sbn.isOngoing ||
@@ -656,6 +677,34 @@ class IslandNotificationListener : NotificationListenerService() {
         val messaging = n.category == Notification.CATEGORY_MESSAGE ||
             ex.containsKey(Notification.EXTRA_MESSAGES) ||
             (ex.getString(Notification.EXTRA_TEMPLATE)?.contains("MessagingStyle") == true)
+        // Önemli kişiler: seçili olmayan sohbetler sessiz listeye gider
+        if (NotifFlags.important && messaging && !ImportantMatch.matches(NotifFlags.names, title, sbn)) {
+            NotifVault.addSilent(NotifVault.Entry(sbn.packageName, title, text, System.currentTimeMillis(), n.contentIntent))
+            return
+        }
+        // Sessiz bildirim özeti: düşük öncelikli bildirimler adayı açmaz
+        if (NotifFlags.digest && !messaging && isLowPriority(sbn)) {
+            NotifVault.addSilent(NotifVault.Entry(sbn.packageName, title, text, System.currentTimeMillis(), n.contentIntent))
+            return
+        }
+        // Okunmamış mesaj hatırlatıcısı
+        if (NotifFlags.remind && messaging) reminder.onPosted(sbn.key, sbn.packageName, title, n.contentIntent)
         IslandBus.post(IslandEvent.Notification(sbn.packageName, title, text, n.contentIntent, sbn.key, avatar, messaging))
+    }
+
+    /** Düşük öncelikli mi? Kanal önemi "düşük" ya da altı, veya kampanya / öneri kategorisi. */
+    private fun isLowPriority(sbn: StatusBarNotification): Boolean {
+        val cat = sbn.notification?.category
+        if (cat == Notification.CATEGORY_PROMO || cat == Notification.CATEGORY_RECOMMENDATION) return true
+        return runCatching {
+            val r = NotificationListenerService.Ranking()
+            currentRanking?.getRanking(sbn.key, r) == true && r.importance in 1..android.app.NotificationManager.IMPORTANCE_LOW
+        }.getOrDefault(false)
+    }
+
+    private val reminder = UnreadReminder { pkg, title, intent, key ->
+        if (!NotifFlags.remind) return@UnreadReminder
+        if (NotifFlags.important && !NotifFlags.names.any { title.lowercase().contains(it.lowercase()) }) return@UnreadReminder
+        IslandBus.post(IslandEvent.Notification(pkg, title, "30 dakikadır yanıt bekliyor", intent, key, null, true))
     }
 }
