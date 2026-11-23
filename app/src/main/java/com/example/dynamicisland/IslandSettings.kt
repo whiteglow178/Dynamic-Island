@@ -127,6 +127,7 @@ data class IslandSettings(
     val notifOpenLong: Boolean = false,      // basılı tutunca bildirimin uygulaması açılsın
     val notifOpenSwipeDown: Boolean = false, // aşağı kaydırınca bildirimin uygulaması açılsın
     val notifCollapseTap: Boolean = false,   // dokununca bildirim küçülsün
+    val notifExpandTap: Boolean = true,      // küçülmüş bildirime dokununca yeniden genişlesin (açıkken dokunuş diğer ayara göre)
     val notifCollapseLong: Boolean = false,  // basılı tutunca bildirim küçülsün
     val notifCollapseSwipeUp: Boolean = false, // yukarı kaydırınca bildirim küçülsün
     val notifDeleteSwipeSide: Boolean = false, // sağa / sola kaydırınca bildirim silinsin
@@ -266,6 +267,7 @@ data class IslandSettings(
     val ringerWidthPct: Float = 68f,               // genişlerken hap genişliği: ekran genişliğinin yüzdesi
     val ringerHeightPct: Float = 143f,             // genişlerken hap yüksekliği: kapalı ada yüksekliğinin yüzdesi
     val ringerExpand: Boolean = true,              // true: ada ekran kaydındaki gibi yana genişler; false: boyutu değişmez, yalnızca solda simge
+    val privacyExpand: Boolean = true,             // kamera / mikrofon açılınca ada kısa süre genişlesin (kapalı: yalnızca küçük gösterge)
     val privacyIndicator: Boolean = false,         // nokta modu: kamera / mikrofon kullanılırken yeşil / turuncu nokta olayı
     val hideInApps: Boolean = false,         // seçili uygulamalar ön plandayken ada gizlensin
     val hiddenAppPkgs: String = "",          // gizlenecek uygulamaların paket adları (virgülle ayrılmış)
@@ -642,7 +644,7 @@ class SettingsRepository(context: Context) {
         val PILL_ART = booleanPreferencesKey("pill_art"); val PILL_WL = intPreferencesKey("pill_wl")
         val PILL_WM = intPreferencesKey("pill_wm"); val PILL_WR = intPreferencesKey("pill_wr")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
-        val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_INLINE = booleanPreferencesKey("nt_inline"); val NT_BMENU = booleanPreferencesKey("nt_bmenu"); val NT_BMENU_TAP = booleanPreferencesKey("nt_bmenu_tap"); val NT_BICON = booleanPreferencesKey("nt_bicon"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full"); val MX_FLUID = booleanPreferencesKey("mx_fluid")
+        val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_INLINE = booleanPreferencesKey("nt_inline"); val NT_BMENU = booleanPreferencesKey("nt_bmenu"); val NT_BMENU_TAP = booleanPreferencesKey("nt_bmenu_tap"); val NT_BICON = booleanPreferencesKey("nt_bicon"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_EXP_TAP = booleanPreferencesKey("nt_exp_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full"); val MX_FLUID = booleanPreferencesKey("mx_fluid")
         val PL_PHY = booleanPreferencesKey("pl_phy"); val PL_PHY_R = floatPreferencesKey("pl_phy_r"); val PL_JELLY = booleanPreferencesKey("pl_jelly")
         val PL_PET = booleanPreferencesKey("pl_pet"); val PL_MAG = booleanPreferencesKey("pl_mag"); val PL_MAG_B = booleanPreferencesKey("pl_mag_b")
         val PL_PUFF = booleanPreferencesKey("pl_puff"); val PL_PUFF_S = floatPreferencesKey("pl_puff_s"); val PL_FACE = booleanPreferencesKey("pl_face")
@@ -692,7 +694,7 @@ class SettingsRepository(context: Context) {
         val SFX_ON = booleanPreferencesKey("sfx_on"); val SFX_TAP = stringPreferencesKey("sfx_tap"); val SFX_CHG = stringPreferencesKey("sfx_chg"); val SFX_UNP = stringPreferencesKey("sfx_unp")
         val SFX_NTF = stringPreferencesKey("sfx_ntf"); val SFX_SIL = stringPreferencesKey("sfx_sil"); val SFX_CALL = stringPreferencesKey("sfx_call")
         val MU_EXP_S = floatPreferencesKey("mu_exp_s"); val NT_EXP_S = floatPreferencesKey("nt_exp_s"); val NT_CMP_S = floatPreferencesKey("nt_cmp_s")
-        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val RINGER_EXP = booleanPreferencesKey("ringer_exp"); val RINGER_W = floatPreferencesKey("ringer_w"); val RINGER_H = floatPreferencesKey("ringer_h"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
+        val DOT_MERGE = booleanPreferencesKey("dot_merge"); val DOT_MERGE_KEEP = booleanPreferencesKey("dot_merge_keep"); val PRIV_IND = booleanPreferencesKey("privacy_ind"); val PRIV_EXP = booleanPreferencesKey("privacy_exp"); val RINGER_IND = booleanPreferencesKey("ringer_ind"); val RINGER_EXP = booleanPreferencesKey("ringer_exp"); val RINGER_W = floatPreferencesKey("ringer_w"); val RINGER_H = floatPreferencesKey("ringer_h"); val HIDE_APPS = booleanPreferencesKey("hide_apps"); val HIDE_PKGS = stringPreferencesKey("hide_pkgs"); val UI_HAPTIC = booleanPreferencesKey("ui_haptic"); val DOT_N = intPreferencesKey("dot_n"); val DOT_L2 = floatPreferencesKey("dot_l2"); val DOT_R2 = floatPreferencesKey("dot_r2")
         val STACK_EXP = booleanPreferencesKey("stack_exp")
         val IP_ON = booleanPreferencesKey("ip_on"); val IP_CIRCLE = booleanPreferencesKey("ip_circle"); val IP_EV = booleanPreferencesKey("ip_ev")
         val IP_SIDE = intPreferencesKey("ip_side"); val IP_PW = floatPreferencesKey("ip_pw"); val IP_PH = floatPreferencesKey("ip_ph")
@@ -819,6 +821,7 @@ class SettingsRepository(context: Context) {
             notifOpenLong = p[K.NT_OPEN_LONG] ?: d.notifOpenLong,
             notifOpenSwipeDown = p[K.NT_OPEN_DN] ?: d.notifOpenSwipeDown,
             notifCollapseTap = p[K.NT_COL_TAP] ?: d.notifCollapseTap,
+            notifExpandTap = p[K.NT_EXP_TAP] ?: d.notifExpandTap,
             notifCollapseLong = p[K.NT_COL_LONG] ?: d.notifCollapseLong,
             notifCollapseSwipeUp = p[K.NT_COL_UP] ?: d.notifCollapseSwipeUp,
             notifDeleteSwipeSide = p[K.NT_DEL_SIDE] ?: d.notifDeleteSwipeSide,
@@ -935,6 +938,7 @@ class SettingsRepository(context: Context) {
             dotMerge = p[K.DOT_MERGE] ?: d.dotMerge,
             dotMergeKeep = p[K.DOT_MERGE_KEEP] ?: d.dotMergeKeep,
             privacyIndicator = p[K.PRIV_IND] ?: d.privacyIndicator,
+            privacyExpand = p[K.PRIV_EXP] ?: d.privacyExpand,
             ringerIndicator = p[K.RINGER_IND] ?: d.ringerIndicator,
             ringerExpand = p[K.RINGER_EXP] ?: d.ringerExpand,
             ringerWidthPct = p[K.RINGER_W] ?: d.ringerWidthPct, ringerHeightPct = p[K.RINGER_H] ?: d.ringerHeightPct,
@@ -1066,7 +1070,7 @@ class SettingsRepository(context: Context) {
             it[K.NT_INLINE] = s.notifInline
             it[K.NT_BMENU] = s.bannerMenuEnabled; it[K.NT_BMENU_TAP] = s.bannerMenuTap; it[K.NT_BICON] = s.bannerIconOpens
             it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_OPEN_LONG] = s.notifOpenLong; it[K.NT_OPEN_DN] = s.notifOpenSwipeDown
-            it[K.NT_COL_TAP] = s.notifCollapseTap; it[K.NT_COL_LONG] = s.notifCollapseLong; it[K.NT_COL_UP] = s.notifCollapseSwipeUp
+            it[K.NT_COL_TAP] = s.notifCollapseTap; it[K.NT_EXP_TAP] = s.notifExpandTap; it[K.NT_COL_LONG] = s.notifCollapseLong; it[K.NT_COL_UP] = s.notifCollapseSwipeUp
             it[K.NT_DEL_SIDE] = s.notifDeleteSwipeSide; it[K.NT_DEL_UP] = s.notifDeleteSwipeUp; it[K.SIDE_PROMOTE] = s.sideTapPromote
              it[K.NT_ANIM] = s.notifLaunchAnim; it[K.MX_ANIM] = s.musicExitAnim; it[K.MX_SPD] = s.musicExitSpeed; it[K.MX_SW] = s.musicExitSwallow; it[K.MX_STR] = s.musicExitStretch; it[K.LA_SPD] = s.launchSpeed; it[K.MO_ANIM] = s.musicOpenAnim; it[K.LA_CL] = s.launchClassic; it[K.LA_AT] = s.launchAtomic; it[K.FLA_CL] = s.favLaunchClassic; it[K.FLA_AT] = s.favLaunchAtomic;
             it[K.OP_EA] = s.openExpArt; it[K.OP_ET] = s.openExpTitle; it[K.OP_EX] = s.openExpAny
@@ -1122,7 +1126,7 @@ class SettingsRepository(context: Context) {
             it[K.SFX_NTF] = s.sfxNotif.encode(); it[K.SFX_SIL] = s.sfxSilent.encode(); it[K.SFX_CALL] = s.sfxCall.encode()
             it[K.DOT_MERGE] = s.dotMerge; it[K.DOT_MERGE_KEEP] = s.dotMergeKeep
             it[K.RINGER_IND] = s.ringerIndicator; it[K.RINGER_EXP] = s.ringerExpand; it[K.RINGER_W] = s.ringerWidthPct; it[K.RINGER_H] = s.ringerHeightPct; it[K.VOL_IND] = s.volumeIndicator
-            it[K.PRIV_IND] = s.privacyIndicator; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
+            it[K.PRIV_IND] = s.privacyIndicator; it[K.PRIV_EXP] = s.privacyExpand; it[K.HIDE_APPS] = s.hideInApps; it[K.HIDE_PKGS] = s.hiddenAppPkgs; it[K.UI_HAPTIC] = s.uiHaptics
             it[K.DOT_N] = s.dotCount; it[K.DOT_L2] = s.dotLeft2Dp; it[K.DOT_R2] = s.dotRight2Dp
             it[K.STACK_EXP] = s.stackExpand
             it[K.IP_ON] = s.iphoneMode; it[K.IP_CIRCLE] = s.iphoneCircle; it[K.IP_EV] = s.iphoneEvents; it[K.IP_SIDE] = s.iphoneCircleSide

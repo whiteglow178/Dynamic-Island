@@ -47,6 +47,18 @@ class NotifController(private val host: IslandHost) {
         finish()
     }
 
+    /** Küçülmüş bildirime dokunuldu: yeniden genişler, genişletilmiş süre baştan sayılır, sonra yine küçülür. */
+    fun expandAgain(n: IslandContent.Notif) {
+        val s = host.settings
+        host.cancelCollapse()
+        job?.cancel()
+        host.update { it.copy(content = n, expanded = true) }
+        job = host.scope.launch {
+            delay((s.notifExpandedSec * 1000f).toLong())
+            compact(n)
+        }
+    }
+
     /** Bildirimi hemen küçültülmüş hale geçirir (açıkken küçültme hareketi). */
     fun compactNow(n: IslandContent.Notif) {
         job?.cancel()

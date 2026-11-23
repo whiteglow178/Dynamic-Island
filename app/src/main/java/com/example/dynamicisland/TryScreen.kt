@@ -624,13 +624,24 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
                     Modifier.fillMaxWidth().height(150.dp).padding(horizontal = 40.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Noktaya dokununca o tuşa (özelliğe) gidilir; dokunma alanı noktadan büyüktür
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         TryItems.forEachIndexed { i, _ ->
                             val on = i == near
                             Box(
-                                Modifier.size(if (on) 7.dp else 6.dp).clip(CircleShape)
-                                    .background(Color.White.copy(alpha = if (on) 1f else 0.35f)),
-                            )
+                                Modifier.size(width = 14.dp, height = 28.dp)
+                                    .pointerInput(i) {
+                                        detectTapGestures(onTap = {
+                                            if (showcase == null) scope.launch { pos.stop(); pos.animateTo(i.toFloat(), spring(0.85f, 300f)) }
+                                        })
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    Modifier.size(if (on) 7.dp else 6.dp).clip(CircleShape)
+                                        .background(Color.White.copy(alpha = if (on) 1f else 0.35f)),
+                                )
+                            }
                         }
                     }
                     Column(
@@ -739,18 +750,29 @@ private fun DrawScope.drawMetalBand(
     val archTop = cy + ph * (7.5f / 7f)
     val archH = ph * (11f / 7f)
     val archW = pw
-    // Alttaki tuş: metalik bantla aynı renk, kenarında ince siyah çizgi
+    // Alttaki tuş: metalik bantla aynı renk. Kenarında çizgi YOK (üstünde ince siyah çizgi görünüyordu; 3 boyutlu
+    // animasyondaki tuşta yok). Tuş, altına düşen yumuşak gölge ve kendi hafif ışık-gölgesiyle belli olur.
+    val archL = (size.width - archW) / 2f + shift
+    for (k in 4 downTo 1) {
+        val g = k * 1.2.dp.toPx()
+        drawRoundRect(
+            Color.Black.copy(alpha = 0.07f),
+            topLeft = Offset(archL - g * 0.5f, archTop + g * 0.8f), size = Size(archW + g, archH + g * 0.4f),
+            cornerRadius = CornerRadius((archW + g) / 2f),
+        )
+    }
     drawRoundRect(
         bandBrush,
-        topLeft = Offset((size.width - archW) / 2f + shift, archTop), size = Size(archW, archH),
+        topLeft = Offset(archL, archTop), size = Size(archW, archH),
         cornerRadius = CornerRadius(archW / 2f),
     )
     drawRoundRect(
         Brush.verticalGradient(
-            listOf(Color.Black, Color.Black, Color.Transparent), startY = archTop, endY = archTop + archH,
+            0f to Color.White.copy(alpha = 0.10f), 0.35f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.22f),
+            startY = archTop, endY = archTop + archH,
         ),
-        topLeft = Offset((size.width - archW) / 2f + shift, archTop), size = Size(archW, archH),
-        cornerRadius = CornerRadius(archW / 2f), style = Stroke(1.5.dp.toPx()),
+        topLeft = Offset(archL, archTop), size = Size(archW, archH),
+        cornerRadius = CornerRadius(archW / 2f),
     )
     // Seçili rengin parıltısı
     val pulse = press * 0.20f + (1f - ripple) * 0.25f

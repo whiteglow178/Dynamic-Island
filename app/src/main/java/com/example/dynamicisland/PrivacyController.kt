@@ -102,7 +102,11 @@ class PrivacyController(private val host: IslandHost) {
         val cur = host.content
         val curStatus = cur as? IslandContent.Status
         when {
-            next != null && prev?.title != next.title && !host.busy -> host.showTemporarily(next, 4_000L)
+            next != null && prev?.title != next.title && !host.busy -> {
+                // Ayara göre: kısa süre genişleyip küçülür ya da hiç genişlemeden doğrudan küçük (nokta) olarak görünür
+                if (host.settings.privacyExpand) host.showTemporarily(next, 4_000L)
+                else if (host.expanded) host.update { it } else host.rest()
+            }
             next == null && curStatus != null && (curStatus.kind == StatusKind.Camera || curStatus.kind == StatusKind.Mic) -> {
                 if (host.expanded) host.collapseSoon() else host.rest()
             }

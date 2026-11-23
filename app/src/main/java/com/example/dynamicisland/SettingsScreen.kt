@@ -274,6 +274,13 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 "Kamera ya da mikrofon açılınca ada kısa süre açılır, sonra yeşil (kamera) / turuncu (mikrofon) nokta olarak kalır. Nokta modunda ve normal adada çalışır. Hangi uygulamanın kullandığı Android tarafından verilmez",
                 draft.privacyIndicator,
             ) { draft = draft.copy(privacyIndicator = it) }
+            if (draft.privacyIndicator) {
+                SwitchRow(
+                    "Açılınca genişlesin",
+                    "Açıkken kamera / mikrofon başlayınca ada 4 saniye genişleyip sonra küçülür. Kapalıyken hiç genişlemez, doğrudan küçük gösterge olarak görünür",
+                    draft.privacyExpand,
+                ) { draft = draft.copy(privacyExpand = it) }
+            }
         }
         sec("Nokta modu", "Ada yerine 3, 4 ya da 5 nokta; olaylar nokta (baloncuk) olarak görünür") {
             SwitchRow(
@@ -364,6 +371,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SliderRow("Küçültülmüş kalma süresi", draft.notifCompactSec, 0f..60f, if (draft.notifCompactSec < 1f) "Hemen gitsin" else "${draft.notifCompactSec.toInt()} sn") { draft = draft.copy(notifCompactSec = kotlin.math.round(it)) }
             Text("Önce bildirim genişletilmiş görünür, ardından küçülüp bu süre kadar adada (nokta modunda nokta olarak) kalır. Dokunarak açabilir ya da kaydırarak silebilirsin.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SwitchRow("Küçükken dokununca genişlesin", "Küçülmüş (ya da \"ada genişlemesin\" modunda kapalı adada duran) bildirime dokununca bildirim yeniden genişler. Genişken dokununca aşağıdaki ayar geçerli olur",
+                draft.notifExpandTap) { draft = draft.copy(notifExpandTap = it) }
             SubHeader("Uygulamayı aç")
             SwitchRow("Dokununca", "Bildirimin geldiği uygulama açılır (mümkünse ilgili sohbet / ekran)",
                 draft.notifTapOpens) { on -> draft = draft.copy(notifTapOpens = on, notifCollapseTap = if (on) false else draft.notifCollapseTap) }
@@ -1445,7 +1454,7 @@ private fun PreviewCard(
             contentAlignment = Alignment.TopCenter,
         ) {
             Phone3DPreview(
-                phoneWDp,
+                phoneWDp, landscape = land, modifier =
                 Modifier.padding(top = phoneTopDp.dp).then(
                     if (land) Modifier.graphicsLayer {
                         rotationZ = -90f

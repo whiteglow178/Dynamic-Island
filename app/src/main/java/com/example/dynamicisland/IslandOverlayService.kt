@@ -773,6 +773,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val n = cur.content as IslandContent.Notif
                 val s = settings.value
                 when {
+                    !cur.expanded && s.notifExpandTap -> notif.expandAgain(n)
                     s.notifTapOpens -> openNotification(n)
                     s.notifCollapseTap -> collapseNow()
                     else -> Unit

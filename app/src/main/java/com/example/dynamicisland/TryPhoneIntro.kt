@@ -531,16 +531,7 @@ private fun DrawScope.drawWallpaper(sx: Float, sy: Float, sw: Float, sh: Float) 
 
 private fun DrawScope.drawLockScreen(sx: Float, sy: Float, sw: Float, sh: Float, withIsland: Boolean) {
     val cx = sx + sw / 2f
-    // Dynamic Island
-    val iw = 20.8f
-    val ih = 6.2f
-    val itop = sy + 2.1f
-    // Ayarlar önizlemesinde (withIsland = false) telefonun kendi adası çizilmez; yerine gerçek ada gelir
-    if (withIsland) {
-        drawRoundRect(Color.Black, Offset(cx - iw / 2f, itop), Size(iw, ih), CornerRadius(ih / 2f))
-        drawCircle(Color(0xFF0B1022), 1.0f, Offset(cx + 7.2f, itop + ih / 2f))
-        drawCircle(Color(0xFF2B3A66).copy(alpha = 0.8f), 0.38f, Offset(cx + 7.0f, itop + ih / 2f - 0.25f))
-    }
+    // Telefonun kendi adası hiç çizilmez: Dene'de ve ayarlarda adayı yalnızca uygulamanın gerçek adası oynatır
 
     val white = Color.White.copy(alpha = 0.92f)
 
@@ -558,7 +549,9 @@ private fun DrawScope.drawLockScreen(sx: Float, sy: Float, sw: Float, sh: Float,
         c.nativeCanvas.drawText("10:43", cx, sy + 42f, p)
     }
 
-    // Alttaki fener / kamera düğmeleri ve ana ekran çubuğu
+    // Alttaki fener / kamera düğmeleri ve ana ekran çubuğu: yalnızca tanıtım telefonunda (ayarlar önizlemesinde
+    // düğmeler yok, çubuk Phone3DPreview'da ayrıca çizilir: yatay modda telefonla birlikte doğru yöne döner)
+    if (!withIsland) return
     val by = sy + sh - 11.5f
     for (bxc in floatArrayOf(sx + 9.5f, sx + sw - 9.5f)) {
         drawCircle(Color(0xFF1D1D1F).copy(alpha = 0.75f), 5.0f, Offset(bxc, by))
@@ -1226,7 +1219,7 @@ internal fun p3dFullWidthDp(): Float = (P3D_FULL_H_DP - 2f * P3D_FULL_PAD_DP) * 
  * kısa ise alt kısım kapsayıcıda kesilir. [content] ekranın içine, 412 dp genişliğinde sanal ekran olarak çizilir.
  */
 @Composable
-internal fun Phone3DPreview(phoneWDp: Float, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+internal fun Phone3DPreview(phoneWDp: Float, modifier: Modifier = Modifier, landscape: Boolean = false, content: @Composable BoxScope.() -> Unit) {
     // Telefonun kendi dinamik adası çizilmez: önizlemedeki ada yalnızca uygulamanın gerçek adasıdır
     var face by remember { mutableStateOf<ImageBitmap?>(phoneFaceNoIslandCache) }
     LaunchedEffect(Unit) { if (face == null) face = obtainPhoneFace(false) }
@@ -1261,6 +1254,21 @@ internal fun Phone3DPreview(phoneWDp: Float, modifier: Modifier = Modifier, cont
             ) {
                 CompositionLocalProvider(LocalDensity provides Density(dens.density * k, dens.fontScale)) {
                     Box(Modifier.fillMaxSize()) { content() }
+                }
+                // Ana ekran çubuğu. Yatay modda telefon -90° döndürülür (kamera solda): ekranın altı telefonun SOL kenarı
+                // olur; çubuk orada, uzun kenar boyunca çizilir ki dönünce yatay ve altta görünsün.
+                Canvas(Modifier.fillMaxSize()) {
+                    val mm = size.width / (PH_W - 2f * SCREEN_INSET_MM)
+                    val thick = 0.9f * mm
+                    val gap = 1.7f * mm
+                    val c = Color.White.copy(alpha = 0.85f)
+                    if (landscape) {
+                        val len = 28f * mm
+                        drawRoundRect(c, Offset(gap, (size.height - len) / 2f), Size(thick, len), CornerRadius(thick / 2f))
+                    } else {
+                        val len = 20.6f * mm
+                        drawRoundRect(c, Offset((size.width - len) / 2f, size.height - gap - thick), Size(len, thick), CornerRadius(thick / 2f))
+                    }
                 }
             }
         }

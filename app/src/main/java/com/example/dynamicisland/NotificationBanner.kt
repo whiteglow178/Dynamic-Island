@@ -15,6 +15,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -92,30 +93,18 @@ import kotlin.math.roundToInt
 private const val BANNER_MARGIN_DP = 10f      // ekranın sağ / sol kenarından boşluk
 private const val BANNER_H_DP = 80f           // tam açık banner yüksekliği
 private const val BANNER_RADIUS_DP = 34f      // tam açık köşe yuvarlaklığı
-// Giriş animasyonu (ekran kaydından kare kare ölçüldü): banner, son yerinin biraz ALTINDA, sol tarafta (uygulama simgesi
-// hizasında) incecik, bulanık bir çizgi olarak doğar. Önce sağa doğru uzar (yükseklik neredeyse değişmez), sonra
-// yüksekliği artarken yukarı süzülüp saatin altındaki yerine oturur. İçerik baştan görünür, küçükken bulanık; büyüdükçe netleşir.
-private const val START_W_FRAC = 0.15f        // başlangıçtaki çizginin genişliği (banner genişliğine oranı)
-private const val START_H_DP = 5f             // ... yükseklik
-private const val START_LEFT_FRAC = 0.13f     // ... bannerın sol kenarından uzaklık (banner genişliğine oranı)
-private const val START_W_DP = 40f            // kapanış: küçülüp kaybolduğu hap
-private const val START_LEFT_DP = 52f
-private const val START_RADIUS_DP = 3f
-private const val DROP_DP = 34f               // doğduğu yerin bannerın son merkezine göre ne kadar aşağıda olduğu
-private const val ENTER_EXTRA_DP = 24f        // giriş sırasında pencerenin alttan uzaması (çizgi bannerın altında doğar)
-private const val ENTER_MS = 980              // giriş süresi
+// Giriş animasyonu: banner üst kenarın altından aşağı kayıp yaylanarak yerine oturur (NotifBannerRoot).
+private const val ENTER_EXTRA_DP = 0f         // giriş sırasında pencerenin alttan uzaması (çizgi bannerın altında doğar)
+private const val ENTER_MS = 560              // giriş süresi
 private const val MENU_GAP_DP = 8f            // banner ile menü arası
 private const val MENU_H_DP = 46f             // menü / cevap satırı yüksekliği
 private const val MENU_EXTRA_DP = MENU_GAP_DP + MENU_H_DP + 6f   // menü açılınca pencerenin uzaması
 private const val ICON_ZONE_DP = 72f          // bannerın solundaki "simge" bölgesi (dokunma ayrımı için)
-private val EnterEase = CubicBezierEasing(0.30f, 0.30f, 0.15f, 1f)
 private const val EXIT_MS = 380L              // kapanış animasyonu bitince pencere kaldırılır
 
-private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
-
 /**
- * iOS tarzı bildirim banner'ı: sol üstte, saatin altında küçük ve bulanık bir hap olarak belirir,
- * büyüyerek ekranın üst kısmında tam genişlikte cam bir banner'a dönüşür; süre dolunca küçülüp kaybolur.
+ * iOS tarzı bildirim banner'ı: ekranın üst kenarının altından kayarak iner ve yaylanarak yerine oturur;
+ * süre dolunca yukarı kayıp solarak kaybolur.
  * Banner'a basılı tutunca (ya da ayara göre dokununca) altında Cevapla / Kopyala / İlet menüsü açılır.
  * Ayrı bir pencere olarak çizilir (ada penceresinden bağımsız); yalnızca banner'ın kapladığı alan dokunmayı yakalar.
  */
@@ -374,19 +363,16 @@ internal fun NotifBannerRoot(
     onReply: () -> Unit,
     onSend: (String) -> Unit,
 ) {
-    val p = remember { Animatable(0f) }       // boyut ilerlemesi: 0 = minik çizgi, 1 = tam banner
-    val py = remember { Animatable(0f) }      // giriş evresi (0..1, doğrusal): uzama -> büyüme + yukarı süzülme (ilk karede de giriş yolu çizilir)
-    val fade = remember { Animatable(1f) }    // kapanırken genel solma
+    // Giriş: banner ekranın üst kenarının (saatin) altından aşağı kayarak iner, hafif büyür ve yaylanarak yerine oturur.
+    // Her şey graphicsLayer ile çizilir (yerleşim ve bulanıklık her karede değişmez): takılmadan, akıcı.
+    val p = remember { Animatable(0f) }       // 0 = yukarıda gizli, 1 = yerinde (yay biraz aşabilir)
+    val fade = remember { Animatable(0f) }
     LaunchedEffect(shown) {
         if (shown) {
-            fade.snapTo(1f)
-            if (p.value < 0.05f) {
-                py.snapTo(0f)
-                launch { py.animateTo(1f, tween(ENTER_MS, easing = androidx.compose.animation.core.LinearEasing)) }
-            }
-            p.animateTo(1f, tween(ENTER_MS, easing = EnterEase))
+            launch { fade.animateTo(1f, tween(180)) }
+            p.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 420f))
         } else {
-            launch { fade.animateTo(0f, tween(240, delayMillis = 100)) }
+            launch { fade.animateTo(0f, tween(220, delayMillis = 40)) }
             p.animateTo(0f, tween(300, easing = FastOutSlowInEasing))
         }
     }
@@ -396,47 +382,20 @@ internal fun NotifBannerRoot(
     val onLongNow by rememberUpdatedState(onLong)
     val onSwipeNow by rememberUpdatedState(onSwipeUp)
     val view = LocalView.current
-
-    val pc = p.value.coerceIn(0f, 1f)
-    val pyc = py.value.coerceIn(0f, 1f)
-    val entering = shown && pyc < 1f
-    val left: Float
-    val w: Float
-    val h: Float
-    val top: Float
-    if (entering) {
-        // Ekran kaydındaki giriş: 1) solda, bannerın altında incecik çizgi doğar ve sağa doğru uzar,
-        // 2) uzamaya devam ederken yüksekliği artar ve yukarı süzülerek yerine oturur.
-        val tw = 1f - (1f - (pyc / 0.80f).coerceIn(0f, 1f)).pow(3)                 // genişlik: hızlı başlar, yumuşak biter
-        val thRaw = ((pyc - 0.22f) / 0.78f).coerceIn(0f, 1f)
-        val th = thRaw * thRaw * (3f - 2f * thRaw)                                  // yükseklik: gecikmeli, yumuşak
-        val tyRaw = ((pyc - 0.30f) / 0.70f).coerceIn(0f, 1f)
-        val ty = 1f - (1f - tyRaw).pow(2.4f)                                        // yukarı süzülme
-        // İlk uzama evresinde çizgi hafifçe kalınlaşır (ekran kaydındaki gibi incecik kalır)
-        val hStretch = START_H_DP + 6f * tw
-        w = lerpF(widthDp * START_W_FRAC, widthDp, tw)
-        h = lerpF(hStretch, BANNER_H_DP, th)
-        left = lerpF(widthDp * START_LEFT_FRAC, 0f, (tw * 0.55f + ty * 0.45f))
-        val centerY = lerpF(BANNER_H_DP / 2f + DROP_DP, BANNER_H_DP / 2f, ty)
-        top = centerY - h / 2f
-    } else {
-        // Açık banner ya da kapanış: yukarı (saate doğru) küçülerek kaybolur
-        left = lerpF(START_LEFT_DP, 0f, pc)
-        w = lerpF(START_W_DP, widthDp, pc)
-        h = lerpF(START_H_DP, BANNER_H_DP, pc)
-        val centerTop = BANNER_H_DP / 2f - h / 2f
-        top = if (shown) centerTop else lerpF(0f, centerTop, pc)
-    }
-    val grow = if (entering) (h - START_H_DP) / (BANNER_H_DP - START_H_DP) else pc
-    val radius = lerpF(START_RADIUS_DP, BANNER_RADIUS_DP, grow.coerceIn(0f, 1f)).coerceAtMost(h / 2f)
-    val blurDp = (1f - grow.coerceIn(0f, 1f)) * 14f      // küçükken içerik bulanık, büyüdükçe netleşir
+    val radius = BANNER_RADIUS_DP
 
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
-                .offset(left.dp, top.dp)
-                .size(w.dp, h.dp)
-                .graphicsLayer { alpha = fade.value }
+                .size(widthDp.dp, BANNER_H_DP.dp)
+                .graphicsLayer {
+                    val t = p.value
+                    transformOrigin = TransformOrigin(0.5f, 0f)
+                    translationY = (t - 1f) * (BANNER_H_DP + 12f).dp.toPx()
+                    val sc = (0.90f + 0.10f * t).coerceAtMost(1.012f)
+                    scaleX = sc; scaleY = sc
+                    alpha = fade.value
+                }
                 .clip(RoundedCornerShape(radius.dp))
                 .drawBehind { drawBannerGlass(radius.dp.toPx()) }
                 .pointerInput(Unit) {
@@ -464,19 +423,7 @@ internal fun NotifBannerRoot(
         ) {
             // Bildirimde renkli ışık: uygulamanın renginde alt kenarda akan ışık (ayar açıksa accent dolu gelir)
             if (cur.accent != 0) MusicBottomFx(Color(cur.accent), true)
-            // İçerik her zaman tam boyutta yerleşir; küçükken hapın içine ölçeklenerek sığar (yeniden yerleşim / sıçrama olmaz)
-            Box(
-                Modifier
-                    .wrapContentSize(Alignment.TopStart, unbounded = true)
-                    .size(widthDp.dp, BANNER_H_DP.dp)
-                    .graphicsLayer {
-                        transformOrigin = TransformOrigin(0f, 0f)
-                        scaleX = w / widthDp
-                        scaleY = h / BANNER_H_DP
-                        alpha = if (entering) ((pyc - 0.04f) / 0.30f).coerceIn(0f, 1f) else ((pc - 0.10f) / 0.45f).coerceIn(0f, 1f)
-                    }
-                    .then(if (blurDp > 0.4f) Modifier.blur(blurDp.dp) else Modifier),
-            ) { BannerContent(cur) }
+            BannerContent(cur)
         }
 
         // Cevapla / Kopyala / İlet menüsü ya da cevap yazma satırı (bannerın altında)
