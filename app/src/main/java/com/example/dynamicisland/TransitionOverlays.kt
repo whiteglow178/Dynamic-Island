@@ -88,8 +88,7 @@ class TransitionOverlays(
         if (v != null) {
             runCatching { (slot.wm ?: defaultWm()).removeView(v) }
             v.disposeComposition()
-            v.setViewTreeLifecycleOwner(null)
-            v.setViewTreeSavedStateRegistryOwner(null)
+            // Sahipler kaldırılmaz: pencere eklenip hemen kaldırılırsa bekleyen ilk çizim sahibi bulamayıp çöker
         }
         slot.view = null; slot.wm = null
         slot.onRemoved()

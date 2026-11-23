@@ -517,8 +517,7 @@ class LandscapeController internal constructor(
         val v = view ?: return
         runCatching { (host ?: wm).removeView(v) }
         v.disposeComposition()
-        v.setViewTreeLifecycleOwner(null)
-        v.setViewTreeSavedStateRegistryOwner(null)
+        // Sahipler kaldırılmaz: pencere eklenip hemen kaldırılırsa bekleyen ilk çizim sahibi bulamayıp çöker
         view = null; host = null; lp = null
     }
 }

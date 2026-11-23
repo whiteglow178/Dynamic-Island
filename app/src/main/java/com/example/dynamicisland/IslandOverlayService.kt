@@ -2117,8 +2117,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         composeView?.removeCallbacks(settlePoke)
         composeView?.let { v ->
             v.disposeComposition()
-            v.setViewTreeLifecycleOwner(null)
-            v.setViewTreeSavedStateRegistryOwner(null)
+            // Sahipler kaldırılmaz: pencere eklenip hemen kaldırılırsa bekleyen ilk çizim sahibi bulamayıp çöker
         }
         runCatching { dialog?.dismiss() }
         dialog = null
@@ -2667,8 +2666,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         v.removeCallbacks(outsideCalibrate)
         runCatching { (outsideWm ?: wm).removeView(v) }
         v.disposeComposition()
-        v.setViewTreeLifecycleOwner(null)
-        v.setViewTreeSavedStateRegistryOwner(null)
         outsideView = null; outsideLp = null; outsideWm = null
         outsideDy = 0
     }

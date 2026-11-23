@@ -132,8 +132,7 @@ class SideCallOverlay(
             runCatching {
                 e.check?.let { r -> e.view.removeCallbacks(r) }
                 e.view.disposeComposition()
-                e.view.setViewTreeLifecycleOwner(null)
-                e.view.setViewTreeSavedStateRegistryOwner(null)
+                // Sahipler kaldırılmaz: pencere eklenip hemen kaldırılırsa bekleyen ilk çizim sahibi bulamayıp çöker
             }
             runCatching { e.dialog.dismiss() }
         }
