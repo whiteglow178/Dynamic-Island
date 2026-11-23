@@ -274,7 +274,16 @@ private fun DrawScope.drawButton(cam: PhoneCam, b: Btn, path: Path) {
     val xo = b.side * (PH_W / 2f + b.prot)
 
     val wallN = cam.dir(b.side, 0f, 0f)
-    val wallVisible = cam.visible(wallN, cam.pt(xw, b.yc, 0f))
+    val wp = cam.pt(xw, b.yc, 0f)
+    val wallVisible = cam.visible(wallN, wp)
+    // Arka (görünmeyen) yan duvardaki tuş gövdenin arkasında kalır: hiç çizilmez. Eskiden yan yüzleri ön duvarın
+    // üstüne çiziliyordu ve öndeki ses tuşunun üstünde ince bir yay (çizgi) gibi görünüyordu.
+    // Telefon tam karşıdan bakarken tuşlar silüetten hafifçe taştığı için küçük eğimlere izin verilir.
+    run {
+        val vx = -wp.x; val vy = -wp.y; val vz = cam.dist - wp.z
+        val len = sqrt(vx * vx + vy * vy + vz * vz).coerceAtLeast(1e-3f)
+        if ((wallN.x * vx + wallN.y * vy + wallN.z * vz) / len < -0.2f) return
+    }
     val wl = (wallN.x * LX + wallN.y * LY + wallN.z * LZ)
 
     // Tuşun oturduğu koyu yuva
@@ -577,6 +586,14 @@ private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
 internal fun TryPhoneIntro(pillWpx: Float, glowY: () -> Float, onDone: () -> Unit) {
     var face by remember { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(Unit) { face = obtainPhoneFace() }
+    // Telefonun ekranında uygulamada ayarlanan gerçek ada (boşta duran hali) görünür
+    val ctx = LocalContext.current
+    val repo = remember { SettingsRepository(ctx.applicationContext) }
+    val cfg by repo.flow.collectAsState(initial = IslandSettings())
+    val cfgFlow = remember { MutableStateFlow(cfg.tryPhoneCfg()) }
+    LaunchedEffect(cfg) { cfgFlow.value = cfg.tryPhoneCfg() }
+    val uiState = remember { MutableStateFlow(IslandUiState()) }
+    val lyricsFlow = remember { MutableStateFlow<LyricsState>(LyricsState.Idle) }
 
     val p = remember { Animatable(0f) }
     val cover = remember { Animatable(1f) }
@@ -592,12 +609,14 @@ internal fun TryPhoneIntro(pillWpx: Float, glowY: () -> Float, onDone: () -> Uni
     val path = remember { Path() }
     val matrix = remember { android.graphics.Matrix() }
 
-    Box(
+    BoxWithConstraints(
         Modifier.fillMaxSize()
             .clipToBounds()
             .graphicsLayer { alpha = cover.value }
             .pointerInput(Unit) { detectTapGestures(onTap = { skip = true }) },
     ) {
+        val bw = constraints.maxWidth.toFloat()
+        val bh = constraints.maxHeight.toFloat()
         Canvas(Modifier.fillMaxSize()) {
             drawRect(Color(0xFF050507))
             val img = face ?: return@Canvas
@@ -668,8 +687,16 @@ internal fun TryPhoneIntro(pillWpx: Float, glowY: () -> Float, onDone: () -> Uni
                 )
             }
         }
+        if (face != null) PhoneIslandOverlay(
+            bw, bh, cfg.tryPhoneCfg(), cfgFlow, uiState, lyricsFlow,
+            cam = { animCam(p.value, bw, bh, pillWpx, glowY()) },
+            alpha = { smooth(seg(p.value, 0f, 0.10f)) },
+        )
     }
 }
+
+/** Dene telefonundaki ada: uygulamadaki ayarların aynısı; boştayken de görünür (telefonun kamerası açıkta kalmasın). */
+internal fun IslandSettings.tryPhoneCfg(): IslandSettings = effective().copy(showIdle = true)
 
 private fun min2(a: Float, b: Float) = if (a < b) a else b
 
@@ -700,6 +727,89 @@ private const val SCREEN_CORNER_MM = 8.4f
 /** Telefon tam karşıdayken kamera (giriş animasyonunun t = FRONT_T karesiyle aynı). */
 private fun frontCam(w: Float, h: Float, yaw: Float = 0f): PhoneCam =
     PhoneCam(yaw, 0f, V3(0f, 0f, 0f), min2(h * 0.70f / PH_H, w * 0.78f / PH_W), 330f, w / 2f, h * 0.46f)
+
+/** Giriş ve gösterim animasyonunun t anındaki kamerası (0 = karşıdan uzak, 1 = yandan Eylem Düğmesi'ne yakın). */
+private fun animCam(t: Float, w: Float, h: Float, pillWpx: Float, gy0: Float, extraYaw: Float = 0f): PhoneCam {
+    val ye = smooth(seg(t, 0.15f, 0.96f))
+    val zoomT = smooth(seg(t, 0.28f, 1f))
+    val pivT = smooth(seg(t, 0.20f, 1f))
+    val appear = smooth(seg(t, 0f, 0.10f))
+    val s0 = min2(h * 0.70f / PH_H, w * 0.78f / PH_W) * (0.90f + 0.10f * appear)
+    val s1 = pillWpx / BTN_T
+    val s = s0 * (s1 / s0).pow(zoomT)
+    val gy = if (gy0 > 0f) gy0 else h * 0.4f
+    val cy = lerpF(h * 0.46f, gy, pivT)
+    val pivot = V3(lerpF(0f, -(PH_W / 2f + ACTION_PROT), pivT), lerpF(0f, ACTION_Y, pivT), 0f)
+    return PhoneCam(
+        yaw = 90f * ye + extraYaw, pitch = 15f * sin(PI * ye).toFloat(),
+        pivot = pivot, s = s, dist = lerpF(330f, 150f, zoomT), cx = w / 2f, cy = cy,
+    )
+}
+
+/**
+ * 3 boyutlu telefonun ekranındaki GERÇEK ada (uygulamada ayarlanan renk, şekil, boyut, konum...). Ekran, [cam]'in o anki
+ * perspektifiyle 4 köşesine oturtulur; telefon dönerken ada da ekranla birlikte döner, ekran arkaya dönünce çizilmez.
+ */
+@Composable
+private fun PhoneIslandOverlay(
+    w: Float, h: Float,
+    cfg: IslandSettings,
+    cfgFlow: kotlinx.coroutines.flow.StateFlow<IslandSettings>,
+    uiState: kotlinx.coroutines.flow.StateFlow<IslandUiState>,
+    lyricsFlow: kotlinx.coroutines.flow.StateFlow<LyricsState>,
+    cam: () -> PhoneCam,
+    alpha: () -> Float,
+    extra: @Composable (pxPerMm: Float) -> Unit = {},
+) {
+    val dens = LocalDensity.current
+    val ovMatrix = remember { android.graphics.Matrix() }
+    val rest = remember(w, h) { frontCam(w, h) }
+    val hz = PH_D / 2f
+    val c0 = rest.scr(-PH_W / 2f + SCREEN_INSET_MM, -PH_H / 2f + SCREEN_INSET_MM, hz)
+    val c2 = rest.scr(PH_W / 2f - SCREEN_INSET_MM, PH_H / 2f - SCREEN_INSET_MM, hz)
+    val sw = c2.x - c0.x
+    val sh = c2.y - c0.y
+    if (sw <= 1f || sh <= 1f) return
+    val pxPerMm = sw / (PH_W - 2f * SCREEN_INSET_MM)
+    val k = sw / (PHONE_VIRTUAL_W_DP * dens.density)
+    val topV = (PHONE_BASE_TOP_DP + cfg.offsetYDp).coerceAtLeast(0f)
+    Box(
+        Modifier
+            .size(with(dens) { sw.toDp() }, with(dens) { sh.toDp() })
+            .drawWithContent {
+                val a = alpha()
+                if (a <= 0.003f) return@drawWithContent
+                val tc = cam()
+                // Ekran bize dönük değilse (telefon yan / arka) ada çizilmez
+                if (!tc.visible(tc.dir(0f, 0f, 1f), tc.pt(0f, 0f, hz))) return@drawWithContent
+                val i = SCREEN_INSET_MM
+                val q0 = tc.scr(-PH_W / 2f + i, -PH_H / 2f + i, hz)
+                val q1 = tc.scr(PH_W / 2f - i, -PH_H / 2f + i, hz)
+                val q2 = tc.scr(PH_W / 2f - i, PH_H / 2f - i, hz)
+                val q3 = tc.scr(-PH_W / 2f + i, PH_H / 2f - i, hz)
+                val src = floatArrayOf(0f, 0f, sw, 0f, sw, sh, 0f, sh)
+                val dst = floatArrayOf(q0.x, q0.y, q1.x, q1.y, q2.x, q2.y, q3.x, q3.y)
+                if (ovMatrix.setPolyToPoly(src, 0, dst, 0, 4)) {
+                    val nc = drawContext.canvas.nativeCanvas
+                    val layer = if (a < 0.997f) nc.saveLayerAlpha(null, (a * 255f).roundToInt().coerceIn(0, 255)) else nc.save()
+                    nc.concat(ovMatrix)
+                    drawContent()
+                    nc.restoreToCount(layer)
+                }
+            }
+            .clip(RoundedCornerShape(with(dens) { (SCREEN_CORNER_MM * pxPerMm).toDp() })),
+    ) {
+        CompositionLocalProvider(LocalDensity provides Density(dens.density * k, dens.fontScale)) {
+            extra(pxPerMm)
+            Box(Modifier.fillMaxSize().offset(x = cfg.offsetXDp.dp, y = (topV - cfg.windowPadDp()).dp)) {
+                IslandRoot(
+                    state = uiState, settingsFlow = cfgFlow, lyricsFlow = lyricsFlow,
+                    onTap = {}, onCommand = {}, onOutput = {},
+                )
+            }
+        }
+    }
+}
 
 // ---------------------------------------------------------------- Gösterim sırasında telefonu çevirerek 3B telefonu döndürme
 /** 3B telefonun sağa/sola en fazla dönebileceği açı (derece). Yan duvarlar bu açıda rahat görünür. */
@@ -1003,14 +1113,14 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
     // Gerçek ada ayarları (renk, şekil, animasyon stili, konum ...)
     val repo = remember { SettingsRepository(ctx.applicationContext) }
     val cfg by repo.flow.collectAsState(initial = IslandSettings())
-    val cfgFlow = remember { MutableStateFlow(cfg.effective()) }
-    LaunchedEffect(cfg) { cfgFlow.value = cfg.effective() }
+    val cfgFlow = remember { MutableStateFlow(cfg.tryPhoneCfg()) }
+    LaunchedEffect(cfg) { cfgFlow.value = cfg.tryPhoneCfg() }
     val uiState = remember { MutableStateFlow(IslandUiState()) }
     val lyricsFlow = remember { MutableStateFlow<LyricsState>(LyricsState.Idle) }
 
     val p = remember { Animatable(1f) }          // 1 = yandan (Eylem Düğmesi), FRONT_T = karşıdan
     val cover = remember { Animatable(0f) }
-    val islandA = remember { Animatable(0f) }
+    val islandA = remember { Animatable(1f) }     // ada baştan sona görünür (ekran arkaya dönünce zaten çizilmez)
     val edge = remember { Animatable(1f) }       // üst/alt siyaha sönme (1 = Dene ekranındaki gibi karanlık)
     var skip by remember { mutableStateOf(false) }
 
@@ -1041,7 +1151,6 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
         }
         tiltOn = true
         launch { tiltGain.animateTo(1f, tween(500)) }
-        islandA.animateTo(1f, tween(200))
         coroutineScope {
             val job = launch { run.script(uiState, cfgFlow.value) }
             val watcher = launch { snapshotFlow { skip }.first { it }; job.cancel() }
@@ -1049,7 +1158,6 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
             watcher.cancel()
         }
         coroutineScope {
-            launch { islandA.animateTo(0f, tween(220)) }
             if (isCharge) launch { plug.animateTo(0f, tween(800, easing = FastOutSlowInEasing)) }   // kablo çekilir
             tiltGain.animateTo(0f, tween(350))                                // önce düz karşıya dön
         }
@@ -1063,7 +1171,6 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
     val paint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG) }
     val path = remember { Path() }
     val matrix = remember { android.graphics.Matrix() }
-    val ovMatrix = remember { android.graphics.Matrix() }
 
     BoxWithConstraints(
         Modifier.fillMaxSize()
@@ -1125,60 +1232,20 @@ internal fun TryPhoneShowcase(pillWpx: Float, glowY: () -> Float, run: ShowcaseR
             }
         }
 
-        // Telefon karşıdayken: ekranın üstüne gerçek ada (412 dp'lik sanal ekran, PhoneMock ile aynı yöntem)
-        if (face != null) {
-            val dens = LocalDensity.current
-            val cam = remember(w, h) { frontCam(w, h) }
-            val hz = PH_D / 2f
-            val c0 = cam.scr(-PH_W / 2f + SCREEN_INSET_MM, -PH_H / 2f + SCREEN_INSET_MM, hz)
-            val c2 = cam.scr(PH_W / 2f - SCREEN_INSET_MM, PH_H / 2f - SCREEN_INSET_MM, hz)
-            val sw = c2.x - c0.x
-            val sh = c2.y - c0.y
-            val pxPerMm = sw / (PH_W - 2f * SCREEN_INSET_MM)
-            val k = sw / (PHONE_VIRTUAL_W_DP * dens.density)
-            val c = cfg.effective()
-            val topV = (PHONE_BASE_TOP_DP + c.offsetYDp).coerceAtLeast(0f)
-            Box(
-                Modifier
-                    .size(with(dens) { sw.toDp() }, with(dens) { sh.toDp() })
-                    // Ekran döndükçe adayı da aynı perspektifle ekranın 4 köşesine oturt
-                    .drawWithContent {
-                        val tc = frontCam(w, h, tiltYaw.value * tiltGain.value)
-                        val i = SCREEN_INSET_MM
-                        val q0 = tc.scr(-PH_W / 2f + i, -PH_H / 2f + i, hz)
-                        val q1 = tc.scr(PH_W / 2f - i, -PH_H / 2f + i, hz)
-                        val q2 = tc.scr(PH_W / 2f - i, PH_H / 2f - i, hz)
-                        val q3 = tc.scr(-PH_W / 2f + i, PH_H / 2f - i, hz)
-                        val src = floatArrayOf(0f, 0f, sw, 0f, sw, sh, 0f, sh)
-                        val dst = floatArrayOf(q0.x, q0.y, q1.x, q1.y, q2.x, q2.y, q3.x, q3.y)
-                        if (ovMatrix.setPolyToPoly(src, 0, dst, 0, 4)) {
-                            val nc = drawContext.canvas.nativeCanvas
-                            nc.save()
-                            nc.concat(ovMatrix)
-                            drawContent()
-                            nc.restore()
-                        }
-                    }
-                    .graphicsLayer { alpha = islandA.value }
-                    .clip(RoundedCornerShape(with(dens) { (SCREEN_CORNER_MM * pxPerMm).toDp() })),
-            ) {
-                CompositionLocalProvider(LocalDensity provides Density(dens.density * k, dens.fontScale)) {
-                    // Asistan gösterimi: gerçek servisteki gibi ekran kenarlarında renkli parlama (adanın altında kalır)
-                    if (run.id == 8) {
-                        val uiNow by uiState.collectAsState()
-                        val glowOn = remember { MutableStateFlow(false) }
-                        LaunchedEffect(uiNow.content, uiNow.expanded) {
-                            glowOn.value = uiNow.content is IslandContent.Assistant && uiNow.expanded
-                        }
-                        ScreenEdgeGlow(glowOn, SCREEN_CORNER_MM * pxPerMm)
-                    }
-                    Box(Modifier.fillMaxSize().offset(x = c.offsetXDp.dp, y = (topV - c.windowPadDp()).dp)) {
-                        IslandRoot(
-                            state = uiState, settingsFlow = cfgFlow, lyricsFlow = lyricsFlow,
-                            onTap = {}, onCommand = {}, onOutput = {},
-                        )
-                    }
+        // Telefonun ekranında gerçek ada: telefon dönerken de ekranla birlikte perspektifle döner
+        if (face != null) PhoneIslandOverlay(
+            w, h, cfg.tryPhoneCfg(), cfgFlow, uiState, lyricsFlow,
+            cam = { animCam(p.value, w, h, pillWpx, glowY(), tiltYaw.value * tiltGain.value) },
+            alpha = { islandA.value },
+        ) { pxPerMm ->
+            // Asistan gösterimi: gerçek servisteki gibi ekran kenarlarında renkli parlama (adanın altında kalır)
+            if (run.id == 8) {
+                val uiNow by uiState.collectAsState()
+                val glowOn = remember { MutableStateFlow(false) }
+                LaunchedEffect(uiNow.content, uiNow.expanded) {
+                    glowOn.value = uiNow.content is IslandContent.Assistant && uiNow.expanded
                 }
+                ScreenEdgeGlow(glowOn, SCREEN_CORNER_MM * pxPerMm)
             }
         }
     }

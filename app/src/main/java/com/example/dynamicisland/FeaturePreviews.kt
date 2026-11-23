@@ -617,7 +617,7 @@ private fun BannerPreview(W: Float, d: Float, appIcon: ImageBitmap?, cfg: Island
     else IslandContent.Notif("demo", "Omni Island", "Yeni bir güncelleme hazır", appIcon, messaging = false, accent = accent)
     val wDp = W / d - 20f
     Box(Modifier.offset(10.dp, 10.dp)) {
-        NotifBannerRoot(n, shown, wDp, 0, {}, {}, {}, {}, {}, {}, {})
+        NotifBannerRoot(n, shown, wDp, 0, {}, {}, {}, {}, {}, {}, {}, style = if (cfg.bannerSlideAnim) 1 else 0)
     }
 }
 

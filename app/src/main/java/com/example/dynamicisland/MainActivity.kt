@@ -554,8 +554,8 @@ private val HOME_CATS = listOf(
     HomeCat("Görünüm", "◐", "Tasarım, portal, şekil, kamuflaj", listOf(
         "Özel ada tasarımı", "Portal ada", "Ada şekli", "Kamuflaj", "Uygulama açılış animasyonu", "Ada yenileme hızı", "Uygulama ikonu",
     ), "görsel desen fotoğraf face id hz ikon"),
-    HomeCat("Ada olayları", "✦", "Ada sakinleri, eğilen dünya, takvim", listOf(
-        "Ada sakinleri", "Ada olayları ile",
+    HomeCat("Ada olayları", "✦", "Hava olayları, ada sakinleri, takvim", listOf(
+        "Ada olayları", "Ada sakinleri", "Ada olayları ile",
     ), "hayvan kedi efekt hava kar yağmur"),
     HomeCat("Müzik", "♪", "Şarkının havası, kapak efektleri", listOf(
         "Şarkının havası", "Müzik ve kapak", "Kapak portalı",

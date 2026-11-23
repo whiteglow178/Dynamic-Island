@@ -344,11 +344,18 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
 
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
             SubHeader("Bildirim türü")
-            SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi sol tarafta ince bir çizgi olarak doğar, sağa doğru uzar, büyüyerek yukarı süzülür ve ekranın üstünde tam genişlikte cam banner olur. Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
+            SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
                 draft.notifBanner) { draft = draft.copy(notifBanner = it, notifInline = if (it) false else draft.notifInline) }
             SwitchRow("Adayı genişletme (yazı adanın içinde)", "Bildirim gelince ada büyümez. Gönderen, bildirim yazısı ve uygulamanın simgesi küçük adanın içine sığdırılarak gösterilir. Süre: Genişletilmiş + Küçültülmüş kalma süresi toplamı. Nokta modunda etkisizdir. İstersen Ada genişliğini artırarak yazıya daha çok yer açabilirsin.",
                 draft.notifInline) { draft = draft.copy(notifInline = it, notifBanner = if (it) false else draft.notifBanner) }
             if (draft.notifBanner) {
+                SubHeader("Cam banner: animasyon")
+                RadioRow("Klasik", "Saatin altındaki küçük haptan büyüyerek açılır, kapanırken aynı yoldan o hapa küçülür", !draft.bannerSlideAnim) {
+                    draft = draft.copy(bannerSlideAnim = false)
+                }
+                RadioRow("Üstten kayma", "Ekranın üst kenarının altından kayarak iner ve yaylanarak oturur; kapanırken yukarı kayar", draft.bannerSlideAnim) {
+                    draft = draft.copy(bannerSlideAnim = true)
+                }
                 SubHeader("Cam banner: menü ve simge")
                 SwitchRow("Bildirim menüsü", "Banner'a basınca Cevapla, Kopyala ve İlet seçenekleri çıkar. Kopyalama için herhangi bir izin gerekmez.",
                     draft.bannerMenuEnabled) { draft = draft.copy(bannerMenuEnabled = it) }
@@ -517,52 +524,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         }
 
         sec("Ada olayları", "Genişletilmiş müzik adasında hava durumu, portal sahneleri ve kırılma efektleri") {
-            SubHeader("Olay")
-            val fxSel = FX_WEATHER_OPTIONS.indexOfFirst { it.first == draft.fxWeather }.coerceAtLeast(0)
-            ChipPicker(FX_WEATHER_OPTIONS.map { it.second }, fxSel) { draft = draft.copy(fxWeather = FX_WEATHER_OPTIONS[it].first) }
-            val fxInfo = when (draft.fxWeather) {
-                FXW_SUN -> "Panelde yavaşça süzülen altın parıltılar ve köşeden yayılan sıcak ışık. Öğelere zarar vermez."
-                FXW_METEOR -> "Meteorlar gökte tek bir noktadan yayılır. Büyük olanlar öğeye çarpınca kıvılcım saçar, öğeyi sarsar ve üstünde soğuyan bir kor izi bırakır."
-                FXW_SEA -> "Kabarcıklar alttan yükselir, öğelerin altına takılıp birleşir ve kenardan kaçar. Balıklar öğelerin üstünden ya da altından dolaşır."
-                FXW_FIREWORKS -> "Roketler yükselip farklı biçimlerde patlar (şakayık, söğüt, halka, çıtırtı). Düşen kıvılcımlar öğelerin üstüne konup söner."
-                FXW_FIREFLY -> "Ateşböcekleri dolaşır, öğelerin üstüne konup kalkar. Yanıp sönmeleri komşularıyla zamanla eşzamanlanır."
-                FXW_SAND -> "Rüzgâr hamlelerle eser. Kum öğelerin üstünde birikir, rüzgâr yönünde kayar ve kenardan dökülür."
-                FXW_AURORA -> "Kutup ışığı perdeleri dalgalanır; renk yüksekliğe göre yeşilden mora döner. Öğelerin üst kenarı ışığı yansıtır."
-                FXW_ELECTRIC -> "Öğeler arasında dallanan elektrik arkları atlar; çarptığı öğe parlar ve sarsılır. Kenarlarda küçük deşarjlar gezinir."
-                FXW_BLIZZARD -> "Rüzgârlı, derinlikli kar fırtınası. Öğelerin üstünde rüzgâr yönüne kayan kar kümeleri oluşur."
-                else -> null
-            }
-            if (fxInfo != null) Text(fxInfo, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-            if (draft.fxWeather != 0) {
-                SliderRow("Yoğunluk", draft.fxIntensity, 0.1f..1f, "%${(draft.fxIntensity * 100).toInt()}") { draft = draft.copy(fxIntensity = it) }
-            }
-            if (draft.fxWeather == 1) {
-                SectionDivider()
-                SwitchRow("Şimşek", "Şimşeğin düştüğü yerdeki öğe (kapak, düğme, çubuk...) adadan kopup ekranın altına düşer",
-                    draft.fxLightning) { draft = draft.copy(fxLightning = it) }
-                if (draft.fxLightning) {
-                    SliderRow("Şimşek aralığı", draft.fxLightningSec, 3f..30f, "${draft.fxLightningSec.toInt()} sn") { draft = draft.copy(fxLightningSec = it) }
-                }
-            }
-            if (draft.fxWeather == 2) {
-                SliderRow("Donma hızı", draft.fxFreezeSpeed, 0.3f..3f, "x${"%.1f".format(draft.fxFreezeSpeed)}") { draft = draft.copy(fxFreezeSpeed = it) }
-                SliderRow("Buzu kırmak için dokunma", draft.fxThawTaps.toFloat(), 2f..12f, "${draft.fxThawTaps}") { draft = draft.copy(fxThawTaps = (it + 0.5f).toInt()) }
-                Text("Çok kar yağan öğe yavaşça donar ve çalışmayı bırakır. Üstüne dokundukça buz çatlar, sonunda kırılır.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-            }
-            if (draft.fxWeather == 3) {
-                SliderRow("Erime hızı", draft.fxMeltSpeed, 0.3f..3f, "x${"%.1f".format(draft.fxMeltSpeed)}") { draft = draft.copy(fxMeltSpeed = it) }
-                Text("Asit damlaları öğenin üstünde kalıp onu eritir; eriyince altındaki öğeye geçer.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-            }
-            SectionDivider()
-            SwitchRow("Adayı kırma", "Açıkken genişletilmiş adada hızlı dokunduğun yer kırılıp düşer; her şey kırılınca ada parçalanır. Uzun basma ve kaydırma normal çalışır",
-                draft.fxBreak) { draft = draft.copy(fxBreak = it) }
-            if (draft.fxWeather != 0 || draft.fxBreak) {
-                SliderRow("Geri toplanma süresi", draft.fxRestoreSec, 2f..20f, "${draft.fxRestoreSec.toInt()} sn") { draft = draft.copy(fxRestoreSec = it) }
-            }
-            Text("Önizlemede efektler yalnızca ada içinde görünür; adadan dışarı düşen parçalar gerçek adada çalışır. Efektler pili tüketir.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            // Aynı ayarlar Ana Sayfa > Ada olayları'nda da var (ComboSection.kt / FxEventsControls)
+            FxEventsControls(draft) { draft = it }
         }
 
         sec("Özel albüm kapağı", "Adanın içindeki kapak yerine galeriden fotoğraf göster") {
@@ -978,7 +941,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SubHeader("Nokta")
                 key(version) { ColorPicker(draft.lockDotColorArgb) { draft = draft.copy(lockDotColorArgb = it) } }
                 SliderRow("Boyut", draft.lockDotSizeDp, 4f..30f, "${draft.lockDotSizeDp.toInt()} dp") { draft = draft.copy(lockDotSizeDp = kotlin.math.round(it)) }
-                SliderRow("Adaya uzaklık (sol)", draft.lockDotGapDp, -30f..80f, "${draft.lockDotGapDp.toInt()} dp") { draft = draft.copy(lockDotGapDp = kotlin.math.round(it)) }
+                SliderRow("Adaya uzaklık (sol, eksi = adanın içi)", draft.lockDotGapDp, -60f..80f, "${draft.lockDotGapDp.toInt()} dp") { draft = draft.copy(lockDotGapDp = kotlin.math.round(it)) }
                 SliderRow("Dikey konum", draft.lockDotOffsetYDp, -20f..20f, "${draft.lockDotOffsetYDp.toInt()} dp") { draft = draft.copy(lockDotOffsetYDp = kotlin.math.round(it)) }
                 SectionDivider()
                 SubHeader("Parıltı (glow)")

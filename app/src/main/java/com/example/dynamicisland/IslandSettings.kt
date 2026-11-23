@@ -121,6 +121,7 @@ data class IslandSettings(
     val notifInline: Boolean = false,        // bildirim gelince ada GENİŞLEMEZ; yazı, gönderen ve uygulama simgesi kapalı adanın içinde görünür
     val bannerMenuEnabled: Boolean = true,   // cam bannerda Cevapla / Kopyala / İlet menüsü
     val bannerMenuTap: Boolean = false,      // menü: false = basılı tutunca, true = dokununca (dokununca açılırsa uygulama simgesinden açılır)
+    val bannerSlideAnim: Boolean = false,    // cam banner: false = klasik (saatin altından büyür / küçülür), true = üstten kayarak gelir / gider
     val bannerIconOpens: Boolean = true,     // cam bannerdaki simgeye dokununca bildirimin uygulaması açılsın
     val notifTapOpens: Boolean = true,       // adadaki bildirime dokununca uygulama açılsın
     // Bildirim hareketleri (varsayılan: yalnızca dokununca aç; diğerleri kapalı)
@@ -139,7 +140,7 @@ data class IslandSettings(
     val lockDotEnabled: Boolean = true,
     val lockDotColorArgb: Int = 0xFF9B4DFF.toInt(),   // mor
     val lockDotSizeDp: Float = 9f,
-    val lockDotGapDp: Float = 10f,           // adanın sol kenarından noktaya uzaklık (negatif = adanın üstüne doğru)
+    val lockDotGapDp: Float = -15f,          // adanın sol kenarından noktaya uzaklık (negatif = adanın içine doğru; varsayılan: içeride, solda)
     val lockDotOffsetYDp: Float = 0f,
     val lockDotGlow: Boolean = true,
     val lockDotGlowDp: Float = 14f,          // parıltının noktanın dışına taşma miktarı
@@ -644,7 +645,7 @@ class SettingsRepository(context: Context) {
         val PILL_ART = booleanPreferencesKey("pill_art"); val PILL_WL = intPreferencesKey("pill_wl")
         val PILL_WM = intPreferencesKey("pill_wm"); val PILL_WR = intPreferencesKey("pill_wr")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
-        val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_INLINE = booleanPreferencesKey("nt_inline"); val NT_BMENU = booleanPreferencesKey("nt_bmenu"); val NT_BMENU_TAP = booleanPreferencesKey("nt_bmenu_tap"); val NT_BICON = booleanPreferencesKey("nt_bicon"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_EXP_TAP = booleanPreferencesKey("nt_exp_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full"); val MX_FLUID = booleanPreferencesKey("mx_fluid")
+        val NT_BANNER = booleanPreferencesKey("nt_banner"); val NT_INLINE = booleanPreferencesKey("nt_inline"); val NT_BMENU = booleanPreferencesKey("nt_bmenu"); val NT_BMENU_TAP = booleanPreferencesKey("nt_bmenu_tap"); val NT_BICON = booleanPreferencesKey("nt_bicon"); val NT_BSLIDE = booleanPreferencesKey("nt_bslide"); val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_OPEN_LONG = booleanPreferencesKey("nt_open_long"); val NT_OPEN_DN = booleanPreferencesKey("nt_open_dn"); val NT_COL_TAP = booleanPreferencesKey("nt_col_tap"); val NT_EXP_TAP = booleanPreferencesKey("nt_exp_tap"); val NT_COL_LONG = booleanPreferencesKey("nt_col_long"); val NT_COL_UP = booleanPreferencesKey("nt_col_up"); val NT_DEL_SIDE = booleanPreferencesKey("nt_del_side"); val NT_DEL_UP = booleanPreferencesKey("nt_del_up"); val SIDE_PROMOTE = booleanPreferencesKey("side_promote"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val MX_STR = booleanPreferencesKey("mx_str"); val LA_SPD = floatPreferencesKey("la_spd"); val MO_ANIM = booleanPreferencesKey("mo_anim"); val LA_CL = booleanPreferencesKey("la_cl"); val LA_AT = booleanPreferencesKey("la_at"); val FLA_CL = booleanPreferencesKey("fla_cl"); val FLA_AT = booleanPreferencesKey("fla_at"); val OP_EA = booleanPreferencesKey("op_ea"); val OP_ET = booleanPreferencesKey("op_et"); val OP_EX = booleanPreferencesKey("op_ex"); val OP_CA = booleanPreferencesKey("op_ca"); val OP_CL = booleanPreferencesKey("op_cl"); val OP_CT = booleanPreferencesKey("op_ct"); val EXP_LONG = booleanPreferencesKey("exp_long"); val SW_DN = booleanPreferencesKey("sw_dn"); val SW_UP = booleanPreferencesKey("sw_up"); val LP_MS = intPreferencesKey("lp_ms"); val MX_CLASSIC = booleanPreferencesKey("mx_classic"); val MX_ATOMIC = booleanPreferencesKey("mx_atomic"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app"); val MX_ATOMIC_FULL = booleanPreferencesKey("mx_atomic_full"); val MX_FLUID = booleanPreferencesKey("mx_fluid")
         val PL_PHY = booleanPreferencesKey("pl_phy"); val PL_PHY_R = floatPreferencesKey("pl_phy_r"); val PL_JELLY = booleanPreferencesKey("pl_jelly")
         val PL_PET = booleanPreferencesKey("pl_pet"); val PL_MAG = booleanPreferencesKey("pl_mag"); val PL_MAG_B = booleanPreferencesKey("pl_mag_b")
         val PL_PUFF = booleanPreferencesKey("pl_puff"); val PL_PUFF_S = floatPreferencesKey("pl_puff_s"); val PL_FACE = booleanPreferencesKey("pl_face")
@@ -685,7 +686,7 @@ class SettingsRepository(context: Context) {
         val DOT_ON = booleanPreferencesKey("dot_on"); val DOT_MID = floatPreferencesKey("dot_mid")
         val DOT_L = floatPreferencesKey("dot_l"); val DOT_R = floatPreferencesKey("dot_r"); val DOT_GAP = floatPreferencesKey("dot_gap")
         val DOT_OX = floatPreferencesKey("dot_ox"); val DOT_OY = floatPreferencesKey("dot_oy")
-        val LD_ON = booleanPreferencesKey("ld_on"); val LD_C = intPreferencesKey("ld_c"); val LD_S = floatPreferencesKey("ld_s"); val LD_G = floatPreferencesKey("ld_g"); val LD_Y = floatPreferencesKey("ld_y")
+        val LD_ON = booleanPreferencesKey("ld_on"); val LD_C = intPreferencesKey("ld_c"); val LD_S = floatPreferencesKey("ld_s"); val LD_G = floatPreferencesKey("ld_g"); val LD_G2 = booleanPreferencesKey("ld_g2"); val LD_Y = floatPreferencesKey("ld_y")
         val LD_GL = booleanPreferencesKey("ld_gl"); val LD_GD = floatPreferencesKey("ld_gd"); val LD_GA = floatPreferencesKey("ld_ga")
         val LD_B = booleanPreferencesKey("ld_b"); val LD_BM = intPreferencesKey("ld_bm"); val LD_BA = floatPreferencesKey("ld_ba"); val LD_BS = intPreferencesKey("ld_bs")
         val TORCH_ON = booleanPreferencesKey("torch_on")
@@ -817,6 +818,7 @@ class SettingsRepository(context: Context) {
             bannerMenuEnabled = p[K.NT_BMENU] ?: d.bannerMenuEnabled,
             bannerMenuTap = p[K.NT_BMENU_TAP] ?: d.bannerMenuTap,
             bannerIconOpens = p[K.NT_BICON] ?: d.bannerIconOpens,
+            bannerSlideAnim = p[K.NT_BSLIDE] ?: d.bannerSlideAnim,
             notifTapOpens = p[K.NT_OPEN] ?: d.notifTapOpens,
             notifOpenLong = p[K.NT_OPEN_LONG] ?: d.notifOpenLong,
             notifOpenSwipeDown = p[K.NT_OPEN_DN] ?: d.notifOpenSwipeDown,
@@ -830,7 +832,7 @@ class SettingsRepository(context: Context) {
             notifExpandedSec = p[K.NT_EXP_S] ?: d.notifExpandedSec,
             musicExpandedSec = p[K.MU_EXP_S] ?: d.musicExpandedSec,
             lockDotEnabled = p[K.LD_ON] ?: d.lockDotEnabled, lockDotColorArgb = p[K.LD_C] ?: d.lockDotColorArgb,
-            lockDotSizeDp = p[K.LD_S] ?: d.lockDotSizeDp, lockDotGapDp = p[K.LD_G] ?: d.lockDotGapDp, lockDotOffsetYDp = p[K.LD_Y] ?: d.lockDotOffsetYDp,
+            lockDotSizeDp = p[K.LD_S] ?: d.lockDotSizeDp, lockDotGapDp = p[K.LD_G]?.takeIf { p[K.LD_G2] == true || it != 10f } ?: d.lockDotGapDp, lockDotOffsetYDp = p[K.LD_Y] ?: d.lockDotOffsetYDp,
             lockDotGlow = p[K.LD_GL] ?: d.lockDotGlow, lockDotGlowDp = p[K.LD_GD] ?: d.lockDotGlowDp, lockDotGlowAlpha = p[K.LD_GA] ?: d.lockDotGlowAlpha,
             lockDotBlink = p[K.LD_B] ?: d.lockDotBlink, lockDotBlinkMs = p[K.LD_BM] ?: d.lockDotBlinkMs,
             lockDotMinAlpha = p[K.LD_BA] ?: d.lockDotMinAlpha, lockDotBlinkStyle = p[K.LD_BS] ?: d.lockDotBlinkStyle,
@@ -1068,7 +1070,7 @@ class SettingsRepository(context: Context) {
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
             it[K.NT_BANNER] = s.notifBanner
             it[K.NT_INLINE] = s.notifInline
-            it[K.NT_BMENU] = s.bannerMenuEnabled; it[K.NT_BMENU_TAP] = s.bannerMenuTap; it[K.NT_BICON] = s.bannerIconOpens
+            it[K.NT_BMENU] = s.bannerMenuEnabled; it[K.NT_BMENU_TAP] = s.bannerMenuTap; it[K.NT_BICON] = s.bannerIconOpens; it[K.NT_BSLIDE] = s.bannerSlideAnim
             it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_OPEN_LONG] = s.notifOpenLong; it[K.NT_OPEN_DN] = s.notifOpenSwipeDown
             it[K.NT_COL_TAP] = s.notifCollapseTap; it[K.NT_EXP_TAP] = s.notifExpandTap; it[K.NT_COL_LONG] = s.notifCollapseLong; it[K.NT_COL_UP] = s.notifCollapseSwipeUp
             it[K.NT_DEL_SIDE] = s.notifDeleteSwipeSide; it[K.NT_DEL_UP] = s.notifDeleteSwipeUp; it[K.SIDE_PROMOTE] = s.sideTapPromote
@@ -1115,7 +1117,7 @@ class SettingsRepository(context: Context) {
             it[K.DOT_OX] = s.dotOffsetXDp; it[K.DOT_OY] = s.dotOffsetYDp
             it[K.NT_EXP_S] = s.notifExpandedSec; it[K.NT_CMP_S] = s.notifCompactSec
             it[K.MU_EXP_S] = s.musicExpandedSec
-            it[K.LD_ON] = s.lockDotEnabled; it[K.LD_C] = s.lockDotColorArgb; it[K.LD_S] = s.lockDotSizeDp; it[K.LD_G] = s.lockDotGapDp; it[K.LD_Y] = s.lockDotOffsetYDp
+            it[K.LD_ON] = s.lockDotEnabled; it[K.LD_C] = s.lockDotColorArgb; it[K.LD_S] = s.lockDotSizeDp; it[K.LD_G] = s.lockDotGapDp; it[K.LD_G2] = true; it[K.LD_Y] = s.lockDotOffsetYDp
             it[K.LD_GL] = s.lockDotGlow; it[K.LD_GD] = s.lockDotGlowDp; it[K.LD_GA] = s.lockDotGlowAlpha
             it[K.LD_B] = s.lockDotBlink; it[K.LD_BM] = s.lockDotBlinkMs; it[K.LD_BA] = s.lockDotMinAlpha; it[K.LD_BS] = s.lockDotBlinkStyle
             it[K.TORCH_ON] = s.torchIndicator

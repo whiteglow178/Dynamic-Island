@@ -93,13 +93,21 @@ import kotlin.math.roundToInt
 private const val BANNER_MARGIN_DP = 10f      // ekranın sağ / sol kenarından boşluk
 private const val BANNER_H_DP = 80f           // tam açık banner yüksekliği
 private const val BANNER_RADIUS_DP = 34f      // tam açık köşe yuvarlaklığı
-// Giriş animasyonu: banner üst kenarın altından aşağı kayıp yaylanarak yerine oturur (NotifBannerRoot).
-private const val ENTER_EXTRA_DP = 0f         // giriş sırasında pencerenin alttan uzaması (çizgi bannerın altında doğar)
-private const val ENTER_MS = 560              // giriş süresi
+// İki giriş / çıkış stili (Ayarlar > Bildirim > Banner animasyonu):
+//  0 Klasik: banner sol üstte, saatin altındaki küçük hapın içinden büyüyerek açılır; kapanırken aynı yoldan o hapa küçülür.
+//  1 Üstten kayma: ekranın üst kenarının altından aşağı kayıp yaylanarak oturur; kapanırken yukarı kayıp söner.
+private const val START_H_DP = 5f             // klasik: küçükken hap yüksekliği
+private const val START_W_DP = 40f            // klasik: küçükken hap genişliği
+private const val START_LEFT_DP = 52f         // klasik: hapın bannerın sol kenarına uzaklığı (saatin altı)
+private const val START_RADIUS_DP = 3f
+private const val ENTER_EXTRA_DP = 0f         // giriş sırasında pencerenin alttan uzaması
+private const val ENTER_MS = 620              // giriş süresi
 private const val MENU_GAP_DP = 8f            // banner ile menü arası
 private const val MENU_H_DP = 46f             // menü / cevap satırı yüksekliği
 private const val MENU_EXTRA_DP = MENU_GAP_DP + MENU_H_DP + 6f   // menü açılınca pencerenin uzaması
 private const val ICON_ZONE_DP = 72f          // bannerın solundaki "simge" bölgesi (dokunma ayrımı için)
+private val ClassicEase = CubicBezierEasing(0.22f, 0.9f, 0.28f, 1f)   // klasik giriş: hızlı açılır, yumuşak oturur
+private fun lerpB(a: Float, b: Float, t: Float) = a + (b - a) * t
 private const val EXIT_MS = 380L              // kapanış animasyonu bitince pencere kaldırılır
 
 /**
@@ -287,6 +295,7 @@ class NotifBannerOverlay(
             setViewTreeSavedStateRegistryOwner(registryOwner)
             setContent {
                 NotifBannerRoot(
+                    style = if (settings().bannerSlideAnim) 1 else 0,
                     n = current.value,
                     shown = shown.value,
                     widthDp = widthDp,
@@ -362,17 +371,24 @@ internal fun NotifBannerRoot(
     onForward: () -> Unit,
     onReply: () -> Unit,
     onSend: (String) -> Unit,
+    style: Int = 0,          // 0 klasik (saatin altından büyür), 1 üstten kayma
 ) {
-    // Giriş: banner ekranın üst kenarının (saatin) altından aşağı kayarak iner, hafif büyür ve yaylanarak yerine oturur.
-    // Her şey graphicsLayer ile çizilir (yerleşim ve bulanıklık her karede değişmez): takılmadan, akıcı.
-    val p = remember { Animatable(0f) }       // 0 = yukarıda gizli, 1 = yerinde (yay biraz aşabilir)
+    val slide = style == 1
+    val p = remember { Animatable(0f) }       // 0 = gizli (klasik: saatin altındaki minik hap), 1 = tam banner
     val fade = remember { Animatable(0f) }
     LaunchedEffect(shown) {
         if (shown) {
-            launch { fade.animateTo(1f, tween(180)) }
-            p.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 420f))
+            if (slide) {
+                // Üstten kayma: yaylanarak oturur
+                launch { fade.animateTo(1f, tween(180)) }
+                p.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 420f))
+            } else {
+                // Klasik: kapanış animasyonunun tersi — saatin altındaki küçük haptan büyüyerek açılır
+                launch { fade.animateTo(1f, tween(140)) }
+                p.animateTo(1f, tween(ENTER_MS, easing = ClassicEase))
+            }
         } else {
-            launch { fade.animateTo(0f, tween(220, delayMillis = 40)) }
+            launch { fade.animateTo(0f, tween(if (slide) 220 else 240, delayMillis = if (slide) 40 else 100)) }
             p.animateTo(0f, tween(300, easing = FastOutSlowInEasing))
         }
     }
@@ -382,18 +398,29 @@ internal fun NotifBannerRoot(
     val onLongNow by rememberUpdatedState(onLong)
     val onSwipeNow by rememberUpdatedState(onSwipeUp)
     val view = LocalView.current
-    val radius = BANNER_RADIUS_DP
+
+    // Klasik stilde boyut ve konum (giriş ve çıkış aynı yoldan); kayma stilinde banner hep tam boydadır
+    val pc = p.value.coerceIn(0f, 1f)
+    val left = if (slide) 0f else lerpB(START_LEFT_DP, 0f, pc)
+    val w = if (slide) widthDp else lerpB(START_W_DP, widthDp, pc)
+    val h = if (slide) BANNER_H_DP else lerpB(START_H_DP, BANNER_H_DP, pc)
+    val top = if (slide) 0f else lerpB(0f, BANNER_H_DP / 2f - h / 2f, pc)
+    val radius = if (slide) BANNER_RADIUS_DP else lerpB(START_RADIUS_DP, BANNER_RADIUS_DP, pc).coerceAtMost(h / 2f)
+    val blurDp = if (slide) 0f else (1f - pc) * 14f      // klasik: küçükken içerik bulanık, büyüdükçe netleşir
 
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
-                .size(widthDp.dp, BANNER_H_DP.dp)
+                .offset(left.dp, top.dp)
+                .size(w.dp, h.dp)
                 .graphicsLayer {
-                    val t = p.value
-                    transformOrigin = TransformOrigin(0.5f, 0f)
-                    translationY = (t - 1f) * (BANNER_H_DP + 12f).dp.toPx()
-                    val sc = (0.90f + 0.10f * t).coerceAtMost(1.012f)
-                    scaleX = sc; scaleY = sc
+                    if (slide) {
+                        val t = p.value
+                        transformOrigin = TransformOrigin(0.5f, 0f)
+                        translationY = (t - 1f) * (BANNER_H_DP + 12f).dp.toPx()
+                        val sc = (0.90f + 0.10f * t).coerceAtMost(1.012f)
+                        scaleX = sc; scaleY = sc
+                    }
                     alpha = fade.value
                 }
                 .clip(RoundedCornerShape(radius.dp))
@@ -423,7 +450,23 @@ internal fun NotifBannerRoot(
         ) {
             // Bildirimde renkli ışık: uygulamanın renginde alt kenarda akan ışık (ayar açıksa accent dolu gelir)
             if (cur.accent != 0) MusicBottomFx(Color(cur.accent), true)
-            BannerContent(cur)
+            if (slide) {
+                BannerContent(cur)
+            } else {
+                // İçerik her zaman tam boyutta yerleşir; küçükken hapın içine ölçeklenerek sığar (yeniden yerleşim / sıçrama olmaz)
+                Box(
+                    Modifier
+                        .wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .size(widthDp.dp, BANNER_H_DP.dp)
+                        .graphicsLayer {
+                            transformOrigin = TransformOrigin(0f, 0f)
+                            scaleX = w / widthDp
+                            scaleY = h / BANNER_H_DP
+                            alpha = ((pc - 0.10f) / 0.45f).coerceIn(0f, 1f)
+                        }
+                        .then(if (blurDp > 0.4f) Modifier.blur(blurDp.dp) else Modifier),
+                ) { BannerContent(cur) }
+            }
         }
 
         // Cevapla / Kopyala / İlet menüsü ya da cevap yazma satırı (bannerın altında)

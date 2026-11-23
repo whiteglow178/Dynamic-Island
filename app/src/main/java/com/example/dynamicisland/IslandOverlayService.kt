@@ -974,6 +974,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Uygulama açılış animasyonu
     private var faceFlashHidden = false
+    private var faceLockHidden = false     // kilit ekranı Face ID animasyonu oynarken
     private var faceFlashAt = 0L
     private val faceFlash by lazy {
         FaceIdFlash(this, this, this, wm, settings) { on ->
@@ -1335,7 +1336,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 pillH = dp(s.compactHeightDp).toFloat(),
                 inverted = s.invertedIsland,
             )
-        }.also { c -> c.onCover = { on -> lockDot.suppress = on; lockDot.recheck() } }
+        }.also { c ->
+            c.onCover = { on ->
+                lockDot.suppress = on; lockDot.recheck()
+                // Face ID animasyonu adanın yerinde oynar: o sürece asıl ada gizlenir (üst üste iki ada görünmesin)
+                faceLockHidden = on
+                applyMainHidden()
+            }
+        }
     }
 
     // ---- Yatay mod: telefon yan çevrilince dikey ada + simgesi düz yan baloncuklar -> LandscapeIsland.kt
@@ -1374,7 +1382,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         applyMainHidden()
     }
     private fun applyMainHidden() {
-        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden || thumbHidden || faceFlashHidden || chargeRingHidden) View.INVISIBLE else View.VISIBLE }
+        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden || thumbHidden || faceFlashHidden || faceLockHidden || chargeRingHidden) View.INVISIBLE else View.VISIBLE }
         refreshDecor()
     }
 
@@ -2173,6 +2181,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         safeAttachOverlay()
         composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
         scope.launch { syncWindow(winKey(ui.value)) }
+        runCatching { lockDot.rehost() }     // kilit noktası adanın içinde durabilir: ada yeniden eklenince nokta yine üstte kalsın
     }
 
     // ---------------------------------------------------------------- Durum çubuğu örtüsü
@@ -2716,6 +2725,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         safeAttachOverlay()
         composeView?.visibility = if (appHide.hidden) View.INVISIBLE else View.VISIBLE
         scope.launch { syncWindow(winKey(ui.value)) }
+        runCatching { lockDot.rehost() }     // kilit noktası adanın içinde durabilir: ada yeniden eklenince nokta yine üstte kalsın
     }
 
     /** Sistem pencereyi istediğimizden farklı bir yere koyduysa (durum çubuğu payı vb.) farkı kadar geri çeker. */

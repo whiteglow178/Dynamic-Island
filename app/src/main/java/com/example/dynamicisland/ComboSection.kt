@@ -37,6 +37,7 @@ fun ComboSections() {
             ))
         }
     }
+    FxEventsHomeCard()        // Ada olayları (Ayarlar'dakiyle aynı)
     val cur = m ?: return
     val set: (MoreSettings) -> Unit = { m = it }
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
@@ -119,5 +120,80 @@ fun ComboSections() {
             cur.scoreIsland) { set(cur.copy(scoreIsland = it)) }
         Text("Navigasyon önceliklidir; aynı anda birden çok canlı etkinlik varsa sıra: navigasyon, maç, sipariş, indirme.",
             color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+}
+
+/** Ada olayları ayarları: Ayarlar > Ada olayları ve Ana Sayfa > Ada olayları aynı denetimleri kullanır. */
+@Composable
+internal fun FxEventsControls(s: IslandSettings, set: (IslandSettings) -> Unit) {
+    SubHeader("Olay")
+    val fxSel = FX_WEATHER_OPTIONS.indexOfFirst { it.first == s.fxWeather }.coerceAtLeast(0)
+    ChipPicker(FX_WEATHER_OPTIONS.map { it.second }, fxSel) { set(s.copy(fxWeather = FX_WEATHER_OPTIONS[it].first)) }
+    val fxInfo = when (s.fxWeather) {
+        FXW_SUN -> "Panelde yavaşça süzülen altın parıltılar ve köşeden yayılan sıcak ışık. Öğelere zarar vermez."
+        FXW_METEOR -> "Meteorlar gökte tek bir noktadan yayılır. Büyük olanlar öğeye çarpınca kıvılcım saçar, öğeyi sarsar ve üstünde soğuyan bir kor izi bırakır."
+        FXW_SEA -> "Kabarcıklar alttan yükselir, öğelerin altına takılıp birleşir ve kenardan kaçar. Balıklar öğelerin üstünden ya da altından dolaşır."
+        FXW_FIREWORKS -> "Roketler yükselip farklı biçimlerde patlar (şakayık, söğüt, halka, çıtırtı). Düşen kıvılcımlar öğelerin üstüne konup söner."
+        FXW_FIREFLY -> "Ateşböcekleri dolaşır, öğelerin üstüne konup kalkar. Yanıp sönmeleri komşularıyla zamanla eşzamanlanır."
+        FXW_SAND -> "Rüzgâr hamlelerle eser. Kum öğelerin üstünde birikir, rüzgâr yönünde kayar ve kenardan dökülür."
+        FXW_AURORA -> "Kutup ışığı perdeleri dalgalanır; renk yüksekliğe göre yeşilden mora döner. Öğelerin üst kenarı ışığı yansıtır."
+        FXW_ELECTRIC -> "Öğeler arasında dallanan elektrik arkları atlar; çarptığı öğe parlar ve sarsılır. Kenarlarda küçük deşarjlar gezinir."
+        FXW_BLIZZARD -> "Rüzgârlı, derinlikli kar fırtınası. Öğelerin üstünde rüzgâr yönüne kayan kar kümeleri oluşur."
+        else -> null
+    }
+    if (fxInfo != null) Text(fxInfo, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+    if (s.fxWeather != 0) {
+        SliderRow("Yoğunluk", s.fxIntensity, 0.1f..1f, "%${(s.fxIntensity * 100).toInt()}") { set(s.copy(fxIntensity = it)) }
+    }
+    if (s.fxWeather == 1) {
+        SectionDivider()
+        SwitchRow("Şimşek", "Şimşeğin düştüğü yerdeki öğe (kapak, düğme, çubuk...) adadan kopup ekranın altına düşer",
+            s.fxLightning) { set(s.copy(fxLightning = it)) }
+        if (s.fxLightning) {
+            SliderRow("Şimşek aralığı", s.fxLightningSec, 3f..30f, "${s.fxLightningSec.toInt()} sn") { set(s.copy(fxLightningSec = it)) }
+        }
+    }
+    if (s.fxWeather == 2) {
+        SliderRow("Donma hızı", s.fxFreezeSpeed, 0.3f..3f, "x${"%.1f".format(s.fxFreezeSpeed)}") { set(s.copy(fxFreezeSpeed = it)) }
+        SliderRow("Buzu kırmak için dokunma", s.fxThawTaps.toFloat(), 2f..12f, "${s.fxThawTaps}") { set(s.copy(fxThawTaps = (it + 0.5f).toInt())) }
+        Text("Çok kar yağan öğe yavaşça donar ve çalışmayı bırakır. Üstüne dokundukça buz çatlar, sonunda kırılır.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+    if (s.fxWeather == 3) {
+        SliderRow("Erime hızı", s.fxMeltSpeed, 0.3f..3f, "x${"%.1f".format(s.fxMeltSpeed)}") { set(s.copy(fxMeltSpeed = it)) }
+        Text("Asit damlaları öğenin üstünde kalıp onu eritir; eriyince altındaki öğeye geçer.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+    SectionDivider()
+    SwitchRow("Adayı kırma", "Açıkken genişletilmiş adada hızlı dokunduğun yer kırılıp düşer; her şey kırılınca ada parçalanır. Uzun basma ve kaydırma normal çalışır",
+        s.fxBreak) { set(s.copy(fxBreak = it)) }
+    if (s.fxWeather != 0 || s.fxBreak) {
+        SliderRow("Geri toplanma süresi", s.fxRestoreSec, 2f..20f, "${s.fxRestoreSec.toInt()} sn") { set(s.copy(fxRestoreSec = it)) }
+    }
+    Text("Önizlemede efektler yalnızca ada içinde görünür; adadan dışarı düşen parçalar gerçek adada çalışır. Efektler pili tüketir.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+}
+
+/** Ana Sayfa > Ada olayları: ayarlar ekranındaki "Ada olayları" ile aynı (yalnızca olay alanları kaydedilir). */
+@Composable
+internal fun FxEventsHomeCard() {
+    val ctx = LocalContext.current
+    val repo = remember { SettingsRepository(ctx.applicationContext) }
+    var st by remember { mutableStateOf<IslandSettings?>(null) }
+    LaunchedEffect(Unit) { st = repo.flow.first() }
+    LaunchedEffect(st) {
+        val v = st ?: return@LaunchedEffect
+        delay(250)
+        repo.update { s ->
+            s.copy(
+                fxWeather = v.fxWeather, fxIntensity = v.fxIntensity, fxLightning = v.fxLightning, fxLightningSec = v.fxLightningSec,
+                fxFreezeSpeed = v.fxFreezeSpeed, fxThawTaps = v.fxThawTaps, fxMeltSpeed = v.fxMeltSpeed,
+                fxBreak = v.fxBreak, fxRestoreSec = v.fxRestoreSec,
+            )
+        }
+    }
+    val cur = st ?: return
+    SectionCard("Ada olayları", "Genişletilmiş müzik adasında hava durumu, portal sahneleri ve kırılma efektleri. Ayarlar > Ada olayları ile aynı") {
+        FxEventsControls(cur) { st = it }
     }
 }
