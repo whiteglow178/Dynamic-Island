@@ -32,6 +32,7 @@ fun ComboSections() {
                 calendarFx = v.calendarFx, chargeArcs = v.chargeArcs, lowBattSparks = v.lowBattSparks, notifShatter = v.notifShatter,
                 progressIsland = v.progressIsland, scoreIsland = v.scoreIsland,
                 chargeEta = v.chargeEta, flipSilence = v.flipSilence,
+                fxPets = v.fxPets, fxPetCount = v.fxPetCount,
             ))
         }
     }
@@ -40,6 +41,12 @@ fun ComboSections() {
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
 
     SectionCard("Ada olayları ile", "Ayarlar > Ada olayları'nda seçilen efektle birlikte çalışır") {
+        SwitchRow("Ada sakinleri", "Genişletilmiş müzik adasında kedi, tavşan, civciv, penguen ve tilki yaşar. Kapağın, yazıların ve çubuğun üstünde yürür, zıplar; seçili olaya göre davranır: yağmurda kapağın altına sığınır ya da şemsiye açar, karda kardan adam yapar, güneşte gözlükle uzanır, sualtında fanusla yüzer, havai fişekte kulaklarını kapatır, ateşböceği kovalar, kum fırtınasında rüzgâraltına saklanır. Söze göre dans eder, sallanınca sersemler",
+            cur.fxPets) { set(cur.copy(fxPets = it)) }
+        if (cur.fxPets) {
+            Text("Kaç hayvan olsun?", color = dim, fontSize = 13.sp)
+            ChipPicker((1..FX_PET_KINDS).map { it.toString() }, cur.fxPetCount - 1) { set(cur.copy(fxPetCount = it + 1)) }
+        }
         SwitchRow("Eğilen dünya", "Telefonu eğince kar ve kum yığınları o yöne kayıp dökülür, kabarcıklar eğik yükselir, düşen parçacıklar yana savrulur. Telefonu sallayınca birikenler silkelenir, donmuş öğelerin buzu çatlar",
             cur.fxTilt) { set(cur.copy(fxTilt = it)) }
         SwitchRow("Şarkıya göre olay", "Şarkının havası açıkken kapak rengi yeni olayları da seçebilir: koyu mavi sualtı, mor kutup ışığı, sıcak ve parlak havai fişek, gece mavisi meteor, kum rengi kum fırtınası",

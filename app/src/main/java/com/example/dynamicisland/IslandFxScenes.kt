@@ -155,6 +155,16 @@ internal class FxScenes {
     private var auroraPulse = 0f         // söz tepkisi: kutup ışığı parlaması
     private var pendingArcs = 0          // söz tepkisi: art arda atlayacak arklar
 
+    // ---- Ada sakinlerinin (IslandFxPets.kt) okuduğu olaylar
+    var impactX = 0f; var impactY = 0f; var impactAt = 0L; var impactBig = false
+    var boomX = 0f; var boomY = 0f; var boomAt = 0L
+    var zapAt = 0L; var zapA: String? = null; var zapB: String? = null
+    val windNow: Float get() = gust
+    val activeScene: Int get() = scene
+    fun fireflies(): List<Offset> = if (scene == FXW_FIREFLY) swimmers.map { Offset(it.x, it.y) } else emptyList()
+    fun fireflyLit(i: Int): Float = if (scene == FXW_FIREFLY) swimmers.getOrNull(i)?.let { fireflyLight(it.phase) } ?: 0f else 0f
+    fun fishes(): List<Offset> = if (scene == FXW_SEA) swimmers.map { Offset(it.x, it.y) } else emptyList()
+
     fun clear() {
         ps.clear(); flashes.clear(); swimmers.clear(); arcs.clear()
         scene = -1; acc = 0f; nextEvent = 0f; flash = 0f; time = 0f
@@ -616,6 +626,7 @@ internal class FxScenes {
     }
 
     private fun impact(t: FxTarget, x: Float, y: Float, big: Boolean, d: Float, col: Color) {
+        impactX = x; impactY = y; impactAt = nowMs; impactBig = big
         val room = ps.size < MAX_PS
         flashes.add(FxFlash(x, y, (if (big) 26f else 10f) * d, 0.35f, col, false))
         flashes.add(FxFlash(x, y, (if (big) 40f else 16f) * d, 0.45f, col, true))
@@ -770,6 +781,7 @@ internal class FxScenes {
         }
         flashes.add(FxFlash(x, y, 70f * d, 0.35f, col, false))
         flash = max(flash, 0.35f); flashColor = col
+        boomX = x; boomY = y; boomAt = nowMs
         val sm = SP(S_SMOKE, x, y, (f() - 0.5f) * 8f * d, -4f * d, 3.5f, 18f * d)
         sm.color = Color(0xFF9A9AA5)
         ps.add(sm)
@@ -1038,6 +1050,7 @@ internal class FxScenes {
                 arcs.add(arc)
                 zapSparks(pa, 10, d); zapSparks(pb, 10, d)
                 ta.glow = 1f; ta.shake = min(ta.shake + 1.6f * d, 6f * d)
+                zapAt = nowMs; zapA = ta.id; zapB = tb?.id
                 tb?.let { it.glow = 1f; it.shake = min(it.shake + 1.6f * d, 6f * d) }
                 flash = max(flash, 0.28f); flashColor = Color(0xFFBFEFFF)
             }

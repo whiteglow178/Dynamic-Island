@@ -566,6 +566,7 @@ private class FxSim {
     var autoCount = 0
     var shattered = false
     val scenes = FxScenes()                         // portal olayları (5 ve sonrası)
+    val pets = FxPets()                             // ada sakinleri (IslandFxPets.kt)
     var lastCue = Int.MIN_VALUE                     // söz tepkisi: en son işlenen satır sırası
 
     fun f(): Float = rnd.nextFloat()
@@ -574,6 +575,7 @@ private class FxSim {
         ps.clear(); acc = 0f; boltIn = 3f; bolt = null; flash = 0f
         armed = true; autoStart = 0L; autoNext = 0L; autoCount = 0; shattered = false
         scenes.clear()
+        pets.clear()
     }
 
     private fun hit(targets: Collection<FxTarget>, x: Float, y: Float): FxTarget? {
@@ -759,6 +761,9 @@ private class FxSim {
         // Portal olayları kendi parçacıklarını yönetir
         if (weather >= FXW_METEOR) scenes.step(weather, dt, now, W, H, d, inten, targets, fx.targets, tilt, shook, cue)
         else scenes.idle(targets)
+        // Ada sakinleri: her olayda (olay kapalıyken de) yaşar
+        if (cfg.more.fxPets) pets.step(cfg.more.fxPetCount, weather, dt, now, W, H, d, targets, fx.targets, scenes, tilt, shook, cue, flash > 0.6f)
+        else pets.clear()
 
         if (weather == 1 && cfg.fxLightning) {
             boltIn -= dt
@@ -1146,6 +1151,7 @@ fun FxLayer(
 
             // ---- portal olayları (meteor, sualtı, havai fişek, ateşböceği, kum, kutup ışığı, elektrik, tipi)
             with(sim.scenes) { render(d, fx.targets.values) }
+            if (cfg.more.fxPets) with(sim.pets) { render(d) }
 
             // ---- çatlaklar (cam kırığı)
             for (cr in fx.cracks) {

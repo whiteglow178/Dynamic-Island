@@ -785,7 +785,7 @@ fun IslandPill(
     val moodWeather = if (calWeather >= 0) calWeather else moodByArt
     SideEffect { FxPrefs.coverDissolve = cfg.more.coverDissolve }
     val effWeather = if (moodWeather >= 0) moodWeather else cfg.fxWeather
-    val fxActive = fxMode != 0 && content is IslandContent.Media && (effWeather != 0 || cfg.fxBreak) && !swallow && !cfg.dotMode
+    val fxActive = fxMode != 0 && content is IslandContent.Media && (effWeather != 0 || cfg.fxBreak || cfg.more.fxPets) && !swallow && !cfg.dotMode
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
     val longPressNow by rememberUpdatedState(onLongPress)

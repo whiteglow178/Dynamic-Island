@@ -580,6 +580,8 @@ data class MoreSettings(
     val scoreIsland: Boolean = false,       // canlı maç skoru bildirimleri adada skor kartı olur
     val chargeEta: Boolean = false,         // şarjda tam dolmaya kalan süre (ChargeFlip.kt)
     val flipSilence: Boolean = false,       // telefon ters konunca Rahatsız Etmeyin (ChargeFlip.kt)
+    val fxPets: Boolean = false,            // ada sakinleri: genişletilmiş müzik adasında yaşayan hayvanlar (IslandFxPets.kt)
+    val fxPetCount: Int = 3,                // 1..5
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -705,6 +707,7 @@ class SettingsRepository(context: Context) {
         val C_LOWB = booleanPreferencesKey("c_lowb"); val C_SHAT = booleanPreferencesKey("c_shat"); val C_PROG = booleanPreferencesKey("c_prog")
         val C_SCORE = booleanPreferencesKey("c_score")
         val C_ETA = booleanPreferencesKey("c_eta"); val C_FLIP = booleanPreferencesKey("c_flip")
+        val C_PETS = booleanPreferencesKey("c_pets"); val C_PETN = intPreferencesKey("c_petn")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -994,6 +997,8 @@ class SettingsRepository(context: Context) {
                 scoreIsland = p[K.C_SCORE] ?: d.more.scoreIsland,
                 chargeEta = p[K.C_ETA] ?: d.more.chargeEta,
                 flipSilence = p[K.C_FLIP] ?: d.more.flipSilence,
+                fxPets = p[K.C_PETS] ?: d.more.fxPets,
+                fxPetCount = (p[K.C_PETN] ?: d.more.fxPetCount).coerceIn(1, FX_PET_KINDS),
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1118,6 +1123,7 @@ class SettingsRepository(context: Context) {
             it[K.C_LOWB] = m.lowBattSparks; it[K.C_SHAT] = m.notifShatter; it[K.C_PROG] = m.progressIsland
             it[K.C_SCORE] = m.scoreIsland
             it[K.C_ETA] = m.chargeEta; it[K.C_FLIP] = m.flipSilence
+            it[K.C_PETS] = m.fxPets; it[K.C_PETN] = m.fxPetCount
         }
     }
 
