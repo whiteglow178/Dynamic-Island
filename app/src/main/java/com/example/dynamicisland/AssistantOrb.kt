@@ -58,6 +58,7 @@ private const val ASSISTANT_CORNER = 0.42f   // köşe yarıçapı / yükseklik 
  * böylece hepsi aynı kenarı izler.
  */
 fun islandCornerPx(w: Float, h: Float, density: Float, cornerT: Float): Float {
+    if (notchInsetR > 0f) return notchInsetR          // çentik modu: alt köşeler çentiğin yarıçapında
     val base = min(36f * density, h / 2f)
     if (cornerT < 0f) return base
     val target = min(h * (if (assistantGlassShape) 0.5f else ASSISTANT_CORNER), w / 2f)

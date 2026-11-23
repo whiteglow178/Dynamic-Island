@@ -88,7 +88,7 @@ private fun flowBrush(pal: List<Color>, phase: Float, center: Offset): Brush =
  * Çizgi içeriğin üstüne, ışık içeriğin altına çizilir.
  */
 @Composable
-internal fun Modifier.islandNeon(cfg: IslandSettings): Modifier {
+internal fun Modifier.islandNeon(cfg: IslandSettings, notch: Boolean = false): Modifier {
     val style = cfg.neonStyle
     if (style == 0) return this
     val tr = rememberInfiniteTransition(label = "neon")
@@ -109,11 +109,12 @@ internal fun Modifier.islandNeon(cfg: IslandSettings): Modifier {
     val glow = cfg.neonGlow.coerceIn(0f, 1.5f)
     return this.drawWithContent {
         val p = phase.value
-        val r = min(36.dp.toPx(), size.height / 2f)
         val sw = wDp.dp.toPx()
         val pad = NEON_PAD_DP.dp.toPx()
         val pulse = if (style == 4) 0.6f + 0.4f * (0.5f + 0.5f * sin(p * 2f * PI.toFloat() * 2f)) else 1f
-        val brush: Brush = when (style) {
+        // Çentik modunda çerçeve / ışık / alevler notchAware içinde çizilir: üst kenar ekranın dışında kalır,
+        // yalnızca yanlar ve alt köşeler görünür; köşe yarıçapı çentiğinkiyle aynı olur. İçerik (drawContent) etkilenmez.
+        fun brushFor(): Brush = when (style) {
             4 -> Brush.linearGradient(listOf(c1, c1))
             5 -> Brush.verticalGradient(listOf(c1, c2), 0f, size.height)       // elektrik: üst kenar 1. renk, alt kenar 2. renk
             7 -> Brush.horizontalGradient(listOf(c1, c2), 0f, size.width)      // ses dalgası: soldan sağa
@@ -123,38 +124,45 @@ internal fun Modifier.islandNeon(cfg: IslandSettings): Modifier {
         if (style == 7) {
             // Noktalı ses dalgası halkası: içerik üstte, halka adanın biraz dışında
             drawContent()
-            drawSpectrum(p, r, pad, c1, c2, glow)
+            notchAware(notch) { drawSpectrum(p, islandCornerPx(size.width, size.height, density, -1f), pad, c1, c2, glow) }
             return@drawWithContent
         }
-        if (style == 3) {
-            drawFire(p, r, pad * glow.coerceAtLeast(0.3f), FireOrange)
-        } else if (style == 6) {
-            drawFire(p, r, pad * 1.15f * glow.coerceAtLeast(0.3f), FirePurple)
-        } else if (glow > 0f) {
-            // Dışa vuran yumuşak ışık: kademeli, giderek sönen halkalar
-            val rings = 7
-            val step = pad * 0.85f / rings
-            for (i in 1..rings) {
-                val inflate = (i - 0.5f) * step
-                val fall = 1f - (i - 1f) / rings
-                drawRoundRect(
-                    brush = brush, topLeft = Offset(-inflate, -inflate),
-                    size = Size(size.width + 2 * inflate, size.height + 2 * inflate),
-                    cornerRadius = CornerRadius(r + inflate),
-                    alpha = (glow * 0.5f * fall * fall * pulse).coerceIn(0f, 1f),
-                    style = Stroke(step),
-                )
+        notchAware(notch) {
+            val r = islandCornerPx(size.width, size.height, density, -1f)
+            if (style == 3) {
+                drawFire(p, r, pad * glow.coerceAtLeast(0.3f), FireOrange)
+            } else if (style == 6) {
+                drawFire(p, r, pad * 1.15f * glow.coerceAtLeast(0.3f), FirePurple)
+            } else if (glow > 0f) {
+                // Dışa vuran yumuşak ışık: kademeli, giderek sönen halkalar
+                val brush = brushFor()
+                val rings = 7
+                val step = pad * 0.85f / rings
+                for (i in 1..rings) {
+                    val inflate = (i - 0.5f) * step
+                    val fall = 1f - (i - 1f) / rings
+                    drawRoundRect(
+                        brush = brush, topLeft = Offset(-inflate, -inflate),
+                        size = Size(size.width + 2 * inflate, size.height + 2 * inflate),
+                        cornerRadius = CornerRadius(r + inflate),
+                        alpha = (glow * 0.5f * fall * fall * pulse).coerceIn(0f, 1f),
+                        style = Stroke(step),
+                    )
+                }
             }
         }
         drawContent()
-        if (style == 5) drawLightning(p, r, pad * glow.coerceAtLeast(0.3f), c1, c2)
-        val edge: Brush = if (style == 3 || style == 6) flowBrush(pal, p * 3f, center) else brush
-        drawRoundRect(
-            brush = edge, topLeft = Offset(sw / 2f, sw / 2f),
-            size = Size(size.width - sw, size.height - sw),
-            cornerRadius = CornerRadius(max(r - sw / 2f, 0f)),
-            alpha = pulse, style = Stroke(sw),
-        )
+        notchAware(notch) {
+            val r = islandCornerPx(size.width, size.height, density, -1f)
+            if (style == 5) drawLightning(p, r, pad * glow.coerceAtLeast(0.3f), c1, c2)
+            val edge: Brush = if (style == 3 || style == 6) flowBrush(pal, p * 3f, center) else brushFor()
+            drawRoundRect(
+                brush = edge, topLeft = Offset(sw / 2f, sw / 2f),
+                size = Size(size.width - sw, size.height - sw),
+                cornerRadius = CornerRadius(max(r - sw / 2f, 0f)),
+                alpha = pulse, style = Stroke(sw),
+            )
+        }
     }
 }
 

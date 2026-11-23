@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.inset
 import kotlin.math.min
 
 /** Ada şekli seçenekleri (Ana sayfa > Ada şekli). 0 = normal hap. */
@@ -41,6 +43,23 @@ object NotchShape : Shape {
         }
         return Outline.Generic(p)
     }
+}
+
+/** [notchAware] çizerken çentiğin alt köşe yarıçapı (px); çizim dışında -1. islandCornerPx bunu kullanır. */
+internal var notchInsetR = -1f
+
+/**
+ * Çentik modunda süslemeleri (cam, sıvı cam, kenar çizgisi, neon, ateş, şimşek...) çentiğe uydurur:
+ * [block], üstü ekranın dışına uzatılmış bir alanda çizilir. Böylece hap şeklindeki her çizimin yalnızca alt
+ * köşeleri görünür ve köşe yarıçapı çentiğinkiyle aynı olur (islandCornerPx bu sırada çentik yarıçapını döndürür).
+ * [on] false ise [block] olduğu gibi çizilir.
+ */
+fun DrawScope.notchAware(on: Boolean, block: DrawScope.() -> Unit) {
+    if (!on || notchInsetR > 0f) { block(); return }
+    val r = notchBottomRadius(size.width, size.height, density)
+    val up = size.height + 48f * density
+    notchInsetR = r
+    try { inset(0f, -up, 0f, 0f) { block() } } finally { notchInsetR = -1f }
 }
 
 /** Çentiğin iki üst köşesinin dışındaki içe kavisli kulaklar (gövdeyle aynı renk). [e]: kulak genişliği (px). */

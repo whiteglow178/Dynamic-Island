@@ -60,7 +60,6 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -728,28 +727,40 @@ internal fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, sha
     val notch = shape === NotchShape
     var m = if (notch) this.drawBehind { drawNotchEars(body.value, NOTCH_EAR_DP.dp.toPx()) } else this
     m = m.clip(shape).drawBehind { drawRect(body.value) }
-    if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular, cornerT) }
+    // Çentikte cam / kenar çizimleri notchAware ile çizilir: üst kenarları ekranın dışında kalır, yalnızca alt köşeler görünür
+    if (liquid) m = m.drawBehind { notchAware(notch) { drawLiquidBase(cfg.liquidSpecular, cornerT) } }
     if (liquid) m = m.liquidBackdrop(cfg.liquidRefraction, cfg.liquidDispersion, cornerT)
-    else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase(cornerT) }
+    else if (cfg.glassEnabled) m = m.drawBehind { notchAware(notch) { drawGlassBase(cornerT) } }
     if (cfg.borderEnabled) {
         val rbBorder = rememberRainbowStyle(cfg)
-        m = if (rbBorder == null) m.border(cfg.borderWidthDp.dp, borderTint ?: Color(cfg.borderColorArgb), shape)
+        m = if (rbBorder == null && !notch) m.border(cfg.borderWidthDp.dp, borderTint ?: Color(cfg.borderColorArgb), shape)
+        else if (rbBorder == null) m.drawWithContent {
+            drawContent()
+            // Çentik: düz çerçeve de üst kenarı çizilmeden yalnızca yanlar ve alt köşeler boyunca
+            val bw = cfg.borderWidthDp.dp.toPx()
+            val col = borderTint ?: Color(cfg.borderColorArgb)
+            notchAware(true) {
+                val r = islandCornerPx(size.width, size.height, density, -1f)
+                drawRoundRect(
+                    col, topLeft = Offset(bw / 2f, bw / 2f), size = Size(size.width - bw, size.height - bw),
+                    cornerRadius = CornerRadius((r - bw / 2f).coerceAtLeast(0f)), style = Stroke(width = bw),
+                )
+            }
+        }
         else m.drawWithContent {
             drawContent()
             // Şekil kırpıldığı için çizginin yalnızca iç yarısı görünür; bu yüzden 2x kalınlık
             val w = cfg.borderWidthDp.dp.toPx() * 2f
-            val brush = rainbowBrush(rbBorder.phase.value, size.width, rbBorder.alpha)
-            if (notch) {
-                drawOutline(shape.createOutline(size, layoutDirection, this), brush, style = Stroke(width = w))
-            } else {
-                val r = minOf(36.dp.toPx(), size.height / 2f)
+            val brush = rainbowBrush(rbBorder!!.phase.value, size.width, rbBorder.alpha)
+            notchAware(notch) {
+                val r = islandCornerPx(size.width, size.height, density, -1f)
                 drawRoundRect(brush, cornerRadius = CornerRadius(r, r), style = Stroke(width = w))
             }
         }
     }
     // Kenar ışığı, içeriğin (yazı/kapak) üstüne çizilir; kullanıcı çerçevesi yine de en üstte kalır
-    if (liquid) m = m.drawWithContent { drawContent(); drawLiquidRim(cfg.liquidSpecular, cornerT) }
-    else if (cfg.glassEnabled) m = m.drawWithContent { drawContent(); drawGlassRim(cornerT) }
+    if (liquid) m = m.drawWithContent { drawContent(); notchAware(notch) { drawLiquidRim(cfg.liquidSpecular, cornerT) } }
+    else if (cfg.glassEnabled) m = m.drawWithContent { drawContent(); notchAware(notch) { drawGlassRim(cornerT) } }
     // En içte: yalnızca iç içerik (kapak, yazı, butonlar) kenarlarda bükülür (Android 13+)
     if (liquid && !LiquidCapture.running) m = m.liquidRefraction(cfg.liquidRefraction, cfg.liquidDispersion, cornerT)
     return m
@@ -943,7 +954,7 @@ fun IslandPill(
             }
             .onGloballyPositioned { fx.origin = it }
             .islandGlow(cfg.glowEnabled && shapeMorph < 0.02f, glow, cfg.glowIntensity, notch)      // şekilli adada hap halesi çizilmez
-            .islandNeon(cfg)              // renkli çerçeve (neon / gökkuşağı / ateş) -> IslandDecor.kt
+            .islandNeon(cfg, notch)       // renkli çerçeve (neon / gökkuşağı / ateş) -> IslandDecor.kt
             .islandSurface(cfg, body, shape, cornerT, if (cfg.borderArtColor && artColor != null) brightTone(artColor) else null)
             .pointerInput(Unit) {
                 // Dokunma + basılı tutma. Ada küçük olduğu için hızlı dokunuşta parmak kenardan kayıp çıkabiliyordu
