@@ -18,6 +18,8 @@ object IslandActions {
     @Volatile var onTimerRestart: () -> Unit = {}
     /** Kurma panelindeki "Başlat": verilen süre (ms) ile zamanlayıcıyı başlatır. */
     @Volatile var onTimerStart: (Long) -> Unit = {}
+    /** Açık zamanlayıcıda süreye dokunma: zamanlayıcı kurma paneli açılır. */
+    @Volatile var onOpenTimerSetter: () -> Unit = {}
     /** Çalan alarm: ertele. */
     @Volatile var onAlarmSnooze: () -> Unit = {}
     /** Çalan alarm / dolan zamanlayıcı: kapat. */

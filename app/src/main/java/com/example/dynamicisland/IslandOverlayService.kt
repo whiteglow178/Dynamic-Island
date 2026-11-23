@@ -159,6 +159,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
         runCatching { lockIcon.start() }        // kilit ekranında adanın solunda kilit simgesi
+        runCatching { clock.start() }           // alarm kuruldu / alarm saati geldi
         runCatching { torch.start() }           // fener açılınca ada göstergesi + ışık kartı
         runCatching { landscape.start() }       // yatay mod: dikey ada + yan baloncuklar
         runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
@@ -319,6 +320,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.ClockTimer -> clock.onSysTimer(e)
             is IslandEvent.ClockAlarm -> clock.onSysAlarm(e)
             is IslandEvent.ClockGone -> clock.onSysGone(e.key)
+            is IslandEvent.ClockStopwatch -> clock.onSysStopwatch(e)
             is IslandEvent.VoiceRec -> voice.onRec(e)
             is IslandEvent.VoiceRecGone -> voice.onGone(e.key)
         }
@@ -1435,6 +1437,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandActions.onTimerCancel = { scope.launch { runCatching { clock.cancel() } } }
         IslandActions.onTimerRestart = { scope.launch { runCatching { clock.restart() } } }
         IslandActions.onTimerStart = { ms -> scope.launch { runCatching { clock.start(ms) } } }
+        IslandActions.onOpenTimerSetter = { scope.launch { runCatching { clock.openSetter() } } }
         IslandActions.onAlarmSnooze = { scope.launch { runCatching { clock.snooze() } } }
         IslandActions.onAlarmDismiss = { scope.launch { runCatching { clock.dismiss() } } }
         IslandActions.onFocusToggle = { scope.launch { runCatching { toggleFocus() } } }
@@ -2672,7 +2675,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             when {
                 k.xew > 0f -> k.xew                                           // yeni tasarımlar (zamanlayıcı, Rahatsız Etmeyin kartı...)
                 assistant -> s.assistantWidthDp
-                k.kind == 8 -> maxOf(CHARGE_PILL_W_DP, s.compactWidthDp)     // şarj: kompakt pill
+                k.kind == 8 -> chargePillWidthDp(s)                              // şarj: kompakt pill (genişlik ayarlanabilir)
                 k.kind == 13 -> ringerPillWidthDp(s, true, wm.currentWindowMetrics.bounds.width() / density)   // zil / sessiz (en geniş hal)
                 k.kind == 14 -> sysPillWidthDp(s, wm.currentWindowMetrics.bounds.width() / density)           // ağ / uçak / zil sesi / düşük pil hapı
                 k.kind == 16 -> designPhotoWidthDp(s, wm.currentWindowMetrics.bounds.width() / density)       // özel tasarım fotoğrafı

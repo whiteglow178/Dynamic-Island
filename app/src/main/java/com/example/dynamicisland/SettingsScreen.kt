@@ -250,8 +250,10 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Zil / sessiz göstergesi", "Telefonu sessize, titreşime ya da sesliye alınca ada kısa süre Zil, Sessiz ya da Titreşim yazısıyla açılır", draft.ringerIndicator) { draft = draft.copy(ringerIndicator = it) }
             SwitchRow("Zil göstergesi genişlesin", "Açıkken ada, ekran kaydındaki gibi yana doğru genişleyip solda zil simgesi, sağda Zil / Sessiz / Titreşim yazısı gösterir. Kapalıyken ada boyutunu değiştirmez, yalnızca solda simge görünür", draft.ringerExpand) { draft = draft.copy(ringerExpand = it) }
             if (draft.ringerExpand) {
-                SliderRow("Zil hapı genişliği", draft.ringerWidthPct, 40f..98f, "%${draft.ringerWidthPct.toInt()} (ekran genişliği)") { draft = draft.copy(ringerWidthPct = it) }
+                SliderRow("Zil hapı genişliği", draft.ringerWidthPct, 20f..98f, "%${draft.ringerWidthPct.toInt()} (ekran genişliği)") { draft = draft.copy(ringerWidthPct = it) }
                 SliderRow("Zil hapı yüksekliği", draft.ringerHeightPct, 100f..220f, "%${draft.ringerHeightPct.toInt()} (kapalı adaya göre)") { draft = draft.copy(ringerHeightPct = it) }
+                Text("Zil / Sessiz / Titreşim hapı çok büyük görünüyorsa genişliği ve yüksekliği buradan küçült. %100 yükseklik = kapalı ada kadar.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             }
             SwitchRow("Medya sesi göstergesi", "Ses tuşlarıyla (ya da kenar ses tuşlarıyla) medya sesini artırınca / azaltınca ada kısa süre hoparlör simgesi, seviye çubuğu ve yüzdeyle açılır", draft.volumeIndicator) { draft = draft.copy(volumeIndicator = it) }
             SwitchRow("Zil sesi seviyesi göstergesi", "Zil sesini (ses tuşları ya da ayarlar) değiştirince ada iOS gibi yana genişler: solda zil simgesi ve \"Zil\", sağda ince seviye çubuğu. Telefon sesli moddayken çalışır",
@@ -1006,16 +1008,28 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             }
         }
         sec("Alarm ve zamanlayıcı", "Saat uygulamasının alarmı / zamanlayıcısı ve adadan zamanlayıcı kurma") {
-            SwitchRow("Alarm ve zamanlayıcı adası", "Saat uygulamasında zamanlayıcı çalışırken kapalı adada turuncu simge ve kalan süre görünür; dokununca duraklat ve kapat düğmeleri açılır. Alarm çalınca ada genişler: ertele (zZ) ve kapat. Süre dolunca ada kendiliğinden genişler",
+            SwitchRow("Alarm, zamanlayıcı ve kronometre adası", "Saat uygulamasında zamanlayıcı ya da kronometre çalışırken kapalı adada turuncu simge ve süre görünür (zamanlayıcı halkası süre azaldıkça küçülür); dokununca duraklat ve kapat düğmeleri açılır. Alarm kurunca ada kısa süre alarm saatini gösterir; alarm çalınca ada genişler: ertele (zZ) ve kapat. Süre dolunca ada kendiliğinden genişler",
                 draft.more.clockIsland) { draft = draft.copy(more = draft.more.copy(clockIsland = it)) }
             SubHeader("Adadan zamanlayıcı kur")
             SegmentedTabs(listOf("Kapalı", "Dokununca", "Basılı tutunca"), draft.more.timerIdleTrigger) {
                 draft = draft.copy(more = draft.more.copy(timerIdleTrigger = it))
             }
-            Text("Boştaki adaya dokununca / basılı tutunca turuncu cetvelli kurma paneli açılır: cetveli sola / sağa kaydır, \"Zamanlayıcıyı Başlat\"a dokun. Bu seçenek açıkken boştaki adanın diğer dokunma özelliklerinden önce gelir.",
+            Text("Boştaki adaya dokununca / basılı tutunca turuncu cetvelli kurma paneli açılır: cetveli sola / sağa kaydır, \"Zamanlayıcıyı Başlat\"a dokun. Bu seçenek açıkken boştaki adanın diğer dokunma özelliklerinden önce gelir. Çalışan bir zamanlayıcının açık halinde büyük süreye dokunarak da kurma paneli açılır.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SwitchRow("Açık hali ekranı kaplasın", "Açıkken zamanlayıcı, kronometre ve alarm adası ekranın iki kenarına kadar uzanır (kenarlarda az boşluk). Kapalıyken ekranın ~%84'ü kadar olur",
+                draft.more.timerFullWidth) { draft = draft.copy(more = draft.more.copy(timerFullWidth = it)) }
             SwitchRow("Süre dolunca ses", "Adadan kurulan zamanlayıcı bitince alarm sesi çalar ve telefon titrer (ada kapatılana kadar, en çok 1 dakika)",
                 draft.more.timerSound) { draft = draft.copy(more = draft.more.copy(timerSound = it)) }
+        }
+        sec("Durum haplarının boyutu", "Şarj, Rahatsız Etmeyin, ağ, uçak modu, düşük pil hapı ne kadar uzun olsun") {
+            SliderRow("Şarj hapı genişliği", draft.more.chargePillW, 100f..400f, "${draft.more.chargePillW.toInt()} dp") {
+                draft = draft.copy(more = draft.more.copy(chargePillW = kotlin.math.round(it)))
+            }
+            SliderRow("Diğer hapların genişliği", draft.more.sysPillPct, 30f..98f, "%${draft.more.sysPillPct.toInt()} (ekran genişliği)") {
+                draft = draft.copy(more = draft.more.copy(sysPillPct = kotlin.math.round(it)))
+            }
+            Text("\"Diğer haplar\": Rahatsız Etmeyin, Wi-Fi / mobil veri, uçak modu, erişim noktası, zil sesi seviyesi ve ince düşük pil hapı. Zil / Sessiz / Titreşim hapının boyutu, \"Zil göstergesi genişlesin\" ayarının altındaki iki kaydırıcıdan değişir.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
         sec("Kilit simgesi", "Kilitliyken adanın solunda kilit, açılınca açık kilit") {
             SwitchRow("Kilit simgesi", "Ekran kilitliyken boştaki adanın solunda beyaz kilit görünür. Kilit açılınca (ana ekrana geçince) kilit açılır ve kısa süre sonra kaybolur. Face ID animasyonu sürerken gizlenir",

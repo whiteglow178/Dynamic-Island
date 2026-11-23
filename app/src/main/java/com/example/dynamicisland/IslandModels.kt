@@ -257,6 +257,13 @@ sealed interface IslandEvent {
     data class ClockTimer(
         val key: String, val endsAt: Long, val remainMs: Long, val paused: Boolean, val label: String,
         val pause: android.app.PendingIntent?, val resume: android.app.PendingIntent?, val cancel: android.app.PendingIntent?,
+        val open: android.app.PendingIntent? = null,
+    ) : IslandEvent
+    /** Saat uygulamasının kronometresi (ileri sayıyor ya da duraklatılmış). */
+    data class ClockStopwatch(
+        val key: String, val startedAt: Long, val elapsedMs: Long, val paused: Boolean,
+        val pause: android.app.PendingIntent?, val resume: android.app.PendingIntent?, val reset: android.app.PendingIntent?,
+        val open: android.app.PendingIntent? = null,
     ) : IslandEvent
     /** Saat uygulamasında alarm çalıyor ya da zamanlayıcının süresi doldu ([timerDone]). */
     data class ClockAlarm(

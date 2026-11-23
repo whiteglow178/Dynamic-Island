@@ -676,15 +676,30 @@ class IslandNotificationListener : NotificationListenerService() {
     private val resumeWords = listOf("devam", "resume", "başlat", "start", "продолжить")
     private val cancelWords = listOf("sıfırla", "reset", "sil", "delete", "iptal", "cancel", "kaldır", "remove", "сброс", "удалить")
     private val timerWords = listOf("zamanlayıcı", "timer", "geri sayım", "таймер")
+    private val watchWords = listOf("kronometre", "stopwatch", "секундомер", "tur", "lap")
+    private val lapWords = listOf("tur", "lap", "круг")
     private val timesUpWords = listOf("süre doldu", "süresi doldu", "time's up", "times up", "time is up", "время истекло", "bitti")
     private val mmssRx = Regex("""(?<!\d)(\d{1,2}):(\d{2})(?::(\d{2}))?(?!\d)""")
     private val hhmmRx = Regex("""\b\d{1,2}[:.]\d{2}\b""")
 
+    /**
+     * Türkçe büyük harfler de doğru eşleşsin: "İptal".lowercase() kök yerelde "i̇ptal" (noktalı i) olur ve "iptal" ile
+     * eşleşmez. Birleşik nokta atılır, ı -> i yapılır; aranan kelimeler de aynı biçime getirilir.
+     */
+    private fun normAct(s: String): String = s.lowercase(java.util.Locale.ROOT).replace("\u0307", "").replace('ı', 'i')
+
     private fun actionBy(n: Notification, words: List<String>): android.app.PendingIntent? =
         n.actions?.firstOrNull { a ->
-            val t = a.title?.toString()?.lowercase().orEmpty()
-            a.actionIntent != null && words.any { t.contains(it) }
+            val t = normAct(a.title?.toString().orEmpty())
+            a.actionIntent != null && words.any { t.contains(normAct(it)) }
         }?.actionIntent
+
+    /** Eylem sırası yedeği: saat uygulamalarında genelde ilk düğme duraklat / devam, son düğme sıfırla / iptaldir. */
+    private fun actionAt(n: Notification, first: Boolean): android.app.PendingIntent? {
+        val acts = n.actions?.filter { it.actionIntent != null }.orEmpty()
+        if (acts.isEmpty()) return null
+        return if (first) acts.first().actionIntent else if (acts.size >= 2) acts.last().actionIntent else null
+    }
 
     /** "4:32" / "1:04:09" -> ms */
     private fun mmssMs(m: MatchResult): Long {
@@ -709,9 +724,28 @@ class IslandNotificationListener : NotificationListenerService() {
         val ongoing = sbn.isOngoing || (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
         val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)
         val countDown = ex.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN)
-        val isTimer = timerWords.any { all.contains(it) } || countDown
+        val isWatch = !countDown && clockApp && (listOf("kronometre", "stopwatch", "секундомер").any { all.contains(it) } ||
+            (chrono && timerWords.none { all.contains(it) } && cat != Notification.CATEGORY_ALARM))
+        val isTimer = !isWatch && (timerWords.any { all.contains(it) } || countDown)
         val snooze = actionBy(n, snoozeWords)
         val dismiss = actionBy(n, dismissWords)
+        // 0) Kronometre (ileri sayan): duraklat / devam / sıfırla
+        if (isWatch && ongoing) {
+            val resume = actionBy(n, resumeWords)
+            val paused = !chrono && resume != null
+            val elapsed = mmssRx.find("$title $text")?.let { mmssMs(it) } ?: 0L
+            val started = if (chrono && !paused) n.`when` else 0L
+            if (started <= 0L && !paused && elapsed <= 0L) return clockKeys.contains(sbn.key)
+            clockKeys.add(sbn.key)
+            val pause = actionBy(n, pauseWords)
+            val reset = actionBy(n, cancelWords)?.takeIf { pi -> n.actions?.none { a -> a.actionIntent == pi && lapWords.any { normAct(a.title?.toString().orEmpty()).contains(it) } } != false }
+            IslandBus.post(IslandEvent.ClockStopwatch(
+                sbn.key, if (started > 0L) started else System.currentTimeMillis() - elapsed, elapsed, paused,
+                pause ?: if (!paused) actionAt(n, true) else null, resume ?: if (paused) actionAt(n, true) else null,
+                reset ?: actionAt(n, false), n.contentIntent,
+            ))
+            return true
+        }
         // 1) Süresi dolan zamanlayıcı
         if (isTimer && (timesUpWords.any { all.contains(it) } || (cat == Notification.CATEGORY_ALARM && !chrono && n.fullScreenIntent != null))) {
             clockKeys.add(sbn.key)
@@ -725,9 +759,12 @@ class IslandNotificationListener : NotificationListenerService() {
             val left = mmssRx.find("$title $text")?.let { mmssMs(it) } ?: 0L
             if (ends <= 0L && !paused) return clockKeys.contains(sbn.key)        // geri sayım bilgisi yok: normal bildirim
             clockKeys.add(sbn.key)
+            val pause = actionBy(n, pauseWords)
+            val resume = actionBy(n, resumeWords)
             IslandBus.post(IslandEvent.ClockTimer(
                 sbn.key, ends, if (paused) left else (ends - System.currentTimeMillis()).coerceAtLeast(0L), paused, "Zamanlayıcı",
-                actionBy(n, pauseWords), actionBy(n, resumeWords), actionBy(n, cancelWords),
+                pause ?: if (!paused) actionAt(n, true) else null, resume ?: if (paused) actionAt(n, true) else null,
+                actionBy(n, cancelWords) ?: actionAt(n, false), n.contentIntent,
             ))
             return true
         }

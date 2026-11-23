@@ -52,7 +52,7 @@ import kotlin.math.sin
 // ================================================================ Ölçüler
 /** Geniş iOS hapı (ağ, uçak modu, zil sesi, ince düşük pil): ekran genişliğinin ~%84'ü, kapalı adadan biraz yüksek. */
 fun sysPillWidthDp(cfg: IslandSettings, screenWDp: Float): Float =
-    (screenWDp * 0.84f).coerceIn(cfg.compactWidthDp + 40f, (screenWDp - 16f).coerceAtLeast(cfg.compactWidthDp + 40f))
+    (screenWDp * cfg.more.sysPillPct / 100f).coerceIn(cfg.compactWidthDp + 10f, (screenWDp - 12f).coerceAtLeast(cfg.compactWidthDp + 10f))
 
 fun sysPillHeightDp(cfg: IslandSettings): Float = max(cfg.compactHeightDp * 1.3f, cfg.compactHeightDp + 8f)
 

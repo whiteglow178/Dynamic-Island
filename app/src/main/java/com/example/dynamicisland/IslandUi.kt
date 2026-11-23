@@ -458,7 +458,7 @@ fun IslandRoot(
                 if (content.kind == StatusKind.Ringer) {
                     val swDp = LocalConfiguration.current.screenWidthDp.toFloat()
                     geo = geo.copy(ew = ringerPillWidthDp(cfg, content.silent || content.vibrate, swDp).dp, eh = ringerPillHeightDp(cfg).dp)
-                } else geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
+                } else geo = geo.copy(ew = chargePillWidthDp(cfg).dp, eh = chargePillHeightDp(cfg).dp)
             }
             // Ağ / uçak modu / zil sesi / ince düşük pil: geniş iOS hapı; düşük pil kartı: açık ada genişliğinde kart
             if (content is IslandContent.Status && content.isSysPill()) {
@@ -543,8 +543,13 @@ fun IslandRoot(
             }
             // Ada açılınca (ya da başka olay gelince) her zaman tam görünür
             LaunchedEffect(s.expanded) { if (s.expanded) popIn.snapTo(1f) }
+            // Durum içeriklerinde açık boyut değişince (ör. Rahatsız Etmeyin hapı -> kart) ada birden değil, yumuşakça büyür / küçülür
+            val stAnim = content is IslandContent.Status && cfg.animEnabled
+            val ewA by animateDpAsState(geo.ew, if (stAnim) tween(340, easing = FastOutSlowInEasing) else snap(), label = "stEw")
+            val ehA by animateDpAsState(geo.eh, if (stAnim) tween(340, easing = FastOutSlowInEasing) else snap(), label = "stEh")
+            val geoA = if (stAnim) geo.copy(ew = ewA, eh = ehA) else geo
             Box(Modifier.graphicsLayer { alpha = if (hidden) 0f else popIn.value }) {
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onSoundCapsuleStop = onSoundCapsuleStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX, fxMode = 2)
+            IslandPill(content, progress, geoA, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onSoundCapsuleStop = onSoundCapsuleStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX, fxMode = 2)
             }
         }
     }
@@ -879,6 +884,19 @@ fun IslandPill(
         label = "holdGrow",
     )
     val holdFrac = (cfg.more.holdGrowPct / 100f).coerceIn(0f, 0.6f)
+    // Basılı tutarken adanın içindeki simge / yazılar da ada ile birlikte büyür (üstten ortalı, oranı bozulmadan)
+    val holdScaleMod = Modifier.graphicsLayer {
+        val hg = holdGrow.value * holdFrac
+        if (hg > 0f) {
+            val cwPx = geo.cw.toPx(); val chPx = geo.ch.toPx()
+            val w = cwPx + (geo.ew.toPx() - cwPx) * hg
+            val h = chPx + (geo.eh.toPx() - chPx) * hg
+            val k = min(w / cwPx, h / chPx).coerceAtLeast(1f)
+            scaleX = k; scaleY = k
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+            translationY = (h - k * chPx) / 2f
+        }
+    }
     val holdModeNow by rememberUpdatedState(
         cfg.more.holdExpand && IslandActions.serviceLive && fxMode == 2 && !swallow &&
             content !is IslandContent.Idle && content !is IslandContent.Assistant && content !is IslandContent.Translate,
@@ -1075,7 +1093,7 @@ fun IslandPill(
         if (cfg.dotMode && compactVisible && !swallow && content !is IslandContent.Idle) {
             // Üç nokta modu: kapalı hal bir daire (nokta); olay simgesi ortada, ada açılırken solar
             Box(
-                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
                 contentAlignment = Alignment.Center,
             ) { SideGlyph(content, geo.ch) }
@@ -1084,7 +1102,7 @@ fun IslandPill(
         if (content is IslandContent.Status && (content.kind == StatusKind.Camera || content.kind == StatusKind.Mic) && compactVisible && !cfg.dotMode) {
             // Normal ada: kapalı halde kamera deliğinin sağında yeşil (kamera) / turuncu (mikrofon) nokta
             Box(
-                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
                 contentAlignment = Alignment.Center,
             ) {
@@ -1097,7 +1115,7 @@ fun IslandPill(
         if (content is IslandContent.Call && cfg.pillCallStyle && compactVisible && !cfg.dotMode) {
             // Hap tasarımı (küçültülmüş ada): solda yeşil, sağda kırmızı düğme, ortada süre / isim + ses dalgası
             Box(
-                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
             ) {
                 PillScaled(geo.cw, geo.ch, PILL_CALL_H_DP.dp, PILL_CALL_MIN_W_DP.dp) {
@@ -1108,7 +1126,7 @@ fun IslandPill(
 
         if (content is IslandContent.Call && !content.isIncoming && !cfg.pillCallStyle && compactVisible && !cfg.dotMode) {
             // Küçültülmüş aktif arama: solda yeşil telefon + süre, sağda renkli ses dalgası
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
                 Row(
                     Modifier.fillMaxSize().padding(start = 9.dp, end = 14.dp).then(fade),
@@ -1131,7 +1149,7 @@ fun IslandPill(
 
         if (content is IslandContent.Notif && compactVisible && !cfg.dotMode && cfg.notifInline) {
             // "Adayı genişletme": bildirim kapalı adanın içinde. Solda uygulama simgesi, yanında gönderen (kalın) + bildirim yazısı.
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 val sz = (geo.ch - 10.dp).coerceAtLeast(14.dp)
                 val titleSp = (geo.ch.value * 0.31f).coerceIn(7f, 12f)
                 val textSp = (titleSp - 1f).coerceAtLeast(6.5f)
@@ -1169,7 +1187,7 @@ fun IslandPill(
             }
         } else if (content is IslandContent.Notif && compactVisible && !cfg.dotMode) {
             // Küçültülmüş bildirim: solda uygulamanın simgesi (küçülürken görünür)
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 val sz = (geo.ch - 12.dp).coerceAtLeast(14.dp)
                 val ic = content.icon
                 Box(
@@ -1191,21 +1209,21 @@ fun IslandPill(
 
         if (compactVisible && !swallow && hasXCompact(content, cfg)) {
             // Yeni kapalı ada tasarımları (zamanlayıcı, ses kaydı, kulaklık, küçültülmüş gelen arama, logolu skor, navigasyon)
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 XCompactLayer(content, cfg, geo.cw, geo.ch) { (1f - progress.mean * 2f).coerceIn(0f, 1f) }
             }
         }
 
         if (content is IslandContent.Live && compactVisible && !cfg.dotMode && !hasXCompact(content, cfg)) {
             // Canlı etkinlik (navigasyon / sipariş): solda ok ya da uygulama simgesi, sağda mesafe / kalan süre
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 LiveCompact(content, Modifier.fillMaxSize().graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) })
             }
         }
 
         if (content is IslandContent.ScreenRec && compactVisible && !cfg.dotMode) {
             // Kapalı ada: kayıtta solda yavaşça yanıp sönen kırmızı nokta; geri sayımda halka + rakam; işlenirken dönen halka
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
                 ScreenRecCompact(content, Modifier.fillMaxSize().then(fade))
             }
@@ -1219,7 +1237,7 @@ fun IslandPill(
             else if (shz.foundAt == 0L) shz.foundAt = android.os.SystemClock.elapsedRealtime()
             val expandingNow = content.phase == SoundCapsulePhase.Listening ||
                 android.os.SystemClock.elapsedRealtime() - shz.foundAt < 1_500L
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 val fade = Modifier.graphicsLayer {
                     val c = (1f - progress.mean * 2f).coerceIn(0f, 1f)
                     alpha = c
@@ -1248,7 +1266,7 @@ fun IslandPill(
         if (content is IslandContent.Idle && compactVisible && !cfg.dotMode && cfg.islandPet != 0) {
             // Boştaki ada: içinde dolaşan küçük karakter -> IslandDecor.kt
             Box(
-                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
             ) {
                 IslandPet(cfg.islandPet, Modifier.fillMaxSize())
@@ -1265,7 +1283,7 @@ fun IslandPill(
         if (content is IslandContent.Media && midOn && compactVisible && !swallow) {
             // Orta boy müzik adası (iOS tarzı): kapak + şarkı + dalga, ilerleme çubuğu ve kontroller; ada bu boyutta açık kalır
             Box(
-                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
                     .graphicsLayer {
                         val c = (1f - progress.mean * 2f).coerceIn(0f, 1f)
                         alpha = c * swallowAlpha.value
@@ -1278,7 +1296,7 @@ fun IslandPill(
         if (content is IslandContent.Media && cfg.pillMusicStyle && !midOn && compactVisible && !swallow && !cfg.dotMode) {
             // Hap tasarımı (küçültülmüş ada): solda kapak, ortada başlık / dalga / ilerleme, sağda kontrol düğmeleri
             Box(
-                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) * swallowAlpha.value },
             ) {
                 PillScaled(geo.cw, geo.ch, PILL_MUSIC_H_DP.dp, PILL_MUSIC_MIN_W_DP.dp) {
@@ -1288,7 +1306,7 @@ fun IslandPill(
         }
         if (content is IslandContent.Media && !cfg.pillMusicStyle && !midOn && compactVisible && !swallow && !cfg.dotMode) {
             // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
-            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 val fade = Modifier.graphicsLayer {
                     val c = (1f - progress.mean * 2f).coerceIn(0f, 1f)
                     alpha = if (swallow) 0f else c * swallowAlpha.value
@@ -1449,6 +1467,8 @@ internal fun formatRemaining(ms: Long): String {
 
 /** Şarj görünümü: kapalı adadan biraz geniş, tek satır. Solda yazı, sağda yeşil yüzde + pil. */
 const val CHARGE_PILL_W_DP = 220f
+/** Şarj hapı genişliği (ayarlanabilir; en az kapalı ada kadar). */
+fun chargePillWidthDp(cfg: IslandSettings): Float = maxOf(cfg.more.chargePillW, cfg.compactWidthDp)
 const val REC_PILL_W_DP = 280f      // ekran kaydı: açık hal genişliği
 const val REC_PILL_H_DP = 72f       // ekran kaydı: açık hal yüksekliği
 const val REC_WIDE_MARGIN_DP = 10f  // ekran kaydı tam genişlik: ekranın sağ/sol kenarından boşluk
@@ -1465,9 +1485,9 @@ fun chargePillHeightDp(cfg: IslandSettings): Float = cfg.compactHeightDp + 4f
  */
 fun ringerPillWidthDp(cfg: IslandSettings, longText: Boolean, screenWDp: Float): Float =
     if (!cfg.ringerExpand) cfg.compactWidthDp
-    else (screenWDp * cfg.ringerWidthPct / 100f).coerceIn(cfg.compactWidthDp + 40f, (screenWDp - 16f).coerceAtLeast(cfg.compactWidthDp))
+    else (screenWDp * cfg.ringerWidthPct / 100f).coerceIn(cfg.compactWidthDp, (screenWDp - 12f).coerceAtLeast(cfg.compactWidthDp))
 fun ringerPillHeightDp(cfg: IslandSettings): Float =
-    if (cfg.ringerExpand) cfg.compactHeightDp * cfg.ringerHeightPct / 100f else cfg.compactHeightDp
+    if (cfg.ringerExpand) maxOf(cfg.compactHeightDp, cfg.compactHeightDp * cfg.ringerHeightPct / 100f) else cfg.compactHeightDp
 
 
 // ---------------------------------------------------------------- Kontrast ada / şarkının havası

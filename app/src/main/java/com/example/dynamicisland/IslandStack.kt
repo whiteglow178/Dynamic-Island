@@ -31,7 +31,7 @@ const val STACK_CLOSE_MS = 520L
 fun stackCardWidthDp(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = xExpandedSizeDp(c, cfg, screenWDp)?.first ?: when (c) {
     is IslandContent.ScreenRec -> recExpandedWidthDp(cfg, screenWDp)
     is IslandContent.Status -> when (c.kind) {
-        StatusKind.Charging -> CHARGE_PILL_W_DP
+        StatusKind.Charging -> chargePillWidthDp(cfg)
         StatusKind.Ringer -> ringerPillWidthDp(cfg, c.silent || c.vibrate, screenWDp)
         else -> cfg.expandedWidthDp
     }

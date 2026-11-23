@@ -88,7 +88,8 @@ private val X_PURPLE = Color(0xFF7D7AFF)
 // ================================================================ Ölçüler
 
 /** Zamanlayıcı / alarm hapının yüksekliği (açık). */
-fun timerPillHeightDp(cfg: IslandSettings): Float = max(cfg.compactHeightDp * 1.75f, 60f)
+fun timerPillHeightDp(cfg: IslandSettings): Float =
+    if (cfg.more.timerFullWidth) max(cfg.compactHeightDp * 2f, 66f) else max(cfg.compactHeightDp * 1.75f, 60f)
 
 /** Zamanlayıcı kurma panelinin yüksekliği. */
 const val TIMER_SET_H_DP = 150f
@@ -117,7 +118,8 @@ fun xExpandedSizeDp(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Pa
     val wide = sysPillWidthDp(cfg, sw)
     return when {
         c.kind == StatusKind.Timer && c.phase == 3 -> wide to TIMER_SET_H_DP
-        c.kind == StatusKind.Timer || c.kind == StatusKind.Alarm -> wide to timerPillHeightDp(cfg)
+        c.kind == StatusKind.Timer || c.kind == StatusKind.Alarm ->
+            (if (cfg.more.timerFullWidth) (sw - 12f).coerceAtLeast(wide) else wide) to timerPillHeightDp(cfg)
         c.kind == StatusKind.Focus && c.phase == 1 -> wide to focusCardHeightDp(cfg)
         c.kind == StatusKind.VoiceRec -> wide to voiceRecHeightDp(cfg)
         else -> null
@@ -168,18 +170,46 @@ private fun clockText(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
-/** Zamanlayıcıda kalan süre (çalışıyorsa saniyede birkaç kez yenilenir). */
+/**
+ * Zamanlayıcıda kalan süre; kronometrede (extra 2) geçen süre. Çalışıyorsa saniyede birkaç kez yenilenir.
+ */
 @Composable
 private fun rememberRemaining(c: IslandContent.Status): Long {
-    var now by remember(c.endsAt, c.phase) { mutableLongStateOf(System.currentTimeMillis()) }
-    if (c.phase == 0 && c.endsAt > 0L) LaunchedEffect(c.endsAt) {
-        while (true) { now = System.currentTimeMillis(); delay(200) }
+    val watch = c.extra == 2
+    var now by remember(c.endsAt, c.startedAt, c.phase) { mutableLongStateOf(System.currentTimeMillis()) }
+    val ticking = c.phase == 0 && (if (watch) c.startedAt > 0L else c.endsAt > 0L)
+    if (ticking) LaunchedEffect(c.endsAt, c.startedAt) {
+        while (true) { now = System.currentTimeMillis(); delay(if (watch) 100 else 200) }
     }
     return when {
         c.phase == 1 -> c.remainMs
+        watch -> (now - c.startedAt).coerceAtLeast(0L)
         c.endsAt > 0L -> (c.endsAt - now).coerceAtLeast(0L)
         else -> 0L
     }
+}
+
+/** Kronometre metni: 0:07,42 / 12:05,3 / 1:02:03 */
+private fun watchText(ms: Long): String {
+    val t = ms.coerceAtLeast(0)
+    val h = t / 3_600_000; val m = (t % 3_600_000) / 60_000; val s = (t % 60_000) / 1000; val cs = (t % 1000) / 10
+    return when {
+        h > 0 -> "%d:%02d:%02d".format(h, m, s)
+        else -> "%d:%02d,%02d".format(m, s, cs)
+    }
+}
+
+/**
+ * Azalan zamanlayıcı halkası (kapalı ada): soluk tam halka + kalan süre oranında turuncu yay.
+ * Süre azaldıkça yay saat yönünün tersine kısalır (ekran görüntüsündeki gibi).
+ */
+private fun DrawScope.drawTimerRing(frac: Float, color: Color) {
+    val sw = size.width * 0.16f
+    val r = size.minDimension / 2f - sw / 2f
+    val tl = Offset(size.width / 2f - r, size.height / 2f - r)
+    drawCircle(color.copy(alpha = 0.28f), r, style = Stroke(sw))
+    val f = frac.coerceIn(0f, 1f)
+    if (f > 0f) drawArc(color, -90f, 360f * f, false, tl, Size(r * 2f, r * 2f), style = Stroke(sw, cap = StrokeCap.Round))
 }
 
 // ================================================================ Zamanlayıcı / alarm
@@ -188,14 +218,21 @@ private fun rememberRemaining(c: IslandContent.Status): Long {
 @Composable
 internal fun TimerCompact(c: IslandContent.Status, modifier: Modifier = Modifier) {
     val left = rememberRemaining(c)
+    val watch = c.extra == 2
     Row(modifier.padding(start = 10.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Canvas(Modifier.size(16.dp)) {
+        Canvas(Modifier.size(17.dp)) {
             val sc = size.width / 24f
-            if (c.kind == StatusKind.Alarm) drawAlarmClock(X_ORANGE, Color.Black, sc) else drawStopwatch(X_ORANGE, sc)
+            when {
+                c.kind == StatusKind.Alarm -> drawAlarmClock(X_ORANGE, Color.Black, sc)
+                watch -> drawStopwatch(X_ORANGE, sc)
+                // Zamanlayıcı: kalan süre oranında azalan halka (toplam bilinmiyorsa tam halka)
+                else -> drawTimerRing(if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, X_ORANGE)
+            }
         }
         Spacer(Modifier.weight(1f))
         val txt = when {
             c.kind == StatusKind.Alarm -> c.value
+            watch -> watchText(left).substringBefore(',')
             c.phase == 2 -> "0:00"
             else -> clockText(left)
         }
@@ -214,6 +251,20 @@ internal fun TimerCompact(c: IslandContent.Status, modifier: Modifier = Modifier
 internal fun TimerPanel(c: IslandContent.Status, heightDp: Float, rb: RainbowStyle?) {
     val btn = (heightDp * 0.66f).coerceIn(36f, 52f).dp
     val orangeBg = X_ORANGE.copy(alpha = 0.30f)
+    if (c.kind == StatusKind.Alarm && c.phase == 1) {
+        // Alarm kuruldu bilgisi: [çalar saat] "Alarm 07:30" ............ "8 sa 12 dk sonra"
+        Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Canvas(Modifier.size((heightDp * 0.5f).coerceIn(22f, 32f).dp)) {
+                drawAlarmClock(X_ORANGE, Color.Black, size.width / 24f)
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("${c.title.ifBlank { "Alarm" }} ${c.value}", color = X_ORANGE, fontWeight = FontWeight.SemiBold,
+                fontSize = (heightDp * 0.30f).coerceIn(15f, 21f).sp, maxLines = 1, modifier = Modifier.weight(1f))
+            Text(c.subtitle.ifBlank { "Kuruldu" }, color = X_ORANGE.copy(alpha = 0.7f), fontWeight = FontWeight.Medium,
+                fontSize = (heightDp * 0.24f).coerceIn(12f, 16f).sp, maxLines = 1)
+        }
+        return
+    }
     if (c.kind == StatusKind.Alarm) {
         Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Canvas(Modifier.size((heightDp * 0.5f).coerceIn(22f, 32f).dp)) {
@@ -272,13 +323,20 @@ internal fun TimerPanel(c: IslandContent.Status, heightDp: Float, rb: RainbowSty
             Text(c.title.ifBlank { "Zamanlayıcı" }, color = X_ORANGE, fontWeight = FontWeight.SemiBold,
                 fontSize = (heightDp * 0.34f).coerceIn(17f, 24f).sp, maxLines = 1, modifier = Modifier.rainbowFill(rb))
         } else {
-            Text(c.title.ifBlank { "Zamanlayıcı" }, color = X_ORANGE, fontWeight = FontWeight.Medium,
+            val watch = c.extra == 2
+            Text(c.title.ifBlank { if (watch) "Kronometre" else "Zamanlayıcı" }, color = X_ORANGE, fontWeight = FontWeight.Medium,
                 fontSize = (heightDp * 0.24f).coerceIn(12f, 16f).sp, maxLines = 1,
                 modifier = Modifier.padding(top = (heightDp * 0.12f).dp))
             Spacer(Modifier.width(8.dp))
-            Text(clockText(left), color = X_ORANGE, fontWeight = FontWeight.Normal,
+            // Zamanlayıcıda süreye dokununca kurma paneli (cetvel) açılır
+            Text(if (watch) watchText(left) else clockText(left), color = X_ORANGE, fontWeight = FontWeight.Normal,
                 fontSize = (heightDp * 0.62f).coerceIn(26f, 44f).sp, maxLines = 1, softWrap = false,
-                modifier = Modifier.rainbowFill(rb))
+                modifier = Modifier.rainbowFill(rb).then(
+                    if (watch) Modifier
+                    else Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                        IslandActions.onOpenTimerSetter()
+                    }
+                ))
         }
     }
 }

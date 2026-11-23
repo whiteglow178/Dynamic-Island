@@ -320,6 +320,11 @@ private fun SideSlot(
     val alive by remember(present, gateOpen) { derivedStateOf { (present && gateOpen) || sep.value > 0.004f } }
     if (!alive) { hold.c = null; return }
     val shown = hold.c ?: return
+    // Mikrofon / kamera noktası: daha küçük, ayrı bir baloncuk; dokunulmaz (ortadaki olayın açılmasını engellemez)
+    val privacy = !cfg.dotMode && !cfg.iphoneCircleOn() &&
+        (shown as? IslandContent.Status)?.let { it.kind == StatusKind.Camera || it.kind == StatusKind.Mic } == true
+    val scaleK = if (privacy) 0.68f else 1f
+    val privacyNow by rememberUpdatedState(privacy)
 
     Box(Modifier.fillMaxSize()) {
         // Köprü + baloncuk gövdesi (ada ile aynı renk)
@@ -330,7 +335,7 @@ private fun SideSlot(
             if (k <= 0f) return@Canvas
             val ch = geo.ch.toPx()
             val rm = min(36.dp.toPx(), ch / 2f)                      // ortadaki adanın uç yarıçapı
-            val rs = slotSizeDp(cfg, dir, level).dp.toPx() / 2f      // bu baloncuğun yarıçapı (nokta modunda ayrı ayarlı)
+            val rs = slotSizeDp(cfg, dir, level).dp.toPx() / 2f * scaleK   // bu baloncuğun yarıçapı (nokta modunda ayrı ayarlı)
             val gap = sideGapDp(cfg).dp.toPx()
             val skip = if (level == 2) sideSizeDp(cfg, dir).dp.toPx() + gap else 0f   // dış nokta: iç noktanın yerini atlar
             val cx = size.width / 2f
@@ -348,7 +353,7 @@ private fun SideSlot(
             }
         }
         // İçerik: baloncuk ayrıldıkça görünür (albüm kapağı / kırmızı nokta / telefon simgesi)
-        val sizeDp = slotSizeDp(cfg, dir, level).dp
+        val sizeDp = (slotSizeDp(cfg, dir, level) * scaleK).dp
         Box(
             Modifier.align(cfg.vAlign())
                 .offset { IntOffset(0, (((geo.ch.toPx() - sizeDp.toPx()) / 2f) * (if (cfg.invertedIsland) -1f else 1f)).roundToInt()) }
@@ -362,8 +367,8 @@ private fun SideSlot(
                     alpha = if (hide) 0f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present && !inside) 1f else if (gone[0] && !inside) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
                 }
                 // Parmak değdiği anda haber verilir (dokunuşu tüketmez): servis pencereyi önceden büyütür
-                .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); onPress() } }
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (present) onTap() },
+                .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); if (!privacyNow) onPress() } }
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (present && !privacy) onTap() },
             contentAlignment = Alignment.Center,
         ) { SideGlyph(shown, sizeDp) }
     }

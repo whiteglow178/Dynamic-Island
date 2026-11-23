@@ -1,5 +1,10 @@
 package com.example.dynamicisland
 
+import android.app.AlarmManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
@@ -18,10 +23,18 @@ object ClockFlags {
 }
 
 /**
- * Alarm ve zamanlayıcı adası.
+ * Alarm, zamanlayıcı ve kronometre adası.
  *  - Ada zamanlayıcısı: adadaki cetvelden kurulur; duraklat / devam / iptal / yeniden başlat adada yapılır.
  *    Süre dolunca ada genişler, (ayar açıksa) alarm sesi çalar ve telefon titrer.
- *  - Saat uygulamasının zamanlayıcısı ve çalan alarmı bildirimden okunur; düğmeler bildirimin kendi eylemlerini tetikler.
+ *  - Saat uygulamasının zamanlayıcısı, kronometresi ve çalan alarmı bildirimden okunur; düğmeler bildirimin kendi
+ *    eylemlerini tetikler (eylem bulunamazsa saat uygulaması açılır). Düğmeye basınca ada hemen tepki verir.
+ *  - Alarm kurulunca (sistem "sonraki alarm" yayını) ada kısa süre "Alarm 07:30 · kuruldu" gösterir. Alarm saati gelince
+ *    bildirim okunamazsa da ada genişleyip alarmı gösterir.
+ *
+ * İçerik kuralları (IslandContent.Status):
+ *  - Zamanlayıcı: kind Timer; extra 0 ada, 1 saat uygulaması; phase 0 çalışıyor, 1 duraklatıldı, 2 süre doldu, 3 kurma paneli.
+ *  - Kronometre: kind Timer, extra 2; phase 0 çalışıyor (startedAt), 1 duraklatıldı (remainMs = geçen süre).
+ *  - Alarm: kind Alarm; phase 1 kuruldu bilgisi, 2 çalıyor; extra 1 bildirimden, 3 alarm saatinden (yedek).
  */
 class ClockController(private val host: IslandHost) {
 
@@ -35,7 +48,17 @@ class ClockController(private val host: IslandHost) {
 
     // ---- saat uygulaması
     private var sysTimer: IslandEvent.ClockTimer? = null
+    private var sysTimerTotal = 0L      // görülen en büyük kalan süre: kapalı adadaki halka bunun oranıyla azalır
+    private var sysWatch: IslandEvent.ClockStopwatch? = null
     private var sysAlarm: IslandEvent.ClockAlarm? = null
+
+    // ---- alarm saati (AlarmManager)
+    private var receiver: BroadcastReceiver? = null
+    private var nextTrigger = 0L
+    private var fallbackJob: Job? = null
+    private var fallbackAlarm: Pair<String, android.app.PendingIntent?>? = null   // (saat, saat uygulamasını açan hedef)
+    private var fallbackAutoJob: Job? = null
+    private var lastRingAt = 0L
 
     private var ring: Ringtone? = null
 
@@ -43,58 +66,90 @@ class ClockController(private val host: IslandHost) {
 
     private val islandRunning: Boolean get() = !done && (pausedLeft >= 0L || endsAt > now())
 
-    /** Adada gösterilecek zamanlayıcı / alarm varsa (arka plan olayı olarak) true. */
+    /** Adada gösterilecek zamanlayıcı / kronometre / alarm varsa (arka plan olayı olarak) true. */
     fun active(): Boolean = content() != null
 
     /** Çalan alarm ya da süresi dolmuş zamanlayıcı: ada açık kalır, başka olaylar araya girmez. */
-    val ringing: Boolean get() = done || sysAlarm != null
+    val ringing: Boolean get() = done || sysAlarm != null || fallbackAlarm != null
 
-    /** Şu anki zamanlayıcı / alarm görünümü. */
+    /** Şu anki zamanlayıcı / kronometre / alarm görünümü. */
     fun content(): IslandContent.Status? {
         val a = sysAlarm
+        val fb = fallbackAlarm
+        val t = sysTimer
+        val w = sysWatch
         return when {
-            a != null && a.timerDone -> IslandContent.Status(StatusKind.Timer, title = a.label.ifBlank { "Zamanlayıcı" }, phase = 2, extra = 1)
+            a != null && a.timerDone -> IslandContent.Status(StatusKind.Timer, title = "Zamanlayıcı", phase = 2, extra = 1)
             a != null -> IslandContent.Status(StatusKind.Alarm, title = a.label.ifBlank { "Alarm" }, value = a.time, phase = 2, extra = 1)
+            fb != null -> IslandContent.Status(StatusKind.Alarm, title = "Alarm", value = fb.first, phase = 2, extra = 3)
             done -> IslandContent.Status(StatusKind.Timer, title = "Zamanlayıcı", phase = 2, totalMs = totalMs)
             islandRunning -> IslandContent.Status(
                 StatusKind.Timer, title = "Zamanlayıcı",
                 endsAt = if (pausedLeft >= 0L) 0L else endsAt, totalMs = totalMs,
                 phase = if (pausedLeft >= 0L) 1 else 0, remainMs = pausedLeft.coerceAtLeast(0L),
             )
-            sysTimer != null -> sysTimer!!.let { t ->
-                if (!t.paused && t.endsAt <= now()) null
-                else IslandContent.Status(
-                    StatusKind.Timer, title = t.label.ifBlank { "Zamanlayıcı" },
-                    endsAt = if (t.paused) 0L else t.endsAt, phase = if (t.paused) 1 else 0, remainMs = t.remainMs, extra = 1,
-                )
-            }
+            t != null && (t.paused || t.endsAt > now()) -> IslandContent.Status(
+                StatusKind.Timer, title = "Zamanlayıcı",
+                endsAt = if (t.paused) 0L else t.endsAt, totalMs = sysTimerTotal,
+                phase = if (t.paused) 1 else 0, remainMs = t.remainMs, extra = 1,
+            )
+            w != null -> IslandContent.Status(
+                StatusKind.Timer, title = "Kronometre",
+                startedAt = if (w.paused) 0L else w.startedAt, phase = if (w.paused) 1 else 0, remainMs = w.elapsedMs, extra = 2,
+            )
             else -> null
         }
     }
 
     /** Bu içerik bu denetleyiciye mi ait? (servis ortadaki olayı tanımak için kullanır) */
     fun owns(c: IslandContent.Status): Boolean =
-        (c.kind == StatusKind.Timer || c.kind == StatusKind.Alarm) && c.phase != 3 && content() != null
+        (c.kind == StatusKind.Timer || c.kind == StatusKind.Alarm) && c.phase != 3 && !(c.kind == StatusKind.Alarm && c.phase == 1) &&
+            content() != null
+
+    // ================================================================ Başlat / durdur
+
+    /** Alarm kurma yayınını dinlemeye başlar (servis açılınca bir kez). */
+    fun start() {
+        if (receiver != null) return
+        val am = host.context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        nextTrigger = runCatching { am?.nextAlarmClock?.triggerTime ?: 0L }.getOrDefault(0L)
+        scheduleFallback(am)
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) { host.scope.launch { runCatching { onNextAlarmChanged() } } }
+        }
+        val f = IntentFilter(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
+        val ok = runCatching {
+            if (Build.VERSION.SDK_INT >= 33) host.context.registerReceiver(r, f, Context.RECEIVER_EXPORTED)
+            else host.context.registerReceiver(r, f)
+        }.isSuccess
+        if (ok) receiver = r
+    }
+
+    fun destroy() {
+        doneJob?.cancel(); doneAutoJob?.cancel(); fallbackJob?.cancel(); fallbackAutoJob?.cancel()
+        receiver?.let { runCatching { host.context.unregisterReceiver(it) } }
+        receiver = null
+        stopRing()
+    }
 
     // ================================================================ Görünümü yayınla
+
+    private fun isClockView(c: IslandContent?): Boolean {
+        val s = c as? IslandContent.Status ?: return false
+        return (s.kind == StatusKind.Timer || s.kind == StatusKind.Alarm) && s.phase != 3 && !(s.kind == StatusKind.Alarm && s.phase == 1)
+    }
 
     /** Ortadaki zamanlayıcı görünümünü yeniler (açık / kapalı durumu korunur). */
     private fun refresh() {
         host.syncBgOrder()
         val c = content()
         host.update { st ->
-            val cur = st.content as? IslandContent.Status
-            if (cur != null && (cur.kind == StatusKind.Timer || cur.kind == StatusKind.Alarm) && cur.phase != 3) {
-                if (c != null) st.copy(content = c) else st
-            } else st
+            if (isClockView(st.content)) { if (c != null) st.copy(content = c) else st } else st
         }
-        if (c == null) {
-            val cur = host.content as? IslandContent.Status
-            if (cur != null && (cur.kind == StatusKind.Timer || cur.kind == StatusKind.Alarm) && cur.phase != 3) host.collapseSoon()
-        }
+        if (c == null && isClockView(host.content)) host.collapseSoon()
     }
 
-    /** Görünümü ortada, kapalı olarak gösterir (yeni başlayan zamanlayıcı). */
+    /** Görünümü ortada, kapalı olarak gösterir (yeni başlayan zamanlayıcı / kronometre). */
     private fun showCompact() {
         host.syncBgOrder()
         val c = content() ?: return
@@ -105,6 +160,7 @@ class ClockController(private val host: IslandHost) {
 
     /** Çalan alarm / dolan zamanlayıcı: ada açılır ve kullanıcı kapatana kadar açık kalır. */
     private fun showRinging() {
+        lastRingAt = now()
         host.syncBgOrder()
         val c = content() ?: return
         if (host.busy) { host.update { it }; return }
@@ -153,66 +209,97 @@ class ClockController(private val host: IslandHost) {
         doneAutoJob = host.scope.launch { delay(60_000L); if (done) dismiss() }
     }
 
+    /** Duraklat / devam. Ada hemen tepki verir; saat uygulamasına da kendi eylemi gönderilir. */
     fun pauseResume() {
         val t = sysTimer
-        if (islandRunning) {
-            if (pausedLeft >= 0L) {
-                endsAt = now() + pausedLeft
-                pausedLeft = -1L
-                scheduleDone()
-            } else {
-                pausedLeft = (endsAt - now()).coerceAtLeast(0L)
-                doneJob?.cancel()
+        val w = sysWatch
+        when {
+            islandRunning -> {
+                if (pausedLeft >= 0L) {
+                    endsAt = now() + pausedLeft
+                    pausedLeft = -1L
+                    scheduleDone()
+                } else {
+                    pausedLeft = (endsAt - now()).coerceAtLeast(0L)
+                    doneJob?.cancel()
+                }
+                refresh()
             }
-            refresh()
-        } else if (t != null) {
-            host.send(if (t.paused) t.resume ?: t.pause else t.pause ?: t.resume)
+            t != null -> {
+                val pi = if (t.paused) t.resume ?: t.pause else t.pause ?: t.resume
+                if (pi != null) host.send(pi) else host.send(t.open)
+                // Bildirim güncellenene kadar ada hemen yeni durumu gösterir
+                sysTimer = if (t.paused) t.copy(paused = false, endsAt = now() + t.remainMs)
+                    else t.copy(paused = true, remainMs = (t.endsAt - now()).coerceAtLeast(0L))
+                refresh()
+            }
+            w != null -> {
+                val pi = if (w.paused) w.resume ?: w.pause else w.pause ?: w.resume
+                if (pi != null) host.send(pi) else host.send(w.open)
+                sysWatch = if (w.paused) w.copy(paused = false, startedAt = now() - w.elapsedMs)
+                    else w.copy(paused = true, elapsedMs = (now() - w.startedAt).coerceAtLeast(0L))
+                refresh()
+            }
         }
         if (host.expanded) host.scheduleCollapse(5_000L)
     }
 
+    /** X: zamanlayıcıyı iptal eder / kronometreyi sıfırlar. */
     fun cancel() {
         val t = sysTimer
-        if (islandRunning || done) {
-            doneJob?.cancel(); doneAutoJob?.cancel()
-            stopRing()
-            done = false; endsAt = 0L; pausedLeft = -1L
-        } else if (t != null) {
-            host.send(t.cancel)
-            sysTimer = null
+        val w = sysWatch
+        when {
+            islandRunning || done -> {
+                doneJob?.cancel(); doneAutoJob?.cancel()
+                stopRing()
+                done = false; endsAt = 0L; pausedLeft = -1L
+            }
+            t != null -> {
+                if (t.cancel != null) host.send(t.cancel) else host.send(t.open)
+                sysTimer = null
+            }
+            w != null -> {
+                if (w.reset != null) host.send(w.reset) else host.send(w.open)
+                sysWatch = null
+            }
         }
         finishView()
     }
 
     fun restart() {
-        if (totalMs > 0L && sysAlarm == null) start(totalMs) else dismiss()
+        if (totalMs > 0L && sysAlarm == null && fallbackAlarm == null) start(totalMs) else dismiss()
     }
 
     /** Alarm / dolan zamanlayıcı: kapat. */
     fun dismiss() {
         val a = sysAlarm
-        if (a != null) {
-            host.send(a.dismiss)
-            sysAlarm = null
-        } else {
-            doneAutoJob?.cancel()
-            stopRing()
-            done = false; endsAt = 0L; pausedLeft = -1L
+        when {
+            a != null -> { host.send(a.dismiss); sysAlarm = null }
+            fallbackAlarm != null -> { fallbackAutoJob?.cancel(); fallbackAlarm = null }
+            else -> {
+                doneAutoJob?.cancel()
+                stopRing()
+                done = false; endsAt = 0L; pausedLeft = -1L
+            }
         }
         finishView()
     }
 
+    /** Alarm: ertele (yedek alarmda saat uygulaması açılır). */
     fun snooze() {
-        val a = sysAlarm ?: return dismiss()
-        host.send(a.snooze ?: a.dismiss)
-        sysAlarm = null
+        val a = sysAlarm
+        val fb = fallbackAlarm
+        when {
+            a != null -> { host.send(a.snooze ?: a.dismiss); sysAlarm = null }
+            fb != null -> { host.send(fb.second); fallbackAutoJob?.cancel(); fallbackAlarm = null }
+            else -> return dismiss()
+        }
         finishView()
     }
 
     private fun finishView() {
         host.syncBgOrder()
-        val cur = host.content as? IslandContent.Status
-        if (cur != null && (cur.kind == StatusKind.Timer || cur.kind == StatusKind.Alarm)) {
+        if (isClockView(host.content)) {
             val next = content()
             if (next != null) host.update { IslandUiState(next, expanded = false) } else host.collapseSoon()
         } else host.update { it }
@@ -228,18 +315,29 @@ class ClockController(private val host: IslandHost) {
     // ================================================================ Saat uygulaması (bildirim)
 
     fun onSysTimer(e: IslandEvent.ClockTimer) {
-        val first = sysTimer == null
+        val first = sysTimer?.key != e.key
+        if (first) sysTimerTotal = 0L
+        val left = if (e.paused) e.remainMs else (e.endsAt - now()).coerceAtLeast(0L)
+        sysTimerTotal = maxOf(sysTimerTotal, left)
         sysTimer = e
         if (sysAlarm?.key == e.key) sysAlarm = null
         if (first && !islandRunning && !done) {
-            val cur = host.content
-            if (!host.expanded || cur is IslandContent.Status) showCompact() else host.update { it }
+            if (!host.expanded || isClockView(host.content)) showCompact() else host.update { it }
+        } else refresh()
+    }
+
+    fun onSysStopwatch(e: IslandEvent.ClockStopwatch) {
+        val first = sysWatch?.key != e.key
+        sysWatch = e
+        if (first && !islandRunning && !done && sysTimer == null) {
+            if (!host.expanded || isClockView(host.content)) showCompact() else host.update { it }
         } else refresh()
     }
 
     fun onSysAlarm(e: IslandEvent.ClockAlarm) {
         val same = sysAlarm?.key == e.key
         sysAlarm = e
+        fallbackAutoJob?.cancel(); fallbackAlarm = null
         if (e.timerDone && sysTimer?.key == e.key) sysTimer = null
         if (!same) showRinging() else refresh()
     }
@@ -248,7 +346,54 @@ class ClockController(private val host: IslandHost) {
         var changed = false
         if (sysAlarm?.key == key) { sysAlarm = null; changed = true }
         if (sysTimer?.key == key) { sysTimer = null; changed = true }
+        if (sysWatch?.key == key) { sysWatch = null; changed = true }
         if (changed) finishView()
+    }
+
+    // ================================================================ Alarm kuruldu / alarm saati geldi
+
+    private fun hhmm(ms: Long): String = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ms))
+
+    private fun onNextAlarmChanged() {
+        val am = host.context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val info = runCatching { am.nextAlarmClock }.getOrNull()
+        val trig = info?.triggerTime ?: 0L
+        val prev = nextTrigger
+        nextTrigger = trig
+        scheduleFallback(am)
+        if (!host.settings.more.clockIsland) return
+        // Yeni bir alarm kuruldu (çalan alarm kapatıldıktan hemen sonraki "sonraki alarm" değişimi sayılmaz)
+        if (trig > now() + 30_000L && trig != prev && now() - lastRingAt > 120_000L && !host.blocked && !ringing) {
+            val left = trig - now()
+            val h = left / 3_600_000L
+            val m = (left % 3_600_000L) / 60_000L
+            val rel = if (h > 0) "$h sa $m dk sonra" else "$m dk sonra"
+            host.showTemporarily(
+                IslandContent.Status(StatusKind.Alarm, title = "Alarm", value = hhmm(trig), subtitle = rel, phase = 1),
+                2_600L,
+            )
+        }
+    }
+
+    /** Alarm saati gelince bildirim okunamamışsa da ada alarmı gösterir (saat uygulamasının açma hedefiyle). */
+    private fun scheduleFallback(am: AlarmManager?) {
+        fallbackJob?.cancel()
+        val info = runCatching { am?.nextAlarmClock }.getOrNull() ?: return
+        val trig = info.triggerTime
+        val wait = trig - now()
+        if (wait <= 0L) return
+        fallbackJob = host.scope.launch {
+            delay(wait + 4_000L)
+            if (!host.settings.more.clockIsland) return@launch
+            if (sysAlarm != null || done || now() - lastRingAt < 30_000L) return@launch
+            fallbackAlarm = hhmm(trig) to info.showIntent
+            showRinging()
+            fallbackAutoJob?.cancel()
+            fallbackAutoJob = host.scope.launch {
+                delay(60_000L)
+                if (fallbackAlarm != null) { fallbackAlarm = null; finishView() }
+            }
+        }
     }
 
     // ================================================================ Ses + titreşim
@@ -269,25 +414,19 @@ class ClockController(private val host: IslandHost) {
         }
         runCatching {
             val pattern = longArrayOf(0, 500, 500)
-            val v = if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
-                else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
-            v?.vibrate(VibrationEffect.createWaveform(pattern, 0))
+            vibrator()?.vibrate(VibrationEffect.createWaveform(pattern, 0))
         }
+    }
+
+    private fun vibrator(): Vibrator? {
+        val ctx = host.context
+        return if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
     }
 
     private fun stopRing() {
         runCatching { ring?.stop() }
         ring = null
-        runCatching {
-            val ctx = host.context
-            val v = if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
-                else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
-            v?.cancel()
-        }
-    }
-
-    fun destroy() {
-        doneJob?.cancel(); doneAutoJob?.cancel()
-        stopRing()
+        runCatching { vibrator()?.cancel() }
     }
 }

@@ -620,6 +620,9 @@ data class MoreSettings(
     val callWaveGreen: Boolean = false,     // arama ses dalgası tamamen yeşil (yeşil -> turuncu yerine)
     val incomingMinimize: Boolean = true,   // gelen arama yukarı kaydırınca küçülsün (solda kişi, sağda gri telefon)
     val voiceRecIsland: Boolean = true,     // ses kaydı sürerken adada dalga + süre
+    val timerFullWidth: Boolean = true,     // açık zamanlayıcı / alarm / kronometre ekranı kaplasın (kenarlarda az boşluk)
+    val sysPillPct: Float = 84f,            // Rahatsız Etmeyin / ağ / uçak / ince düşük pil hapı genişliği: ekranın yüzdesi
+    val chargePillW: Float = 220f,          // şarj hapı genişliği (dp)
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -758,6 +761,7 @@ class SettingsRepository(context: Context) {
         val X_HOLDMS = floatPreferencesKey("x_holdms"); val X_HOLDG = floatPreferencesKey("x_holdg"); val X_HPC = booleanPreferencesKey("x_hpc")
         val X_FTAP = booleanPreferencesKey("x_ftap"); val X_FTOG = booleanPreferencesKey("x_ftog"); val X_CICON = booleanPreferencesKey("x_cicon")
         val X_CWAVE = booleanPreferencesKey("x_cwave"); val X_INMIN = booleanPreferencesKey("x_inmin"); val X_VREC = booleanPreferencesKey("x_vrec")
+        val X_TFULL = booleanPreferencesKey("x_tfull"); val X_SYSW = floatPreferencesKey("x_sysw"); val X_CHGW = floatPreferencesKey("x_chgw")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1071,6 +1075,9 @@ class SettingsRepository(context: Context) {
                 focusTapExpand = p[K.X_FTAP] ?: d.more.focusTapExpand, focusToggle = p[K.X_FTOG] ?: d.more.focusToggle,
                 callIconOnly = p[K.X_CICON] ?: d.more.callIconOnly, callWaveGreen = p[K.X_CWAVE] ?: d.more.callWaveGreen,
                 incomingMinimize = p[K.X_INMIN] ?: d.more.incomingMinimize, voiceRecIsland = p[K.X_VREC] ?: d.more.voiceRecIsland,
+                timerFullWidth = p[K.X_TFULL] ?: d.more.timerFullWidth,
+                sysPillPct = (p[K.X_SYSW] ?: d.more.sysPillPct).coerceIn(30f, 98f),
+                chargePillW = (p[K.X_CHGW] ?: d.more.chargePillW).coerceIn(100f, 400f),
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1208,6 +1215,7 @@ class SettingsRepository(context: Context) {
             it[K.X_HOLDMS] = m.holdExpandMs; it[K.X_HOLDG] = m.holdGrowPct; it[K.X_HPC] = m.headphoneCompact
             it[K.X_FTAP] = m.focusTapExpand; it[K.X_FTOG] = m.focusToggle; it[K.X_CICON] = m.callIconOnly
             it[K.X_CWAVE] = m.callWaveGreen; it[K.X_INMIN] = m.incomingMinimize; it[K.X_VREC] = m.voiceRecIsland
+            it[K.X_TFULL] = m.timerFullWidth; it[K.X_SYSW] = m.sysPillPct; it[K.X_CHGW] = m.chargePillW
         }
     }
 
