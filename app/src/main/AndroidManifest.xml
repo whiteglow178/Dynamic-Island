@@ -45,7 +45,7 @@
             android:name=".MainActivity"
             android:exported="true" />
 
-        <!-- Uygulama ikonu secenekleri: ayni MainActivity'ye giden iki takma ad, ayni anda yalnizca biri acik -->
+        <!-- Uygulama ikonu secenekleri: ayni MainActivity'ye giden uc takma ad, ayni anda yalnizca biri acik -->
         <activity-alias
             android:name=".IconLight"
             android:enabled="true"
@@ -66,6 +66,20 @@
             android:exported="true"
             android:icon="@mipmap/ic_launcher_dark"
             android:roundIcon="@mipmap/ic_launcher_dark_round"
+            android:label="Omni Island"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconBlack"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_black"
+            android:roundIcon="@mipmap/ic_launcher_black_round"
             android:label="Omni Island"
             android:targetActivity=".MainActivity">
             <intent-filter>
