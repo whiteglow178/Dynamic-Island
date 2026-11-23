@@ -59,6 +59,8 @@ class ClockController(private val host: IslandHost) {
     private var fallbackAlarm: Pair<String, android.app.PendingIntent?>? = null   // (saat, saat uygulamasını açan hedef)
     private var fallbackAutoJob: Job? = null
     private var lastRingAt = 0L
+    private var lastToggleAt = 0L       // duraklat / devam düğmesine son basılış: bildirim yeniden kurulurken ada kapanmasın
+    private var goneJob: Job? = null
 
     private var ring: Ringtone? = null
 
@@ -226,6 +228,7 @@ class ClockController(private val host: IslandHost) {
                 refresh()
             }
             t != null -> {
+                lastToggleAt = now()
                 val pi = if (t.paused) t.resume ?: t.pause else t.pause ?: t.resume
                 if (pi != null) host.send(pi) else host.send(t.open)
                 // Bildirim güncellenene kadar ada hemen yeni durumu gösterir
@@ -234,6 +237,7 @@ class ClockController(private val host: IslandHost) {
                 refresh()
             }
             w != null -> {
+                lastToggleAt = now()
                 val pi = if (w.paused) w.resume ?: w.pause else w.pause ?: w.resume
                 if (pi != null) host.send(pi) else host.send(w.open)
                 sysWatch = if (w.paused) w.copy(paused = false, startedAt = now() - w.elapsedMs)
@@ -314,9 +318,16 @@ class ClockController(private val host: IslandHost) {
 
     // ================================================================ Saat uygulaması (bildirim)
 
-    fun onSysTimer(e: IslandEvent.ClockTimer) {
-        val first = sysTimer?.key != e.key
+    fun onSysTimer(ev: IslandEvent.ClockTimer) {
+        goneJob?.cancel()
+        val prev = sysTimer
+        val first = prev?.key != ev.key
         if (first) sysTimerTotal = 0L
+        // Duraklatılmış bildirim kalan süreyi yazmıyorsa son bilinen kalan süre korunur
+        val e = if (ev.paused && ev.remainMs <= 0L && prev != null && !first) {
+            val keep = if (prev.paused) prev.remainMs else (prev.endsAt - now()).coerceAtLeast(0L)
+            ev.copy(remainMs = keep, pause = ev.pause ?: prev.pause, resume = ev.resume ?: prev.resume, cancel = ev.cancel ?: prev.cancel)
+        } else ev
         val left = if (e.paused) e.remainMs else (e.endsAt - now()).coerceAtLeast(0L)
         sysTimerTotal = maxOf(sysTimerTotal, left)
         sysTimer = e
@@ -326,8 +337,13 @@ class ClockController(private val host: IslandHost) {
         } else refresh()
     }
 
-    fun onSysStopwatch(e: IslandEvent.ClockStopwatch) {
-        val first = sysWatch?.key != e.key
+    fun onSysStopwatch(ev: IslandEvent.ClockStopwatch) {
+        goneJob?.cancel()
+        val prev = sysWatch
+        val first = prev?.key != ev.key
+        val e = if (ev.paused && ev.elapsedMs <= 0L && prev != null && !first) {
+            ev.copy(elapsedMs = if (prev.paused) prev.elapsedMs else (now() - prev.startedAt).coerceAtLeast(0L))
+        } else ev
         sysWatch = e
         if (first && !islandRunning && !done && sysTimer == null) {
             if (!host.expanded || isClockView(host.content)) showCompact() else host.update { it }
@@ -343,6 +359,16 @@ class ClockController(private val host: IslandHost) {
     }
 
     fun onSysGone(key: String) {
+        // Duraklat / devam basıldıktan hemen sonra saat uygulaması bildirimi silip yeniden kurabilir: kısa süre beklenir
+        if (now() - lastToggleAt < 2_500L && (sysTimer?.key == key || sysWatch?.key == key)) {
+            goneJob?.cancel()
+            goneJob = host.scope.launch { delay(2_500L); removeSys(key) }
+            return
+        }
+        removeSys(key)
+    }
+
+    private fun removeSys(key: String) {
         var changed = false
         if (sysAlarm?.key == key) { sysAlarm = null; changed = true }
         if (sysTimer?.key == key) { sysTimer = null; changed = true }

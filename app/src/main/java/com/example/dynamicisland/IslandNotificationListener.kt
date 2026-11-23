@@ -646,6 +646,7 @@ class IslandNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (liveKeys.remove(sbn.key)) IslandBus.post(IslandEvent.LiveGone(sbn.key))
+        timerKeys.remove(sbn.key); watchKeys.remove(sbn.key)
         if (clockKeys.remove(sbn.key)) IslandBus.post(IslandEvent.ClockGone(sbn.key))
         if (voiceKeys.remove(sbn.key)) IslandBus.post(IslandEvent.VoiceRecGone(sbn.key))
         if (sbn.packageName in soundCapsulePkgs) {
@@ -672,8 +673,12 @@ class IslandNotificationListener : NotificationListenerService() {
     )
     private val snoozeWords = listOf("ertele", "snooze", "erteleme", "отложить", "später", "posponer")
     private val dismissWords = listOf("kapat", "dismiss", "stop", "durdur", "bitir", "tamam", "sil", "sıfırla", "reset", "delete", "iptal", "cancel", "выключить", "остановить")
-    private val pauseWords = listOf("duraklat", "pause", "пауза")
-    private val resumeWords = listOf("devam", "resume", "başlat", "start", "продолжить")
+    private val pauseWords = listOf("duraklat", "durdur", "pause", "stop", "пауза", "остановить")
+    private val resumeWords = listOf("devam", "sürdür", "surdur", "resume", "continue", "başlat", "start", "play", "oynat", "продолжить")
+    private val pausedTextWords = listOf("duraklat", "durdur", "paused", "stopped", "пауза", "приостановлен")
+    /** Bir kez zamanlayıcı / kronometre olarak tanınan bildirimler: duraklatılınca metni değişse de aynı tür sayılır. */
+    private val timerKeys = HashSet<String>()
+    private val watchKeys = HashSet<String>()
     private val cancelWords = listOf("sıfırla", "reset", "sil", "delete", "iptal", "cancel", "kaldır", "remove", "сброс", "удалить")
     private val timerWords = listOf("zamanlayıcı", "timer", "geri sayım", "таймер")
     private val watchWords = listOf("kronometre", "stopwatch", "секундомер", "tur", "lap")
@@ -698,7 +703,17 @@ class IslandNotificationListener : NotificationListenerService() {
     private fun actionAt(n: Notification, first: Boolean): android.app.PendingIntent? {
         val acts = n.actions?.filter { it.actionIntent != null }.orEmpty()
         if (acts.isEmpty()) return null
-        return if (first) acts.first().actionIntent else if (acts.size >= 2) acts.last().actionIntent else null
+        fun isCancel(a: Notification.Action): Boolean {
+            val t = normAct(a.title?.toString().orEmpty())
+            return (cancelWords + listOf("kapat", "dismiss", "bitir")).any { t.contains(normAct(it)) }
+        }
+        fun isExtra(a: Notification.Action): Boolean {
+            val t = a.title?.toString().orEmpty()
+            return t.contains("+") || lapWords.any { normAct(t).contains(it) }          // "+1:00", "Tur"
+        }
+        // Duraklat / devam yerine asla iptal düğmesi gönderilmez (bazı saat uygulamalarında İptal ilk sıradadır)
+        return if (first) acts.firstOrNull { !isCancel(it) && !isExtra(it) }?.actionIntent
+        else (acts.lastOrNull { isCancel(it) } ?: acts.takeIf { it.size >= 2 }?.lastOrNull { !isExtra(it) && it != acts.firstOrNull { a -> !isCancel(a) && !isExtra(a) } })?.actionIntent
     }
 
     /** "4:32" / "1:04:09" -> ms */
@@ -724,20 +739,26 @@ class IslandNotificationListener : NotificationListenerService() {
         val ongoing = sbn.isOngoing || (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
         val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)
         val countDown = ex.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN)
-        val isWatch = !countDown && clockApp && (listOf("kronometre", "stopwatch", "секундомер").any { all.contains(it) } ||
-            (chrono && timerWords.none { all.contains(it) } && cat != Notification.CATEGORY_ALARM))
-        val isTimer = !isWatch && (timerWords.any { all.contains(it) } || countDown)
+        val key = sbn.key
+        val isWatch = watchKeys.contains(key) || (!countDown && clockApp && !timerKeys.contains(key) &&
+            (listOf("kronometre", "stopwatch", "секундомер").any { all.contains(it) } ||
+            (chrono && timerWords.none { all.contains(it) } && cat != Notification.CATEGORY_ALARM)))
+        val isTimer = !isWatch && (timerKeys.contains(key) || timerWords.any { all.contains(it) } || countDown)
+        // Daha önce tanınmış bir zamanlayıcı / kronometre: duraklatılınca bildirim "devam eden" olmaktan çıkabilir
+        val known = timerKeys.contains(key) || watchKeys.contains(key)
+        val live = ongoing || known
         val snooze = actionBy(n, snoozeWords)
         val dismiss = actionBy(n, dismissWords)
         // 0) Kronometre (ileri sayan): duraklat / devam / sıfırla
-        if (isWatch && ongoing) {
+        if (isWatch && live) {
             val resume = actionBy(n, resumeWords)
-            val paused = !chrono && resume != null
+            val paused = !chrono && (resume != null || pausedTextWords.any { normAct(all).contains(normAct(it)) } ||
+                (known && actionBy(n, pauseWords) == null))
             val elapsed = mmssRx.find("$title $text")?.let { mmssMs(it) } ?: 0L
             val started = if (chrono && !paused) n.`when` else 0L
             if (started <= 0L && !paused && elapsed <= 0L) return clockKeys.contains(sbn.key)
-            clockKeys.add(sbn.key)
-            val pause = actionBy(n, pauseWords)
+            clockKeys.add(sbn.key); watchKeys.add(key)
+            val pause = actionBy(n, pauseWords)?.takeIf { it != resume }
             val reset = actionBy(n, cancelWords)?.takeIf { pi -> n.actions?.none { a -> a.actionIntent == pi && lapWords.any { normAct(a.title?.toString().orEmpty()).contains(it) } } != false }
             IslandBus.post(IslandEvent.ClockStopwatch(
                 sbn.key, if (started > 0L) started else System.currentTimeMillis() - elapsed, elapsed, paused,
@@ -753,14 +774,16 @@ class IslandNotificationListener : NotificationListenerService() {
             return true
         }
         // 2) Geri sayan / duraklatılmış zamanlayıcı
-        if (isTimer && ongoing) {
-            val paused = !chrono && actionBy(n, resumeWords) != null
-            val ends = if (chrono && countDown) n.`when` else 0L
-            val left = mmssRx.find("$title $text")?.let { mmssMs(it) } ?: 0L
-            if (ends <= 0L && !paused) return clockKeys.contains(sbn.key)        // geri sayım bilgisi yok: normal bildirim
-            clockKeys.add(sbn.key)
-            val pause = actionBy(n, pauseWords)
+        if (isTimer && live) {
             val resume = actionBy(n, resumeWords)
+            // Geri sayım göstermeyen bir zamanlayıcı bildirimi = duraklatılmış (düğme adı ne olursa olsun)
+            val paused = !(chrono && countDown) && (resume != null || pausedTextWords.any { normAct(all).contains(normAct(it)) } ||
+                (known && actionBy(n, pauseWords) == null))
+            val ends = if (chrono && countDown) n.`when` else 0L
+            val left = mmssRx.find("$title $text $sub")?.let { mmssMs(it) } ?: 0L   // 0 = bilinmiyor, ada son değeri korur
+            if (ends <= 0L && !paused) return clockKeys.contains(sbn.key)        // geri sayım bilgisi yok: normal bildirim
+            clockKeys.add(sbn.key); timerKeys.add(key)
+            val pause = actionBy(n, pauseWords)?.takeIf { it != resume }
             IslandBus.post(IslandEvent.ClockTimer(
                 sbn.key, ends, if (paused) left else (ends - System.currentTimeMillis()).coerceAtLeast(0L), paused, "Zamanlayıcı",
                 pause ?: if (!paused) actionAt(n, true) else null, resume ?: if (paused) actionAt(n, true) else null,
@@ -777,6 +800,7 @@ class IslandNotificationListener : NotificationListenerService() {
             IslandBus.post(IslandEvent.ClockAlarm(sbn.key, label, time, false, snooze, dismiss))
             return true
         }
+        if (known) return true                                               // tanınan kayıt: yalnızca bildirim kalkınca biter
         if (clockKeys.remove(sbn.key)) IslandBus.post(IslandEvent.ClockGone(sbn.key))
         return false
     }

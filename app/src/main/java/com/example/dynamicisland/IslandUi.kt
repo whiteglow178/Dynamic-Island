@@ -2,6 +2,7 @@ package com.example.dynamicisland
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
@@ -544,10 +545,23 @@ fun IslandRoot(
             // Ada açılınca (ya da başka olay gelince) her zaman tam görünür
             LaunchedEffect(s.expanded) { if (s.expanded) popIn.snapTo(1f) }
             // Durum içeriklerinde açık boyut değişince (ör. Rahatsız Etmeyin hapı -> kart) ada birden değil, yumuşakça büyür / küçülür
-            val stAnim = content is IslandContent.Status && cfg.animEnabled
-            val ewA by animateDpAsState(geo.ew, if (stAnim) tween(340, easing = FastOutSlowInEasing) else snap(), label = "stEw")
-            val ehA by animateDpAsState(geo.eh, if (stAnim) tween(340, easing = FastOutSlowInEasing) else snap(), label = "stEh")
-            val geoA = if (stAnim) geo.copy(ew = ewA, eh = ehA) else geo
+            // Yalnızca AYNI durum türü içinde (ör. hap -> kart) canlandırılır. Başka bir içerikten gelince eski boyuttan
+            // başlayıp bir an büyük dikdörtgen görünmesin diye boyut anında hedefe oturtulur.
+            val stKind: Any? = (content as? IslandContent.Status)?.kind
+            val stAnim = stKind != null && cfg.animEnabled
+            val ewAn = remember { Animatable(geo.ew, Dp.VectorConverter) }
+            val ehAn = remember { Animatable(geo.eh, Dp.VectorConverter) }
+            val animKind = remember { arrayOfNulls<Any>(1) }
+            LaunchedEffect(geo.ew, geo.eh, stKind) {
+                if (stAnim && animKind[0] == stKind) {
+                    launch { ewAn.animateTo(geo.ew, tween(340, easing = FastOutSlowInEasing)) }
+                    ehAn.animateTo(geo.eh, tween(340, easing = FastOutSlowInEasing))
+                } else {
+                    ewAn.snapTo(geo.ew); ehAn.snapTo(geo.eh)
+                    animKind[0] = stKind
+                }
+            }
+            val geoA = if (stAnim && animKind[0] == stKind) geo.copy(ew = ewAn.value, eh = ehAn.value) else geo
             Box(Modifier.graphicsLayer { alpha = if (hidden) 0f else popIn.value }) {
             IslandPill(content, progress, geoA, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onSoundCapsuleStop = onSoundCapsuleStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX, fxMode = 2)
             }

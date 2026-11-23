@@ -37,6 +37,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,7 +94,7 @@ fun timerPillHeightDp(cfg: IslandSettings): Float =
     if (cfg.more.timerFullWidth) max(cfg.compactHeightDp * 2f, 66f) else max(cfg.compactHeightDp * 1.75f, 60f)
 
 /** Zamanlayıcı kurma panelinin yüksekliği. */
-const val TIMER_SET_H_DP = 150f
+const val TIMER_SET_H_DP = 168f
 
 /** Genişlemiş Rahatsız Etmeyin kartının yüksekliği. */
 fun focusCardHeightDp(cfg: IslandSettings): Float = max(cfg.compactHeightDp * 1.75f, 60f)
@@ -117,7 +119,7 @@ fun xExpandedSizeDp(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Pa
     val sw = if (screenWDp > 0f) screenWDp else 400f
     val wide = sysPillWidthDp(cfg, sw)
     return when {
-        c.kind == StatusKind.Timer && c.phase == 3 -> wide to TIMER_SET_H_DP
+        c.kind == StatusKind.Timer && c.phase == 3 -> (sw - 8f).coerceAtLeast(wide) to TIMER_SET_H_DP   // ekran kaydındaki gibi tüm genişlik
         c.kind == StatusKind.Timer || c.kind == StatusKind.Alarm ->
             (if (cfg.more.timerFullWidth) (sw - 12f).coerceAtLeast(wide) else wide) to timerPillHeightDp(cfg)
         c.kind == StatusKind.Focus && c.phase == 1 -> wide to focusCardHeightDp(cfg)
@@ -353,73 +355,111 @@ object TimerSetSession {
 @Composable
 internal fun TimerSetPanel() {
     val mins by TimerSetSession.minutes.collectAsState()
-    Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 18.dp, top = 12.dp, bottom = 12.dp)) {
+    // Kaydırırken geçilen çizgiler parlar ve iz bırakarak söner (dakika -> parlama başlangıcı)
+    val glow = remember { HashMap<Int, Long>() }
+    var glowUntil by remember { mutableLongStateOf(0L) }
+    var frameT by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(glowUntil) {
+        while (android.os.SystemClock.uptimeMillis() < glowUntil) {
+            withFrameMillis { frameT = android.os.SystemClock.uptimeMillis() }
+        }
+        frameT = android.os.SystemClock.uptimeMillis()
+        glow.clear()
+    }
+    Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 20.dp, top = 14.dp, bottom = 14.dp)) {
         var acc by remember { mutableStateOf(0f) }
         Canvas(
             Modifier.fillMaxWidth().weight(1f)
                 .pointerInput(Unit) {
-                    val step = 9.dp.toPx()
-                    detectHorizontalDragGestures(onDragEnd = { acc = 0f }) { change, drag ->
+                    val step = TIMER_TICK_DP.dp.toPx()
+                    detectHorizontalDragGestures(onDragEnd = { acc = 0f }, onDragCancel = { acc = 0f }) { change, drag ->
                         change.consume()
                         acc -= drag                                  // sola kaydırınca süre artar (cetvel sola kayar)
                         val n = (acc / step).toInt()
                         if (n != 0) {
                             acc -= n * step
-                            TimerSetSession.minutes.value = (TimerSetSession.minutes.value + n).coerceIn(1, 180)
+                            val old = TimerSetSession.minutes.value
+                            val nv = (old + n).coerceIn(1, 180)
+                            if (nv != old) {
+                                val t = android.os.SystemClock.uptimeMillis()
+                                val lo = minOf(old, nv); val hi = maxOf(old, nv)
+                                for (m in lo..hi) glow[m] = t
+                                glowUntil = t + TIMER_GLOW_MS
+                                TimerSetSession.minutes.value = nv
+                            }
                         }
                     }
                 },
         ) {
-            val step = 9.dp.toPx()
+            val now = frameT.let { if (it == 0L) android.os.SystemClock.uptimeMillis() else it }
+            val step = TIMER_TICK_DP.dp.toPx()
             val cx = size.width / 2f
-            val base = size.height * 0.92f
+            val base = size.height * 0.94f
+            val tickH = size.height * 0.40f
             val fade = size.width / 2f
             val first = mins - (cx / step).toInt() - 1
             val last = mins + (cx / step).toInt() + 1
             val paint = android.graphics.Paint().apply {
                 isAntiAlias = true
-                textSize = 11.sp.toPx()
+                textSize = 12.sp.toPx()
                 textAlign = android.graphics.Paint.Align.CENTER
                 isFakeBoldText = true
             }
+            val sw = 2.dp.toPx()
             for (m in first..last) {
                 if (m < 0) continue
                 val x = cx + (m - mins) * step
-                val a = (1f - abs(x - cx) / fade).coerceIn(0f, 1f)
+                // kenarlara doğru sönerek kaybolur
+                val edge = (1f - abs(x - cx) / fade).coerceIn(0f, 1f)
+                val a = edge * edge * (3f - 2f * edge)
                 if (a <= 0.02f) continue
-                val major = m % 5 == 0
-                val h = if (major) size.height * 0.42f else size.height * 0.26f
-                drawLine(X_ORANGE.copy(alpha = a * (if (major) 1f else 0.75f)), Offset(x, base - h), Offset(x, base),
-                    strokeWidth = if (major) 2.2.dp.toPx() else 1.6.dp.toPx(), cap = StrokeCap.Round)
-                if (major && m > 0) {
-                    paint.color = android.graphics.Color.argb((a * 200).toInt(), 255, 255, 255)
-                    drawContext.canvas.nativeCanvas.drawText(m.toString(), x, base - size.height * 0.52f, paint)
+                // seçilen süre (işaretin solu) parlak turuncu, sağı soluk
+                val base0 = if (m <= mins) 1f else 0.42f
+                val g = glow[m]?.let { (1f - (now - it).toFloat() / TIMER_GLOW_MS).coerceIn(0f, 1f) } ?: 0f
+                val h = tickH * (1f + 0.10f * g)
+                if (g > 0f) {
+                    // yumuşak hale + sarıya dönen parlak çizgi
+                    drawLine(X_GLOW.copy(alpha = a * g * 0.35f), Offset(x, base - h), Offset(x, base),
+                        strokeWidth = sw * 3.4f, cap = StrokeCap.Round)
+                }
+                val col = lerp(X_ORANGE, X_GLOW, g)
+                drawLine(col.copy(alpha = a * (base0 + (1f - base0) * g)), Offset(x, base - h), Offset(x, base),
+                    strokeWidth = sw, cap = StrokeCap.Round)
+                if (m % 5 == 0 && m > 0) {
+                    val la = a * (if (m <= mins) 0.95f else 0.55f)
+                    paint.color = android.graphics.Color.argb((la * 255).toInt(), 255, 255, 255)
+                    drawContext.canvas.nativeCanvas.drawText(m.toString(), x, base - tickH - 8.dp.toPx(), paint)
                 }
             }
-            // seçili çizginin altında küçük üçgen
+            // seçili çizginin altında küçük turuncu üçgen
+            val ty = base + 4.dp.toPx()
             val tri = Path().apply {
-                moveTo(cx, base + 2.dp.toPx() - 7.dp.toPx()); lineTo(cx - 5.dp.toPx(), base + 4.dp.toPx()); lineTo(cx + 5.dp.toPx(), base + 4.dp.toPx()); close()
+                moveTo(cx, ty); lineTo(cx - 5.dp.toPx(), ty + 7.dp.toPx()); lineTo(cx + 5.dp.toPx(), ty + 7.dp.toPx()); close()
             }
             drawPath(tri, X_ORANGE)
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.clip(RoundedCornerShape(50)).background(X_GRAY_BTN)
+                Modifier.clip(RoundedCornerShape(50)).background(X_ORANGE.copy(alpha = 0.22f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                         IslandActions.onTimerStart(TimerSetSession.minutes.value * 60_000L)
                     }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
             ) {
-                Text("Zamanlayıcıyı Başlat", color = X_ORANGE, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
+                Text("Zamanlayıcıyı Başlat", color = X_ORANGE, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
             }
             Spacer(Modifier.weight(1f))
             val h = mins / 60; val m = mins % 60
             Text(if (h > 0) "%d:%02d:00".format(h, m) else "%02d:00".format(m), color = X_ORANGE,
-                fontWeight = FontWeight.Normal, fontSize = 38.sp, maxLines = 1, softWrap = false)
+                fontWeight = FontWeight.Normal, fontSize = 44.sp, maxLines = 1, softWrap = false)
         }
     }
 }
+
+private const val TIMER_TICK_DP = 7f
+private const val TIMER_GLOW_MS = 650L
+private val X_GLOW = Color(0xFFFFE27A)
 
 // ================================================================ Rahatsız Etmeyin kartı
 
