@@ -637,9 +637,10 @@ private fun HomeMiscSections() {
         Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
     }
     SectionCard("Uygulama ikonu", "Ana ekrandaki ikonun rengi") {
-        var darkIcon by remember { mutableStateOf(AppIcon.isDark(ctx)) }
-        RadioRow("Beyaz", "Açık zeminli ikon", !darkIcon) { darkIcon = false; AppIcon.set(ctx, false) }
-        RadioRow("Koyu", "Antrasit zeminli ikon", darkIcon) { darkIcon = true; AppIcon.set(ctx, true) }
+        var icon by remember { mutableStateOf(AppIcon.current(ctx)) }
+        RadioRow("Beyaz", "Açık zeminli ikon", icon == AppIcon.LIGHT) { icon = AppIcon.LIGHT; AppIcon.set(ctx, AppIcon.LIGHT) }
+        RadioRow("Koyu", "Antrasit zeminli ikon", icon == AppIcon.DARK) { icon = AppIcon.DARK; AppIcon.set(ctx, AppIcon.DARK) }
+        RadioRow("Siyah", "Siyah zeminli ikon", icon == AppIcon.BLACK) { icon = AppIcon.BLACK; AppIcon.set(ctx, AppIcon.BLACK) }
         Text("Ana ekrandaki ikonun değişmesi birkaç saniye sürebilir; bazı başlatıcılarda uygulamayı yeniden açmak gerekir.",
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
     }
