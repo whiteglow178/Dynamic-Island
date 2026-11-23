@@ -133,6 +133,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // istisna yakalanmazsa süreç çöker ve erişilebilirlik servisi "hatalı çalışıyor" olarak işaretlenir.
         if (!runCatching { startAsForeground() }.isSuccess) { stopSelf(); return }
         runCatching { detectCutout() }
+        // Ada açıkken durum çubuğunun üstünü kapatır: simge taraması o sırada bekler (son değer korunur)
+        scope.launch { ui.map { it.expanded }.distinctUntilChanged().collect { StatusIcons.paused = it } }
         scope.launch {
             androidx.compose.runtime.snapshotFlow { FxBridge.count > 0 }.distinctUntilChanged().collect { on ->
                 runCatching { if (on) fxWindow.attach() else fxWindow.detach() }
@@ -2284,33 +2286,31 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     // ---------------------------------------------------------------- Pencere
     /**
      * "Bildirim simgelerine yer aç": durum çubuğunun solundaki simgeler kapalı adanın sol ucuna yaklaşınca
-     * adanın sol ucu simgelerin ötesine çekilir ve aynı miktarda sağa uzatılır (sağdaki simgelere kadar).
+     * adanın sol ucu simgelerin ötesine çekilir, sağ ucu yerinde kalır (ada soldan kısalır, kaymaz).
      * Ada kamera deliğini her zaman örter: sol uç kameranın merkezinden ada yüksekliğinin yarısından fazla
      * sağa geçmez. Kaydedilen ayarlar değişmez; yalnızca servisin kullandığı kopya.
      */
     private fun fitStatusIcons(s: IslandSettings, e: StatusIcons.Edges): IslandSettings {
         StatusIcons.enabled = s.more.avoidIcons && !s.dotMode && !s.iphoneMode && !s.invertedIsland
-        if (!StatusIcons.enabled) return s
         val sw = runCatching { wm.currentWindowMetrics.bounds.width() }.getOrDefault(0)
         if (sw <= 0) return s
         val d = density
         val cam = sw / 2f + cutCenterXOffsetPx
-        StatusIcons.cameraX = cam.toInt()        // tarama kameranın solunu / sağını buna göre ayırır
-        if (e.left < 0) return s
+        StatusIcons.cameraX = cam.toInt()        // tarama kameranın solunu buna göre ayırır
         val cx = cam + s.offsetXDp * d
         val w = s.compactWidthDp * d
         val l0 = cx - w / 2f
         val r0 = cx + w / 2f
-        val margin = 6f * d
-        val want = e.left + margin
+        StatusIcons.islandLeft = l0.toInt()
+        if (!StatusIcons.enabled || e.left < 0) return s
+        val want = e.left + 6f * d
         if (want <= l0) return s
         val maxLeft = cam - s.compactHeightDp * d * 0.55f      // kamera deliği açıkta kalmasın
         val newL = minOf(want, maxLeft)
         if (newL <= l0) return s
-        val shrink = newL - l0
-        val rightLimit = if (e.right in 1 until sw) e.right - margin else sw - 4f * d
-        val newR = maxOf(r0, minOf(r0 + shrink, rightLimit))
-        return s.copy(compactWidthDp = (newR - newL) / d, offsetXDp = ((newL + newR) / 2f - cam) / d)
+        StatusIcons.islandLeft = newL.toInt()
+        // Yalnızca sol uç çekilir; sağ uç olduğu yerde kalır (ada kaymaz, soldan kısalır)
+        return s.copy(compactWidthDp = (r0 - newL) / d, offsetXDp = ((newL + r0) / 2f - cam) / d)
     }
 
     private fun detectCutout() {

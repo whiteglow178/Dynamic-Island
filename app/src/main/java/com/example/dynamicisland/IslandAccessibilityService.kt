@@ -276,20 +276,25 @@ class IslandAccessibilityService : AccessibilityService() {
     // Durum çubuğu simgeleri (Bildirim simgelerine yer aç): ayrı thread'de, saniyede bir; ayar kapalıyken seyrek
     private val iconThread = android.os.HandlerThread("status-icons").apply { start() }
     private val iconHandler = Handler(iconThread.looper)
+    private val iconExec = java.util.concurrent.Executor { iconHandler.post(it) }
+    @Volatile private var iconForce = false
     private val iconPoll = object : Runnable {
         override fun run() {
             val on = StatusIcons.enabled &&
                 getSystemService(android.os.PowerManager::class.java)?.isInteractive == true
-            if (on || StatusIcons.edges.value != StatusIcons.Edges()) runCatching { StatusIcons.scan(this@IslandAccessibilityService) }
+            val force = iconForce
+            iconForce = false
+            if (on || StatusIcons.edges.value != StatusIcons.Edges()) runCatching { StatusIcons.scan(this@IslandAccessibilityService, iconExec, force) }
             iconHandler.postDelayed(this, if (on) 1000L else 3000L)
         }
     }
 
-    /** Bildirim gelince / pencereler değişince simgeleri hemen yeniden tara (bekleyen turu öne çeker). */
+    /** Bildirim gelince / pencereler değişince simgeleri hemen yeniden tara (ekran görüntüsünü beklemeden). */
     private fun rescanIconsSoon() {
         if (!StatusIcons.enabled) return
+        iconForce = true
         iconHandler.removeCallbacks(iconPoll)
-        iconHandler.postDelayed(iconPoll, 250L)
+        iconHandler.postDelayed(iconPoll, 400L)
     }
     private val recPkgCache = java.util.concurrent.ConcurrentHashMap<Int, String>()
     @Volatile private var recA11yOn = false

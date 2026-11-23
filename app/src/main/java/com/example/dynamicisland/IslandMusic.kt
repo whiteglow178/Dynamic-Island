@@ -111,7 +111,8 @@ fun Equalizer(color: Color, height: Dp = 14.dp, barWidth: Dp = 3.dp, animate: Bo
 
 // ---------------------------------------------------------------- Halka görünümü (ekolayzırın yerine)
 /**
- * Adadaki ses göstergesi: [style] 0 çubuklu ekolayzır, 1 halka ([EqRing]), 2 yörünge ([EqOrbit]).
+ * Adadaki ses göstergesi: [style] 0 çubuklu ekolayzır, 1 halka ([EqRing]), 2 yörünge ([EqOrbit]),
+ * 3 dalga ([EqWave]), 4 piksel ([EqDots]).
  * Ayarlar > Ekolayzır > "Görünüm". Halka ve yörünge, çubuklarla aynı yükseklik + 6dp'lik kare bir alana sığar.
  */
 @Composable
@@ -122,6 +123,8 @@ fun MusicMeter(
     when (style) {
         1 -> EqRing(color, height + 6.dp, animate, rainbow)
         2 -> EqOrbit(color, height + 6.dp, animate, rainbow)
+        3 -> EqWave(color, height, animate, rainbow)
+        4 -> EqDots(color, height, animate, rainbow)
         else -> Equalizer(color, height, barWidth, animate, rainbow)
     }
 }
@@ -265,6 +268,102 @@ fun EqOrbit(color: Color, size: Dp, animate: Boolean = true, rainbow: RainbowSty
         moons.forEach { drawMoon(it, front = true) }
     }
 }
+
+/** Dalga görünümündeki bir katman: renk, saydamlık, dalga sayısı, akış yönü / hızı (tam sayı: döngü dikişsiz), ritim, faz. */
+private class WaveLayer(val col: Color, val alpha: Float, val waves: Float, val speed: Float, val beat: Float, val off: Float)
+
+/**
+ * "Dalga": birbirinin içinden akan üç ince ses dalgası (ana renk + iki komşu ton). Dalgalar uçlarda incelip
+ * kaybolur, ortada ritimle kabarır; her biri farklı hızda ve yönde akar. Müzik durunca düz bir çizgiye iner.
+ * Çubuklu ekolayzırla aynı yükseklikte, biraz daha geniş bir alana çizilir.
+ */
+@Composable
+fun EqWave(color: Color, height: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqWave")
+    val phase = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1700, easing = LinearEasing)), label = "wavePhase")
+    val beatA = t.animateFloat(0.45f, 1f, infiniteRepeatable(tween(430, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "waveBeatA")
+    val beatB = t.animateFloat(0.3f, 1f, infiniteRepeatable(tween(650, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "waveBeatB")
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(450), label = "waveAmp")
+    val c2 = remember(color) { shiftHue(color, 50f) }
+    val c3 = remember(color) { shiftHue(color, -45f) }
+    val path = remember { Path() }
+    Canvas(Modifier.size(height * 1.75f, height).rainbowFill(rainbow, 0.dp)) {
+        val tau = (2 * Math.PI).toFloat()
+        val w = this.size.width
+        val h = this.size.height
+        val cy = h / 2f
+        val a = amp.value
+        val p = phase.value
+        val stroke = (h * 0.11f).coerceAtLeast(1.2.dp.toPx())
+        val maxA = h / 2f - stroke
+        val layers = listOf(
+            WaveLayer(c3, 0.55f, 1.3f, -1f, beatB.value, 1.1f),
+            WaveLayer(c2, 0.7f, 2.1f, 2f, beatB.value, 2.3f),
+            WaveLayer(color, 1f, 1.6f, 1f, beatA.value, 0f),
+        )
+        for (l in layers) {
+            val col = l.col; val al = l.alpha; val k = l.waves
+            val sp = l.speed; val bt = l.beat; val off = l.off
+            path.reset()
+            val n = 40
+            for (i in 0..n) {
+                val u = i / n.toFloat()
+                val env = kotlin.math.sin(Math.PI.toFloat() * u).let { it * it }      // uçlarda sıfır
+                val y = cy + maxA * a * bt * env * kotlin.math.sin(tau * (k * u + sp * p) + off)
+                val x = u * w
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, col.copy(alpha = al * (0.45f + 0.55f * a)), style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+    }
+}
+
+/**
+ * "Piksel": eski müzik setlerindeki gibi beş sütunluk nokta göstergesi. Her sütunda seviyeye kadar noktalar yanar,
+ * en üstteki yanan nokta beyaza yakın parlar; sönük noktalar soluk kalır. Müzik durunca her sütunda bir nokta kalır.
+ */
+@Composable
+fun EqDots(color: Color, height: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqDots")
+    val durations = intArrayOf(360, 520, 290, 450, 400)
+    val levels = durations.map { d ->
+        t.animateFloat(0.15f, 1f, infiniteRepeatable(tween(d, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "dot$d")
+    }
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(350), label = "dotsAmp")
+    val hot = remember(color) { lerpColor(color, Color.White, 0.55f) }
+    val rows = 4
+    val cols = 5
+    val gapK = 0.45f
+    val dot = height / (rows + (rows - 1) * gapK)
+    val width = dot * (cols + (cols - 1) * gapK)
+    Canvas(Modifier.size(width, height).rainbowFill(rainbow, 0.dp)) {
+        val d = this.size.height / (rows + (rows - 1) * gapK)
+        val g = d * gapK
+        val r = d / 2f
+        val a = amp.value
+        for (c in 0 until cols) {
+            val lv = 0.25f + (levels[c].value - 0.25f) * a                  // durunca tek nokta
+            val lit = kotlin.math.ceil(lv * rows).toInt().coerceIn(1, rows)
+            val cx = c * (d + g) + r
+            for (row in 0 until rows) {
+                val cy = this.size.height - (row * (d + g) + r)             // alttan yukarı
+                val on = row < lit
+                val col = when {
+                    !on -> color.copy(alpha = 0.18f)
+                    row == lit - 1 -> hot
+                    else -> color
+                }
+                drawCircle(col, r * (if (on) 1f else 0.82f), Offset(cx, cy))
+            }
+        }
+    }
+}
+
+/** İki renk arasında doğrusal geçiş. */
+private fun lerpColor(a: Color, b: Color, f: Float): Color = Color(
+    red = a.red + (b.red - a.red) * f, green = a.green + (b.green - a.green) * f,
+    blue = a.blue + (b.blue - a.blue) * f, alpha = a.alpha + (b.alpha - a.alpha) * f,
+)
 
 // ---------------------------------------------------------------- Albüm kapağına dokunma alanı
 /**

@@ -354,8 +354,8 @@ data class IslandSettings(
     /** iPhone modu açık ve yandaki siyah daire görünür mü? (Nokta modu açıkken iPhone modu çalışmaz.) */
     fun iphoneCircleOn(): Boolean = iphoneMode && !dotMode && iphoneCircle
 
-    /** Adadaki ses göstergesi: 0 çubuklu ekolayzır, 1 halka, 2 yörünge. */
-    fun eqStyleNow(): Int = if (more.eqOrbit) 2 else if (eqRing) 1 else 0
+    /** Adadaki ses göstergesi: 0 çubuklu ekolayzır, 1 halka, 2 yörünge, 3 dalga, 4 piksel. */
+    fun eqStyleNow(): Int = if (more.eqStyleX == 3 || more.eqStyleX == 4) more.eqStyleX else if (more.eqOrbit) 2 else if (eqRing) 1 else 0
 
     /** Albüm kapağı küçük adada (kapalı ada, hap müzik, yan baloncuk) daire mi? */
     fun artCircleCompact(): Boolean = more.artCircle == 1 || more.artCircle == 2
@@ -637,6 +637,7 @@ data class MoreSettings(
     val sysPillPct: Float = 84f,            // Rahatsız Etmeyin / ağ / uçak / ince düşük pil hapı genişliği: ekranın yüzdesi
     val chargePillW: Float = 220f,          // şarj hapı genişliği (dp)
     val eqOrbit: Boolean = false,           // ekolayzır yerine "Yörünge" görünümü (eqRing'den önce gelir)
+    val eqStyleX: Int = 0,                  // 3 "Dalga", 4 "Piksel" (0: eqOrbit / eqRing / çubuklar geçerli)
     val artCircle: Int = 0,                 // daire albüm kapağı: 0 kapalı, 1 küçük + geniş ada, 2 yalnızca küçük, 3 yalnızca geniş
     val sideWide: Boolean = false,          // yan baloncuk hafif uzun kapsül: zamanlayıcıda süre, müzikte kapak + ekolayzır
     val avoidIcons: Boolean = false,        // durum çubuğunun solundaki bildirim simgelerine çarpmamak için ada sağa uzar
@@ -779,7 +780,7 @@ class SettingsRepository(context: Context) {
         val X_FTAP = booleanPreferencesKey("x_ftap"); val X_FTOG = booleanPreferencesKey("x_ftog"); val X_CICON = booleanPreferencesKey("x_cicon")
         val X_CWAVE = booleanPreferencesKey("x_cwave"); val X_INMIN = booleanPreferencesKey("x_inmin"); val X_VREC = booleanPreferencesKey("x_vrec")
         val X_TFULL = booleanPreferencesKey("x_tfull"); val X_SYSW = floatPreferencesKey("x_sysw"); val X_CHGW = floatPreferencesKey("x_chgw")
-        val X_ORBIT = booleanPreferencesKey("x_orbit"); val X_ARTC = intPreferencesKey("x_artc"); val X_SIDEW = booleanPreferencesKey("x_sidew"); val X_AVOID = booleanPreferencesKey("x_avoid")
+        val X_ORBIT = booleanPreferencesKey("x_orbit"); val X_EQX = intPreferencesKey("x_eqx"); val X_ARTC = intPreferencesKey("x_artc"); val X_SIDEW = booleanPreferencesKey("x_sidew"); val X_AVOID = booleanPreferencesKey("x_avoid")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1098,6 +1099,7 @@ class SettingsRepository(context: Context) {
                 sysPillPct = (p[K.X_SYSW] ?: d.more.sysPillPct).coerceIn(30f, 98f),
                 chargePillW = (p[K.X_CHGW] ?: d.more.chargePillW).coerceIn(100f, 400f),
                 eqOrbit = p[K.X_ORBIT] ?: d.more.eqOrbit,
+                eqStyleX = (p[K.X_EQX] ?: d.more.eqStyleX).let { if (it == 3 || it == 4) it else 0 },
                 artCircle = (p[K.X_ARTC] ?: d.more.artCircle).coerceIn(0, 3),
                 sideWide = p[K.X_SIDEW] ?: d.more.sideWide,
                 avoidIcons = p[K.X_AVOID] ?: d.more.avoidIcons,
@@ -1239,7 +1241,7 @@ class SettingsRepository(context: Context) {
             it[K.X_FTAP] = m.focusTapExpand; it[K.X_FTOG] = m.focusToggle; it[K.X_CICON] = m.callIconOnly
             it[K.X_CWAVE] = m.callWaveGreen; it[K.X_INMIN] = m.incomingMinimize; it[K.X_VREC] = m.voiceRecIsland
             it[K.X_TFULL] = m.timerFullWidth; it[K.X_SYSW] = m.sysPillPct; it[K.X_CHGW] = m.chargePillW
-            it[K.X_ORBIT] = m.eqOrbit; it[K.X_ARTC] = m.artCircle; it[K.X_SIDEW] = m.sideWide; it[K.X_AVOID] = m.avoidIcons
+            it[K.X_ORBIT] = m.eqOrbit; it[K.X_EQX] = m.eqStyleX; it[K.X_ARTC] = m.artCircle; it[K.X_SIDEW] = m.sideWide; it[K.X_AVOID] = m.avoidIcons
         }
     }
 

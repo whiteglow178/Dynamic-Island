@@ -61,6 +61,31 @@ class ClockController(private val host: IslandHost) {
     private var lastRingAt = 0L
     private var lastToggleAt = 0L       // duraklat / devam düğmesine son basılış: bildirim yeniden kurulurken ada kapanmasın
     private var goneJob: Job? = null
+    // Saat uygulaması zamanlayıcıyı sisteme "alarm" olarak da kaydedebiliyor: zamanlayıcı başlayınca / duraklayınca /
+    // iptal edilince "sonraki alarm değişti" yayını gelir. Bu yayınlar gerçek alarm sanılıp ada alarm bilgisi göstermesin diye
+    // zamanlayıcıyla ilgili son hareketin zamanı ve görülen bitiş zamanları tutulur.
+    private var lastTimerActivityAt = 0L
+    private val timerEnds = ArrayDeque<Long>()
+
+    private fun noteTimer(end: Long = 0L) {
+        lastTimerActivityAt = now()
+        if (end > 0L) {
+            timerEnds.addLast(end)
+            while (timerEnds.size > 8) timerEnds.removeFirst()
+        }
+    }
+
+    /** Bu alarm zamanı aslında bir zamanlayıcının bitişi mi (ya da zamanlayıcıya az önce dokunuldu mu)? */
+    private fun timerLike(trig: Long): Boolean {
+        if (now() - lastTimerActivityAt < 6_000L) return true
+        val t = sysTimer
+        val ends = buildList {
+            addAll(timerEnds)
+            if (endsAt > 0L) add(endsAt)
+            if (t != null && !t.paused && t.endsAt > 0L) add(t.endsAt)
+        }
+        return ends.any { kotlin.math.abs(it - trig) < 5_000L }
+    }
 
     private var ring: Ringtone? = null
 
@@ -189,6 +214,7 @@ class ClockController(private val host: IslandHost) {
         totalMs = ms
         endsAt = now() + ms
         pausedLeft = -1L
+        noteTimer(endsAt)
         scheduleDone()
         showCompact()
     }
@@ -215,6 +241,7 @@ class ClockController(private val host: IslandHost) {
     fun pauseResume() {
         val t = sysTimer
         val w = sysWatch
+        noteTimer(t?.endsAt ?: endsAt)
         when {
             islandRunning -> {
                 if (pausedLeft >= 0L) {
@@ -252,6 +279,7 @@ class ClockController(private val host: IslandHost) {
     fun cancel() {
         val t = sysTimer
         val w = sysWatch
+        noteTimer(t?.endsAt ?: endsAt)
         when {
             islandRunning || done -> {
                 doneJob?.cancel(); doneAutoJob?.cancel()
@@ -330,6 +358,11 @@ class ClockController(private val host: IslandHost) {
         } else ev
         val left = if (e.paused) e.remainMs else (e.endsAt - now()).coerceAtLeast(0L)
         sysTimerTotal = maxOf(sysTimerTotal, left)
+        if (first || prev?.paused != e.paused) noteTimer(if (e.paused) 0L else e.endsAt)
+        else if (!e.paused && e.endsAt > 0L && timerEnds.lastOrNull() != e.endsAt) {
+            timerEnds.addLast(e.endsAt)                       // yalnızca bitiş zamanını hatırla (dokunuş sayılmaz)
+            while (timerEnds.size > 8) timerEnds.removeFirst()
+        }
         sysTimer = e
         if (sysAlarm?.key == e.key) sysAlarm = null
         if (first && !islandRunning && !done) {
@@ -351,6 +384,9 @@ class ClockController(private val host: IslandHost) {
     }
 
     fun onSysAlarm(e: IslandEvent.ClockAlarm) {
+        // Zamanlayıcı durdurulunca / iptal edilince saat uygulamasının güncellediği bildirim, ertele düğmesi olmadan
+        // "alarm" gibi görünebilir: zamanlayıcıya az önce dokunulduysa ve ertele yoksa gerçek alarm sayılmaz
+        if (!e.timerDone && e.snooze == null && now() - lastTimerActivityAt < 6_000L) return
         val same = sysAlarm?.key == e.key
         sysAlarm = e
         fallbackAutoJob?.cancel(); fallbackAlarm = null
@@ -371,7 +407,7 @@ class ClockController(private val host: IslandHost) {
     private fun removeSys(key: String) {
         var changed = false
         if (sysAlarm?.key == key) { sysAlarm = null; changed = true }
-        if (sysTimer?.key == key) { sysTimer = null; changed = true }
+        if (sysTimer?.key == key) { noteTimer(sysTimer?.endsAt ?: 0L); sysTimer = null; changed = true }
         if (sysWatch?.key == key) { sysWatch = null; changed = true }
         if (changed) finishView()
     }
@@ -388,6 +424,8 @@ class ClockController(private val host: IslandHost) {
         nextTrigger = trig
         scheduleFallback(am)
         if (!host.settings.more.clockIsland) return
+        // Zamanlayıcının kendi "alarm" kaydı (başlat / duraklat / iptal): gerçek alarm değil, gösterilmez
+        if (trig > 0L && timerLike(trig)) return
         // Yeni bir alarm kuruldu (çalan alarm kapatıldıktan hemen sonraki "sonraki alarm" değişimi sayılmaz)
         if (trig > now() + 30_000L && trig != prev && now() - lastRingAt > 120_000L && !host.blocked && !ringing) {
             val left = trig - now()
@@ -412,6 +450,7 @@ class ClockController(private val host: IslandHost) {
             delay(wait + 4_000L)
             if (!host.settings.more.clockIsland) return@launch
             if (sysAlarm != null || done || now() - lastRingAt < 30_000L) return@launch
+            if (timerLike(trig)) return@launch          // zamanlayıcının bitişi: saat uygulaması kendisi gösterir
             fallbackAlarm = hhmm(trig) to info.showIntent
             showRinging()
             fallbackAutoJob?.cancel()

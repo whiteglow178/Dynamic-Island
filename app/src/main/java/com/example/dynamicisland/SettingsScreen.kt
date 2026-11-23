@@ -224,7 +224,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Konum", "Kamera deliğine göre ince ayar") {
             SliderRow("Yatay", draft.offsetXDp, -60f..60f, "${draft.offsetXDp.toInt()} dp") { draft = draft.copy(offsetXDp = it) }
             SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
-            SwitchRow("Bildirim simgelerine yer aç", "Durum çubuğunun solunda bildirim simgeleri adaya yaklaşınca adanın sol ucu geri çekilir, ada kameranın üstünde kalarak sağa doğru uzar; simgeler gidince eski haline döner. Erişilebilirlik izni gerekir. Nokta, iPhone ve ters ada modlarında çalışmaz",
+            SwitchRow("Bildirim simgelerine yer aç", "Durum çubuğunun solunda bildirim simgeleri adaya yaklaşınca adanın sol ucu simgelerin ötesine çekilir; sağ ucu yerinde kalır, ada kameranın üstünde kalır. Simgeler gidince eski haline döner. Erişilebilirlik izni gerekir (simgeler ekran görüntüsünden okunur, kaydedilmez). Nokta, iPhone ve ters ada modlarında çalışmaz",
                 draft.more.avoidIcons) { draft = draft.copy(more = draft.more.copy(avoidIcons = it)) }
             SwitchRow("Ters ada", "Ada ekranın üstünde değil en altında durur. Olaylar ve bildirimler düz görünür; adaya basınca panel aşağı değil yukarı doğru açılır. Dikey konum ayarı alttan ölçülür", draft.invertedIsland) { draft = draft.copy(invertedIsland = it) }
             if (draft.invertedIsland) {
@@ -480,17 +480,15 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         }
         sec("Ekolayzır rengi", "Müzik çalarken adadaki ses çubukları") {
             SubHeader("Görünüm")
-            SegmentedTabs(listOf("Çubuklar", "Halka", "Yörünge"), draft.eqStyleNow()) {
-                draft = draft.copy(eqRing = it == 1, more = draft.more.copy(eqOrbit = it == 2))
+            val eqPick: (Int) -> Unit = { st ->
+                draft = draft.copy(eqRing = st == 1, more = draft.more.copy(eqOrbit = st == 2, eqStyleX = if (st >= 3) st else 0))
             }
-            Text(
-                when (draft.eqStyleNow()) {
-                    1 -> "Halka: renk geçişli, dalgalanarak şekil değiştiren hareketli bir halka."
-                    2 -> "Yörünge: ritimle atan parlak bir çekirdek ve etrafında iz bırakarak dönen iki küçük uydu."
-                    else -> "Çubuklar: klasik ekolayzır."
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
-            )
+            val eqNow = draft.eqStyleNow()
+            RadioRow("Çubuklar", "Klasik ekolayzır", eqNow == 0) { eqPick(0) }
+            RadioRow("Halka", "Renk geçişli, dalgalanarak şekil değiştiren hareketli bir halka", eqNow == 1) { eqPick(1) }
+            RadioRow("Yörünge", "Ritimle atan parlak bir çekirdek ve etrafında iz bırakarak dönen iki küçük uydu", eqNow == 2) { eqPick(2) }
+            RadioRow("Dalga", "Birbirinin içinden akan üç renkli ses dalgası; uçlarda incelir, ritimle kabarır", eqNow == 3) { eqPick(3) }
+            RadioRow("Piksel", "Eski müzik setlerindeki gibi yanan nokta sütunları; tepedeki nokta parlar", eqNow == 4) { eqPick(4) }
             SectionDivider()
             SwitchRow("Albüm kapağı rengi", "Ekolayzır, çalan şarkının kapağına göre renklenir",
                 draft.eqDynamicColor) { draft = draft.copy(eqDynamicColor = it) }
