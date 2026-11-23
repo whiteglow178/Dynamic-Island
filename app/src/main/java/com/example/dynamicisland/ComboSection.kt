@@ -31,6 +31,7 @@ fun ComboSections() {
                 fxTilt = v.fxTilt, moodExtended = v.moodExtended, moodLyrics = v.moodLyrics, coverDissolve = v.coverDissolve,
                 calendarFx = v.calendarFx, chargeArcs = v.chargeArcs, lowBattSparks = v.lowBattSparks, notifShatter = v.notifShatter,
                 progressIsland = v.progressIsland, scoreIsland = v.scoreIsland,
+                chargeEta = v.chargeEta, flipSilence = v.flipSilence,
             ))
         }
     }
@@ -59,6 +60,10 @@ fun ComboSections() {
             cur.chargeArcs) { set(cur.copy(chargeArcs = it)) }
         SwitchRow("Pil azken kıvılcım", "Pil %15'in altına düşünce (şarjda değilken) boştaki adanın alt ve üst kenarında arada bir kısa elektrik çatırtısı ve kıvılcım çakar",
             cur.lowBattSparks) { set(cur.copy(lowBattSparks = it)) }
+        SwitchRow("Şarj süresi tahmini", "Şarjdayken tam dolmaya kalan süre gösterilir: tahmin ilk hesaplanınca, şarjdayken kilit açılınca ve şarj halkasında. Tam dolunca ada \"Tam doldu\" der. Sistemin kendi tahmini varsa o kullanılır, yoksa şarj hızı ölçülür (ilk birkaç dakika tahmin olmayabilir)",
+            cur.chargeEta) { set(cur.copy(chargeEta = it)) }
+        SwitchRow("Ters çevirince sessiz", "Telefonu ekranı aşağı bakacak şekilde düz bir yere koyunca kısa bir çift titreşimle Rahatsız Etmeyin açılır; kaldırınca kapanır. Rahatsız Etmeyin zaten açıksa ya da arada elle değiştirirsen ona dokunulmaz. Bildirim erişimi açık olmalı",
+            cur.flipSilence) { set(cur.copy(flipSilence = it)) }
         SwitchRow("Silinen bildirim dökülsün", "Bildirimi silince yazısı harf harf parçalanıp girdap gibi adaya çekilir. Ada olaylarında kar ya da tipi seçiliyse harfler kar tanesine, kum fırtınasıysa kuma, havai fişek ya da meteorsa kora dönüşür",
             cur.notifShatter) { set(cur.copy(notifShatter = it)) }
     }

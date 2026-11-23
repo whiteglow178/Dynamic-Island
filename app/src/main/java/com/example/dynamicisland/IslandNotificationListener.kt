@@ -47,6 +47,32 @@ class IslandNotificationListener : NotificationListenerService() {
     companion object {
         @Volatile private var instance: IslandNotificationListener? = null
 
+        /** Şu anki Rahatsız Etmeyin süzgeci (NotificationManager.INTERRUPTION_FILTER_*). */
+        fun currentZen(): Int = runCatching {
+            instance?.currentInterruptionFilter?.takeIf { it != android.app.NotificationManager.INTERRUPTION_FILTER_UNKNOWN }
+        }.getOrNull() ?: android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+
+        /** Dinleyici bağlı değilse sistemden okunur. */
+        fun currentZen(ctx: android.content.Context): Int {
+            if (instance != null) return currentZen()
+            val f = runCatching { ctx.getSystemService(android.app.NotificationManager::class.java)?.currentInterruptionFilter }.getOrNull()
+            return if (f == null || f == android.app.NotificationManager.INTERRUPTION_FILTER_UNKNOWN) android.app.NotificationManager.INTERRUPTION_FILTER_ALL else f
+        }
+
+        /**
+         * Rahatsız Etmeyin süzgecini değiştirir (Ters çevirince sessiz). Bildirim dinleyicisi bunu ek izin olmadan isteyebilir;
+         * dinleyici bağlı değilse "Rahatsız Etmeyin erişimi" verilmişse sistem üzerinden denenir.
+         */
+        fun requestZen(filter: Int, ctx: android.content.Context? = null): Boolean {
+            val l = instance
+            if (l != null && runCatching { l.requestInterruptionFilter(filter) }.isSuccess) return true
+            return runCatching {
+                val nm = ctx?.getSystemService(android.app.NotificationManager::class.java) ?: return false
+                if (!nm.isNotificationPolicyAccessGranted) return false
+                nm.setInterruptionFilter(filter)
+            }.isSuccess
+        }
+
         /** Adadaki bildirimi sistemden de siler (bildirim panelinden de kalkar). Anahtar boşsa ya da dinleyici bağlı değilse bir şey yapmaz. */
         fun dismiss(key: String) {
             if (key.isBlank()) return

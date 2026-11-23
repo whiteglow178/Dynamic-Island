@@ -148,6 +148,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { ringer.start() }
         runCatching { volume.start() }
         runCatching { sysStatus.start() }       // düşük pil, internet, uçak modu
+        runCatching { chargeEta.start() }       // şarj süresi tahmini (ayar kapalıysa sessiz kalır)
+        runCatching { flipSilence.start() }     // ters çevirince sessiz (ayar açılınca sensör dinlenir)
         startExtras()                           // başparmak modu, zaman kapsülü, kamuflaj
         DrawerBridge.onKey = { k -> runCatching { onDrawerKey(k) } }
         startAppLock()                          // uygulama açılış animasyonu (ek kurulum gerekmez)
@@ -1182,6 +1184,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 ),
                 pct,
                 withArcs = s.more.chargeArcs,
+                sub = chargeEta.currentText(),
             )
         }
     }
@@ -1259,6 +1262,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val ringer: RingerController by lazy { RingerController(host) }
     private val volume: VolumeController by lazy { VolumeController(host) }
     private val sysStatus: SystemStatusController by lazy { SystemStatusController(host) }
+    private val chargeEta by lazy { ChargeTimeEstimator(this, settings) { IslandBus.post(IslandEvent.Status(it, 4_000L)) } }
+    private val flipSilence by lazy { FlipSilence(this, settings, scope) }
 
     // ---- Kilit ekranı noktası
     private val lockDot by lazy {
@@ -2685,6 +2690,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { ringer.stop() }
         runCatching { volume.stop() }
         runCatching { sysStatus.stop() }
+        runCatching { chargeEta.stop() }
+        runCatching { flipSilence.stop() }
         runCatching { sideVolume.hide() }
         runCatching { sfxTriggers.stop() }
         runCatching { lockDot.stop() }

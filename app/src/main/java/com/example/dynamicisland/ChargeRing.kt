@@ -58,10 +58,12 @@ class ChargeRingFlash(
     private val run = mutableIntStateOf(0)
     private val pct = mutableIntStateOf(0)
     @Volatile private var arcs = false
+    @Volatile private var subText: String? = null
 
     /** [withArcs]: Şarjda elektrik (Birleşik efektler) – halkaya kenarlardan elektrik arkları akar. */
-    fun play(a: FaceIdAnchor, percent: Int, withArcs: Boolean = false) {
+    fun play(a: FaceIdAnchor, percent: Int, withArcs: Boolean = false, sub: String? = null) {
         arcs = withArcs
+        subText = sub
         pct.intValue = percent.coerceIn(0, 100)
         if (view == null && !attach(a)) return
         run.intValue++
@@ -123,6 +125,11 @@ class ChargeRingFlash(
                     val shown = (p * ease(seg(CR_EXPAND, CR_SWEEP_END))).roundToInt()
                     val txt = tm.measure("%$shown", TextStyle(color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold))
                     drawText(txt, topLeft = Offset(c.x - txt.size.width / 2f, c.y - txt.size.height / 2f + 6f * density), alpha = ca)
+                    // Şarj süresi tahmini: halkanın altında kalan süre
+                    subText?.let { st ->
+                        val sub = tm.measure(st, TextStyle(color = Color.White.copy(alpha = 0.75f), fontSize = 10.sp, fontWeight = FontWeight.Medium))
+                        drawText(sub, topLeft = Offset(c.x - sub.size.width / 2f, c.y + r + sw / 2f + 2f * density), alpha = ca)
+                    }
                     val bs = 7f * density
                     val by = c.y - 14f * density
                     val bolt = Path().apply {

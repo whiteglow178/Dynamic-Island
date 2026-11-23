@@ -578,6 +578,8 @@ data class MoreSettings(
     val notifShatter: Boolean = false,      // silinen bildirimin yazısı harf harf parçalanıp adaya çekilir
     val progressIsland: Boolean = false,    // indirme / yükleme gibi ilerleme bildirimleri adada canlı ilerleme olur
     val scoreIsland: Boolean = false,       // canlı maç skoru bildirimleri adada skor kartı olur
+    val chargeEta: Boolean = false,         // şarjda tam dolmaya kalan süre (ChargeFlip.kt)
+    val flipSilence: Boolean = false,       // telefon ters konunca Rahatsız Etmeyin (ChargeFlip.kt)
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -702,6 +704,7 @@ class SettingsRepository(context: Context) {
         val C_DISS = booleanPreferencesKey("c_diss"); val C_CAL = booleanPreferencesKey("c_cal"); val C_ARCS = booleanPreferencesKey("c_arcs")
         val C_LOWB = booleanPreferencesKey("c_lowb"); val C_SHAT = booleanPreferencesKey("c_shat"); val C_PROG = booleanPreferencesKey("c_prog")
         val C_SCORE = booleanPreferencesKey("c_score")
+        val C_ETA = booleanPreferencesKey("c_eta"); val C_FLIP = booleanPreferencesKey("c_flip")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -989,6 +992,8 @@ class SettingsRepository(context: Context) {
                 notifShatter = p[K.C_SHAT] ?: d.more.notifShatter,
                 progressIsland = p[K.C_PROG] ?: d.more.progressIsland,
                 scoreIsland = p[K.C_SCORE] ?: d.more.scoreIsland,
+                chargeEta = p[K.C_ETA] ?: d.more.chargeEta,
+                flipSilence = p[K.C_FLIP] ?: d.more.flipSilence,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1112,6 +1117,7 @@ class SettingsRepository(context: Context) {
             it[K.C_DISS] = m.coverDissolve; it[K.C_CAL] = m.calendarFx; it[K.C_ARCS] = m.chargeArcs
             it[K.C_LOWB] = m.lowBattSparks; it[K.C_SHAT] = m.notifShatter; it[K.C_PROG] = m.progressIsland
             it[K.C_SCORE] = m.scoreIsland
+            it[K.C_ETA] = m.chargeEta; it[K.C_FLIP] = m.flipSilence
         }
     }
 
