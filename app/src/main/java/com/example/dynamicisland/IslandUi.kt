@@ -299,6 +299,7 @@ internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float =
     is IslandContent.ScreenRec -> REC_PILL_H_DP
     is IslandContent.Shazam -> SHAZAM_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
+    is IslandContent.Notif -> cfg.expandedHeightDp + notifChipsExtraDp(c)
     else -> cfg.expandedHeightDp
 }
 
@@ -466,6 +467,8 @@ fun IslandRoot(
             }
             if (content is IslandContent.Status && content.isCard()) geo = geo.copy(eh = LOWBATT_CARD_H_DP.dp)
             if (content is IslandContent.Live) geo = geo.copy(eh = LIVE_H_DP.dp)
+            // Akıllı bildirim: çip satırı için ada biraz daha uzun açılır
+            if (content is IslandContent.Notif && content.chips.isNotEmpty()) geo = geo.copy(eh = geo.eh + NOTIF_CHIPS_DP.dp)
             // Özel tasarım fotoğrafı: ada çentiksiz, fotoğrafın tamamını gösteren büyük bir karta açılır
             if (content is IslandContent.Capsule) geo = geo.copy(eh = capsuleHeightDp(content).dp)
             if (content is IslandContent.Drawer) geo = geo.copy(eh = cfg.drawerHeightDp().dp)
@@ -1355,9 +1358,19 @@ private fun CustomBackdrop(
 
 @Composable
 private fun NotifContent(c: IslandContent.Notif, accent: Color, rb: RainbowStyle?) {
+    if (c.chips.isEmpty()) { NotifBody(c, accent, rb, Modifier.fillMaxSize()); return }
+    // Akıllı bildirim: altta ertele / kopyala çipleri
+    Column(Modifier.fillMaxSize()) {
+        NotifBody(c, accent, rb, Modifier.fillMaxWidth().weight(1f))
+        NotifChipRow(c, Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 10.dp).height(28.dp))
+    }
+}
+
+@Composable
+private fun NotifBody(c: IslandContent.Notif, accent: Color, rb: RainbowStyle?, mod: Modifier) {
     val iconShape = RoundedCornerShape(13.dp)
     Row(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        mod.padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {

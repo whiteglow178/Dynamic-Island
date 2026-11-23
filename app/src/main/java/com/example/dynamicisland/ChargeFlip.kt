@@ -46,6 +46,7 @@ class ChargeTimeEstimator(
     private var announced = false
     private var fullShown = false
     private var registered = false
+    private var alerted80 = false          // bu şarjda %80 uyarısı verildi (ya da takıldığında zaten %80 üstündeydi)
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
@@ -82,11 +83,25 @@ class ChargeTimeEstimator(
         val p = lvl * 100f / sc
         val nowPlugged = i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
         if (!nowPlugged) {
-            plugged = false; samples.clear(); announced = false; fullShown = false; pct = p
+            plugged = false; samples.clear(); announced = false; fullShown = false; alerted80 = false; pct = p
             return
         }
-        if (!plugged) { plugged = true; samples.clear(); announced = false; fullShown = false }
+        val prev = pct
+        if (!plugged) { plugged = true; samples.clear(); announced = false; fullShown = false; alerted80 = p >= 80f }
         pct = p
+        // %80 uyarısı: şarjdayken %80 eşiği geçilince bir kez (pil ömrü için çıkarma hatırlatması)
+        if (!alerted80 && prev in 0f..79.99f && p >= 80f) {
+            alerted80 = true
+            val m = settings.value.more
+            if (m.charge80) {
+                val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                val night = m.charge80Night && (h >= 23 || h < 7)
+                if (!night) runCatching {
+                    ctx.getSystemService(Vibrator::class.java)?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
+                }
+                show(pill(if (night) "Şarj %80" else "Şarjı çıkarabilirsin", p.toInt()))
+            }
+        }
         val now = SystemClock.elapsedRealtime()
         if (samples.isEmpty() || samples.last().second != p) samples.addLast(now to p)
         while (samples.size > 2 && now - samples.first().first > 20 * 60_000L) samples.removeFirst()

@@ -31,7 +31,7 @@ fun ComboSections() {
                 fxTilt = v.fxTilt, moodExtended = v.moodExtended, moodLyrics = v.moodLyrics, coverDissolve = v.coverDissolve,
                 calendarFx = v.calendarFx, chargeArcs = v.chargeArcs, lowBattSparks = v.lowBattSparks, notifShatter = v.notifShatter,
                 progressIsland = v.progressIsland, scoreIsland = v.scoreIsland,
-                chargeEta = v.chargeEta, flipSilence = v.flipSilence,
+                chargeEta = v.chargeEta, flipSilence = v.flipSilence, charge80 = v.charge80, charge80Night = v.charge80Night,
                 fxPets = v.fxPets, fxPetCount = v.fxPetCount,
                 petTouch = v.petTouch, petCompact = v.petCompact, petGrowth = v.petGrowth, petSocial = v.petSocial, petBall = v.petBall,
             ))
@@ -41,7 +41,7 @@ fun ComboSections() {
     val set: (MoreSettings) -> Unit = { m = it }
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
 
-    SectionCard("Ada olayları ile", "Ayarlar > Ada olayları'nda seçilen efektle birlikte çalışır") {
+    SectionCard("Ada sakinleri", "Genişletilmiş müzik adasında yaşayan küçük hayvanlar") {
         SwitchRow("Ada sakinleri", "Genişletilmiş müzik adasında kedi, tavşan, civciv, penguen ve tilki yaşar. Kapağın, yazıların ve çubuğun üstünde yürür, zıplar; seçili olaya göre davranır: yağmurda kapağın altına sığınır ya da şemsiye açar, karda kardan adam yapar, güneşte gözlükle uzanır, sualtında fanusla yüzer, havai fişekte kulaklarını kapatır, ateşböceği kovalar, kum fırtınasında rüzgâraltına saklanır. Söze göre dans eder, sallanınca sersemler",
             cur.fxPets) { set(cur.copy(fxPets = it)) }
         if (cur.fxPets) {
@@ -66,6 +66,9 @@ fun ComboSections() {
             SwitchRow("Top oyunu", "Genişletilmiş adada bir top belirir: telefonu eğerek yuvarlarsın, parmakla da fırlatabilirsin. Yıldıza değince konfeti patlar, hayvanlar sevinir. Hayvanlar da topu kovalayıp iter, bazen yıldıza doğru",
                 cur.petBall) { set(cur.copy(petBall = it)) }
         }
+    }
+
+    SectionCard("Ada olayları ile", "Ayarlar > Ada olayları'nda seçilen efektle birlikte çalışır") {
         SwitchRow("Eğilen dünya", "Telefonu eğince kar ve kum yığınları o yöne kayıp dökülür, kabarcıklar eğik yükselir, düşen parçacıklar yana savrulur. Telefonu sallayınca birikenler silkelenir, donmuş öğelerin buzu çatlar",
             cur.fxTilt) { set(cur.copy(fxTilt = it)) }
         SwitchRow("Şarkıya göre olay", "Şarkının havası açıkken kapak rengi yeni olayları da seçebilir: koyu mavi sualtı, mor kutup ışığı, sıcak ve parlak havai fişek, gece mavisi meteor, kum rengi kum fırtınası",
@@ -75,21 +78,36 @@ fun ComboSections() {
         SwitchRow("Takvim olayları", "Özel gün ve saatlerde olay kendiliğinden açılır: yılbaşı gecesi ve resmi bayram akşamlarında havai fişek, dolunay gecelerinde kutup ışığı, gece yarısından sonra ateşböceği",
             cur.calendarFx) { set(cur.copy(calendarFx = it)) }
         if (!cur.musicMood && (cur.moodExtended)) {
-            Text("\"Şarkıya göre olay\" için Ana Sayfa'daki \"Şarkının havası\" da açık olmalı.", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+            Text("\"Şarkıya göre olay\" için Ana Sayfa > Müzik'teki \"Şarkının havası\" da açık olmalı.", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
         }
     }
 
-    SectionCard("Birleşik efektler", "Mevcut özelliklerin birbirine bağlandığı efektler") {
+    SectionCard("Müzik ve kapak", "Şarkı değişirken kapağın davranışı") {
         SwitchRow("Dağılan kapak", "Şarkı değişince eski kapak toz gibi parçacıklara ayrılıp savrulur, yeni kapak parçacıklardan birleşerek oluşur (kapak çevirme animasyonunun yerine)",
             cur.coverDissolve) { set(cur.copy(coverDissolve = it)) }
+    }
+
+    SectionCard("Şarj ve pil", "Şarj halkasıyla birlikte çalışan eklemeler") {
         SwitchRow("Şarjda elektrik", "Şarja takınca halkaya kenarlardan elektrik arkları akar ve dolan ucun çevresinde kıvılcım saçar. Şarj halkası kapalı olsa da bu açıkken halka gösterilir",
             cur.chargeArcs) { set(cur.copy(chargeArcs = it)) }
-        SwitchRow("Pil azken kıvılcım", "Pil %15'in altına düşünce (şarjda değilken) boştaki adanın alt ve üst kenarında arada bir kısa elektrik çatırtısı ve kıvılcım çakar",
-            cur.lowBattSparks) { set(cur.copy(lowBattSparks = it)) }
         SwitchRow("Şarj süresi tahmini", "Şarjdayken tam dolmaya kalan süre gösterilir: tahmin ilk hesaplanınca, şarjdayken kilit açılınca ve şarj halkasında. Tam dolunca ada \"Tam doldu\" der. Sistemin kendi tahmini varsa o kullanılır, yoksa şarj hızı ölçülür (ilk birkaç dakika tahmin olmayabilir)",
             cur.chargeEta) { set(cur.copy(chargeEta = it)) }
+        SwitchRow("%80 uyarısı", "Şarjdayken pil %80'e ulaşınca ada kısa bir titreşimle \"Şarjı çıkarabilirsin\" der. Pil ömrünü uzatmak için. Her şarjda bir kez uyarır; şarjdan çıkarıp yeniden takınca tekrar kurulur",
+            cur.charge80) { set(cur.copy(charge80 = it)) }
+        if (cur.charge80) {
+            SwitchRow("Gece sessiz", "23.00 – 07.00 arası uyarı titreşimsiz ve sade gelir (gece şarjda bırakılan telefon uyandırmasın)",
+                cur.charge80Night) { set(cur.copy(charge80Night = it)) }
+        }
+        SwitchRow("Pil azken kıvılcım", "Pil %15'in altına düşünce (şarjda değilken) boştaki adanın alt ve üst kenarında arada bir kısa elektrik çatırtısı ve kıvılcım çakar",
+            cur.lowBattSparks) { set(cur.copy(lowBattSparks = it)) }
+    }
+
+    SectionCard("Ters çevirince sessiz", "Telefonu yüzüstü koy, Rahatsız Etmeyin açılsın") {
         SwitchRow("Ters çevirince sessiz", "Telefonu ekranı aşağı bakacak şekilde düz bir yere koyunca kısa bir çift titreşimle Rahatsız Etmeyin açılır; kaldırınca kapanır. Rahatsız Etmeyin zaten açıksa ya da arada elle değiştirirsen ona dokunulmaz. Bildirim erişimi açık olmalı",
             cur.flipSilence) { set(cur.copy(flipSilence = it)) }
+    }
+
+    SectionCard("Bildirim efektleri", "Bildirim silinirken oynayan efekt") {
         SwitchRow("Silinen bildirim dökülsün", "Bildirimi silince yazısı harf harf parçalanıp girdap gibi adaya çekilir. Ada olaylarında kar ya da tipi seçiliyse harfler kar tanesine, kum fırtınasıysa kuma, havai fişek ya da meteorsa kora dönüşür",
             cur.notifShatter) { set(cur.copy(notifShatter = it)) }
     }

@@ -594,6 +594,10 @@ data class MoreSettings(
     val importantOnly: Boolean = false,     // yalnızca önemli kişilerin mesajları adada
     val importantNames: String = "",        // virgülle ayrılmış adlar
     val silentDigest: Boolean = false,      // düşük öncelikli bildirimler saatlik özet
+    val notifSnooze: Boolean = false,       // adadaki bildirimde Ertele çipleri (NotifSmart.kt)
+    val smartCopy: Boolean = false,         // adadaki bildirimde IBAN / kargo no / telefon / adres / bağlantı çipleri
+    val charge80: Boolean = false,          // şarjda %80 uyarısı (ChargeFlip.kt)
+    val charge80Night: Boolean = true,      // %80 uyarısı gece titreşimsiz ve küçük
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -719,6 +723,8 @@ class SettingsRepository(context: Context) {
         val C_LOWB = booleanPreferencesKey("c_lowb"); val C_SHAT = booleanPreferencesKey("c_shat"); val C_PROG = booleanPreferencesKey("c_prog")
         val C_SCORE = booleanPreferencesKey("c_score")
         val C_ETA = booleanPreferencesKey("c_eta"); val C_FLIP = booleanPreferencesKey("c_flip")
+        val C_80 = booleanPreferencesKey("c_80"); val C_80N = booleanPreferencesKey("c_80n")
+        val N_SNZ = booleanPreferencesKey("n_snz"); val N_SMART = booleanPreferencesKey("n_smart")
         val C_PETS = booleanPreferencesKey("c_pets"); val C_PETN = intPreferencesKey("c_petn")
         val C_PTOUCH = booleanPreferencesKey("c_ptouch"); val C_PCOMP = booleanPreferencesKey("c_pcomp"); val C_PGROW = booleanPreferencesKey("c_pgrow")
         val C_PSOC = booleanPreferencesKey("c_psoc"); val C_PBALL = booleanPreferencesKey("c_pball")
@@ -1013,6 +1019,8 @@ class SettingsRepository(context: Context) {
                 scoreIsland = p[K.C_SCORE] ?: d.more.scoreIsland,
                 chargeEta = p[K.C_ETA] ?: d.more.chargeEta,
                 flipSilence = p[K.C_FLIP] ?: d.more.flipSilence,
+                charge80 = p[K.C_80] ?: d.more.charge80, charge80Night = p[K.C_80N] ?: d.more.charge80Night,
+                notifSnooze = p[K.N_SNZ] ?: d.more.notifSnooze, smartCopy = p[K.N_SMART] ?: d.more.smartCopy,
                 fxPets = p[K.C_PETS] ?: d.more.fxPets,
                 fxPetCount = (p[K.C_PETN] ?: d.more.fxPetCount).coerceIn(1, FX_PET_KINDS),
                 petTouch = p[K.C_PTOUCH] ?: d.more.petTouch, petCompact = p[K.C_PCOMP] ?: d.more.petCompact,
@@ -1145,6 +1153,8 @@ class SettingsRepository(context: Context) {
             it[K.C_LOWB] = m.lowBattSparks; it[K.C_SHAT] = m.notifShatter; it[K.C_PROG] = m.progressIsland
             it[K.C_SCORE] = m.scoreIsland
             it[K.C_ETA] = m.chargeEta; it[K.C_FLIP] = m.flipSilence
+            it[K.C_80] = m.charge80; it[K.C_80N] = m.charge80Night
+            it[K.N_SNZ] = m.notifSnooze; it[K.N_SMART] = m.smartCopy
             it[K.C_PETS] = m.fxPets; it[K.C_PETN] = m.fxPetCount
             it[K.C_PTOUCH] = m.petTouch; it[K.C_PCOMP] = m.petCompact; it[K.C_PGROW] = m.petGrowth
             it[K.C_PSOC] = m.petSocial; it[K.C_PBALL] = m.petBall

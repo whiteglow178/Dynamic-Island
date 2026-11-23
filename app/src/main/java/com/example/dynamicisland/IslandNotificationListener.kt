@@ -74,6 +74,16 @@ class IslandNotificationListener : NotificationListenerService() {
         }
 
         /** Adadaki bildirimi sistemden de siler (bildirim panelinden de kalkar). Anahtar boşsa ya da dinleyici bağlı değilse bir şey yapmaz. */
+        /** Bildirimi sistemde ertele: [ms] sonra bildirim panelinde yeniden belirir (ek izin gerekmez). */
+        fun snooze(key: String, ms: Long): Boolean {
+            val i = instance ?: return false
+            return runCatching { i.snoozeNotification(key, ms); true }.getOrDefault(false)
+        }
+
+        /** Bu uygulamanın "Bildirim testi" kartından gönderilen deneme bildirimi mi? (normalde kendi bildirimlerimiz yok sayılır) */
+        fun isTest(sbn: StatusBarNotification, own: String): Boolean =
+            sbn.packageName == own && runCatching { sbn.notification.extras.getBoolean(NotifTest.EXTRA, false) }.getOrDefault(false)
+
         fun dismiss(key: String) {
             if (key.isBlank()) return
             runCatching { instance?.cancelNotification(key) }
@@ -582,7 +592,7 @@ class IslandNotificationListener : NotificationListenerService() {
             val userGone = reason == NotificationListenerService.REASON_CANCEL || reason == NotificationListenerService.REASON_CANCEL_ALL
             // Silinen bildirim geçmişi: yalnızca bellekte; kod içerenler ve gizli bildirimler tutulmaz
             if (NotifFlags.history && userGone && (n.flags and Notification.FLAG_ONGOING_EVENT) == 0 &&
-                (n.flags and Notification.FLAG_GROUP_SUMMARY) == 0 && sbn.packageName != packageName && !NotifVault.sensitive(sbn)
+                (n.flags and Notification.FLAG_GROUP_SUMMARY) == 0 && (sbn.packageName != packageName || isTest(sbn, packageName)) && !NotifVault.sensitive(sbn)
             ) {
                 val t = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
                 val x = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
@@ -590,7 +600,7 @@ class IslandNotificationListener : NotificationListenerService() {
             }
             val ongoing = (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
             val summary = (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0
-            if (userGone && !ongoing && !summary && sbn.packageName != packageName) {
+            if (userGone && !ongoing && !summary && (sbn.packageName != packageName || isTest(sbn, packageName))) {
                 val ttl = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
                 val txt = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
                 IslandBus.post(IslandEvent.NotifTrashed(sbn.packageName, ttl.ifBlank { txt }))
@@ -638,6 +648,8 @@ class IslandNotificationListener : NotificationListenerService() {
 
     private fun handleNotification(sbn: StatusBarNotification) {
         val n = sbn.notification
+        // Deneme bildirimi (Ana Sayfa > Bildirimler > Bildirim testi): başka bir uygulamadan gelmiş gibi işlenir
+        val other = sbn.packageName != packageName || isTest(sbn, packageName)
         // Shazam: dinleme / sonuç bildirimleri adada özel animasyonla gösterilir
         if (handleShazam(sbn)) return
         // Sistem ekran kaydı bildirimi (kayıt / işleniyor / kaydedildi) ayrı yoldan gider
@@ -648,7 +660,7 @@ class IslandNotificationListener : NotificationListenerService() {
             return
         }
         // Doğrulama kodu: kod kartı olarak gösterilir (kod hiçbir yere kaydedilmez)
-        if (NotifFlags.otp && sbn.packageName != packageName && !sbn.isOngoing) {
+        if (NotifFlags.otp && other && !sbn.isOngoing) {
             val code = OtpParse.of(sbn)
             if (code != null) {
                 val icon = runCatching { packageManager.getApplicationIcon(sbn.packageName).toBitmap(96, 96).asImageBitmap() }.getOrNull()
@@ -660,8 +672,8 @@ class IslandNotificationListener : NotificationListenerService() {
             }
         }
         // Navigasyon / sipariş takibi: adada canlı etkinlik olarak kalır (özellik kapalıysa normal yoldan gider)
-        if (sbn.packageName != packageName && LiveFlags.any && handleLive(sbn)) return
-        if (sbn.packageName == packageName || sbn.isOngoing ||
+        if (other && LiveFlags.any && handleLive(sbn)) return
+        if (!other || sbn.isOngoing ||
             n.flags and Notification.FLAG_GROUP_SUMMARY != 0 ||
             n.category == Notification.CATEGORY_TRANSPORT ||
             n.category == Notification.CATEGORY_PROGRESS

@@ -93,8 +93,16 @@ fun Modifier.rowDivider(): Modifier {
  * Ayar grubu: başlık kartın ÜSTÜNDE sakin bir etiket olarak durur, satırlar tek bir yüzey içinde toplanır.
  * İçerik açılıp kapanınca yüzey akıcı biçimde büyür / küçülür.
  */
+/**
+ * Ana Sayfa kategorileri: bir sayfa açıkken yalnızca başlığı bu kümede olan kartlar çizilir (null = hepsi).
+ * Böylece mevcut bölüm fonksiyonları olduğu gibi çağrılıp kategoriye göre süzülür.
+ */
+val LocalCardFilter = androidx.compose.runtime.staticCompositionLocalOf<Set<String>?> { null }
+
 @Composable
 fun SectionCard(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    val filter = LocalCardFilter.current
+    if (filter != null && title !in filter) return
     val cs = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(14.dp)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {

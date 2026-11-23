@@ -217,6 +217,7 @@ fun NotifToolsSections() {
             s.copy(more = s.more.copy(
                 otpIsland = v.otpIsland, notifHistory = v.notifHistory, unreadRemind = v.unreadRemind,
                 importantOnly = v.importantOnly, importantNames = v.importantNames, silentDigest = v.silentDigest,
+                notifSnooze = v.notifSnooze, smartCopy = v.smartCopy,
             ))
         }
     }
@@ -246,10 +247,22 @@ fun NotifToolsSections() {
             cur.notifHistory) { set(cur.copy(notifHistory = it)) }
     }
 
+    SectionCard("Akıllı bildirim", "Adada açılan bildirimin altında tek dokunuşluk çipler. Ek izin gerekmez, hiçbir şey kaydedilmez") {
+        SwitchRow("Ertele", "Bildirimin altında 15 dk / 1 sa / Akşam çipleri çıkar. Dokununca bildirim sistemde ertelenir; süre dolunca bildirim panelinde yeniden belirir",
+            cur.notifSnooze) { set(cur.copy(notifSnooze = it)) }
+        SwitchRow("Akıllı kopyala", "Bildirimdeki IBAN, kargo takip numarası, telefon, adres ve bağlantı bulunur: IBAN ve takip no tek dokunuşla kopyalanır, telefon arama ekranında hazır açılır (aramayı sen başlatırsın), adres haritada, bağlantı tarayıcıda açılır. Bağlantı çipinde alan adı yazar",
+            cur.smartCopy) { set(cur.copy(smartCopy = it)) }
+        Text("Çipler bildirim adada genişlediğinde görünür (iOS tarzı banner ve \"ada genişlemesin\" modunda görünmez).", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+
+    SectionCard("Bildirim testi", "Özellikleri denemek için örnek bildirim gönder. 3 sn sonra gelir; istersen bu arada ana ekrana dön") {
+        NotifTestButtons()
+    }
+
     if (cur.silentDigest || cur.importantOnly) {
         val list = NotifVault.silentList()
-        LaunchedEffect(Unit) { NotifVault.markSilentSeen() }
         SectionCard("Sessiz bildirimler", if (list.isEmpty()) "Son 24 saatte sessize alınan bildirim yok" else "${list.size} bildirim · dokun, uygulamada aç") {
+            LaunchedEffect(Unit) { NotifVault.markSilentSeen() }
             VaultList(ctx, list)
             if (list.isNotEmpty()) IslandActionButton("Listeyi temizle", { NotifVault.clearSilent() }, Modifier.fillMaxWidth())
         }
@@ -261,6 +274,41 @@ fun NotifToolsSections() {
             if (list.isNotEmpty()) IslandActionButton("Geçmişi temizle", { NotifVault.clearRemoved() }, Modifier.fillMaxWidth())
         }
     }
+}
+
+@Composable
+private fun NotifTestButtons() {
+    val ctx = LocalContext.current
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant
+    var note by remember { mutableStateOf("") }
+    var pending by remember { mutableIntStateOf(-1) }
+    val fire: (Int) -> Unit = { w ->
+        note = if (NotifTest.send(ctx, w)) "\"${NotifTest.LABELS[w]}\" 3 sn sonra gelecek" else "Bildirim izni kapalı"
+    }
+    val perm = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { ok ->
+        val w = pending; pending = -1
+        if (ok && w >= 0) fire(w) else if (!ok) note = "Bildirim izni verilmedi: Ayarlar > Uygulamalar > Omni Island > Bildirimler"
+    }
+    val tap: (Int) -> Unit = { w ->
+        val granted = android.os.Build.VERSION.SDK_INT < 33 || androidx.core.content.ContextCompat.checkSelfPermission(
+            ctx, android.Manifest.permission.POST_NOTIFICATIONS,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) fire(w) else { pending = w; perm.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        NotifTest.LABELS.indices.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { w -> IslandActionButton(NotifTest.LABELS[w], { tap(w) }, Modifier.weight(1f)) }
+            }
+        }
+    }
+    if (note.isNotEmpty()) Text(note, color = MaterialTheme.colorScheme.primary, fontSize = 12.5.sp)
+    Text("Mesaj: önemli kişiler, hatırlatıcı, erteleme. Doğrulama kodu: kod kartı. IBAN ve kargo: akıllı kopyala. " +
+        "İndirme ve Maç skoru: canlı etkinlik kartları. Sessiz bildirim: sessiz özet. Silinen geçmişini denemek için gelen bildirimi kaydırıp sil. " +
+        "İlgili özellik kapalıysa bildirim normal bildirim gibi görünür.",
+        color = dim, fontSize = 12.sp, lineHeight = 17.sp)
 }
 
 @Composable

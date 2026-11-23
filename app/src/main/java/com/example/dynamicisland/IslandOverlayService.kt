@@ -152,6 +152,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { flipSilence.start() }     // ters çevirince sessiz (ayar açılınca sensör dinlenir)
         startExtras()                           // başparmak modu, zaman kapsülü, kamuflaj
         DrawerBridge.onKey = { k -> runCatching { onDrawerKey(k) } }
+        NotifChipBus.onChip = { n, chip -> runCatching { onNotifChip(n, chip) } }
         startAppLock()                          // uygulama açılış animasyonu (ek kurulum gerekmez)
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
@@ -287,6 +288,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val n = IslandContent.Notif(
                     e.pkg, tr?.first ?: e.title, tr?.second ?: e.text, icon, e.intent, e.key, e.avatar, e.messaging, accent,
                     translatedFrom = tr?.third.orEmpty(),
+                    // Akıllı bildirim: ertele ve IBAN / kargo no / telefon / adres / bağlantı çipleri (asıl yazıdan çıkarılır)
+                    chips = if (e.key.isNotEmpty() && (st.more.notifSnooze || st.more.smartCopy))
+                        NotifSmart.chips(e.title, e.text, st.more.notifSnooze, st.more.smartCopy) else emptyList(),
                 )
                 // Adadan akan bildirim: kelimeler adadan dökülür (efekt penceresi)
                 if (st.more.notifFlow) PlayFx.emit(PlayEvent.NotifText(n.title, n.text))
@@ -383,7 +387,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow, sideKey(u),
             stackW = if (stacked) kotlin.math.ceil(stackWidthDp(u.stack, s, screenWDp)).toInt() else 0,
             stackH = if (stacked) kotlin.math.ceil(stackHeightDp(u.stack, s)).toInt() else 0,
-            extraH = if (u.content is IslandContent.Translate) TranslateSession.bodyDp.value else 0,
+            extraH = if (u.content is IslandContent.Translate) TranslateSession.bodyDp.value
+                else notifChipsExtraDp(u.content).toInt(),
             gesture = GestureStore.flow(applicationContext).value.enabled,
         )
     }
@@ -1593,6 +1598,36 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         notif.clear(); notif.finish()
     }
 
+    /** Akıllı bildirim çipi: ertele / kopyala / ara / harita / bağlantı. */
+    private fun onNotifChip(n: IslandContent.Notif, chip: NotifChip) {
+        val cur = ui.value.content as? IslandContent.Notif ?: return
+        if (cur.key != n.key || n.key.isEmpty()) return
+        when (chip.act) {
+            CHIP_SNOOZE -> {
+                val ms = chip.value.toLongOrNull() ?: return
+                val ok = IslandNotificationListener.snooze(n.key, ms)
+                if (ok && perchedNotif?.key == n.key) birdAway()
+                notifChipDone(cur, chip, if (ok) "Ertelendi ✓" else "Ertelenemedi")
+            }
+            CHIP_COPY -> notifChipDone(cur, chip, if (NotifSmart.copy(this, chip.value)) "Kopyalandı ✓" else "Kopyalanamadı")
+            CHIP_DIAL, CHIP_MAP, CHIP_LINK -> {
+                notif.clear(); notif.finish()
+                NotifSmart.open(this, chip)
+            }
+        }
+    }
+
+    /** Çipin yazısı kısa süre sonucu gösterir, sonra bildirim adadan kalkar. */
+    private fun notifChipDone(n: IslandContent.Notif, chip: NotifChip, label: String) {
+        val done = n.copy(chips = n.chips.map { if (it == chip) it.copy(label = label, act = CHIP_DONE) else it })
+        notif.clear()
+        update { it.copy(content = done) }
+        scope.launch {
+            delay(1_100L)
+            if ((ui.value.content as? IslandContent.Notif)?.key == n.key) notif.finish()
+        }
+    }
+
     /** Bildirim üstünde sağa / sola kaydırma. */
     private fun onNotifSwipeSide() {
         val c = ui.value.content as? IslandContent.Notif ?: return
@@ -2485,7 +2520,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
                 k.kind == 12 -> s.translateHeightDp(k.extraH)   // çeviri paneli: sonuç uzunluğuna göre
-                else -> s.expandedHeightDp + if (music) s.musicExtraDp() else 0f
+                else -> s.expandedHeightDp + (if (music) s.musicExtraDp() else 0f) + (if (k.kind == 1) k.extraH.toFloat() else 0f)
             }
         )
 

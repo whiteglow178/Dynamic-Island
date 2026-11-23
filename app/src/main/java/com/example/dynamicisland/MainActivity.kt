@@ -17,6 +17,13 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -460,45 +467,71 @@ private fun Context.islandServiceRunning(): Boolean = runCatching {
 private fun HomeScreen() {
     val ctx = LocalContext.current
     var tryOpen by rememberSaveable { mutableStateOf(false) }
+    var open by rememberSaveable { mutableIntStateOf(-1) }        // açık kategori (-1 = kategori listesi)
+    var query by rememberSaveable { mutableStateOf("") }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        SectionCard("Dene", "Adanın görünümlerini ve animasyonlarını önizle") {
-            IslandActionButton("Dene", { tryOpen = true }, tonal = false)
-        }
-        CustomDesignSection()      // özel ada tasarımı: desen / fotoğraf (DesignSection.kt)
-        ExtrasSections()           // portal ada, başparmak modu, kamuflaj, zaman kapsülü (ExtrasSection.kt)
-        NotifToolsSections()       // bildirim araçları: doğrulama kodu, hatırlatıcı, önemli kişiler, sessiz özet, silinen geçmişi (NotifTools.kt)
-        ComboSections()            // birleşik özellikler: eğim, söze tepki, takvim, dağılan kapak, canlı skor... (ComboSection.kt)
-        SectionCard("Ada yenileme hızı", "Adanın animasyonları saniyede kaç kare çizilsin") {
-            val hz by RefreshRateStore.flow(ctx).collectAsState()
-            val supported = remember { RefreshRate.supported(ctx) }
-            SegmentedTabs(RefreshRateStore.OPTIONS.map { "$it Hz" }, RefreshRateStore.OPTIONS.indexOf(hz).coerceAtLeast(0)) { i ->
-                RefreshRateStore.set(ctx, RefreshRateStore.OPTIONS[i])
-            }
-            val note = buildString {
-                append("Yüksek değer daha akıcı, düşük değer daha az pil harcar. Değişiklik hemen uygulanır.")
-                if (supported.isNotEmpty()) append(" Bu ekranın desteklediği hızlar: ${supported.joinToString(", ")} Hz.")
-                if (supported.isNotEmpty() && hz > (supported.maxOrNull() ?: hz)) {
-                    append(" Ekran $hz Hz'e çıkamadığı için en yüksek ${supported.maxOrNull()} Hz kullanılır.")
+    BackHandler(enabled = open >= 0 || query.isNotEmpty()) {
+        if (open >= 0) open = -1 else query = ""
+    }
+
+    AnimatedContent(
+        targetState = open,
+        transitionSpec = {
+            val fwd = targetState >= 0
+            (fadeIn(tween(220)) + slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { w -> if (fwd) w / 6 else -w / 6 }) togetherWith
+                (fadeOut(tween(160)) + slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { w -> if (fwd) -w / 8 else w / 8 })
+        },
+        label = "home",
+    ) { cat ->
+        if (cat < 0) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                SectionCard("Dene", "Adanın görünümlerini ve animasyonlarını önizle") {
+                    IslandActionButton("Dene", { tryOpen = true }, tonal = false)
                 }
-                if (RefreshRate.legacyLimited(hz)) {
-                    append(" Android 15'ten eski sürümlerde ada yalnızca hızı artırabilir; $hz Hz'de sistem kendi hızını kullanır " +
-                        "(arka plandaki uygulamaları yavaşlatmamak için).")
+                SearchField(query, { query = it }, hint = "Özelliklerde ara")
+                if (query.isBlank()) {
+                    HomeCategoryGrid { open = it }
+                } else {
+                    // Arama: başlığı ya da kategorisi eşleşen kartlar doğrudan burada açılır
+                    val tr = remember { java.util.Locale("tr", "TR") }
+                    val words = query.trim().lowercase(tr).split(' ').filter { it.isNotEmpty() }
+                    val hits = HOME_CATS.flatMap { c ->
+                        c.titles.filter { t -> val hay = "$t ${c.name} ${c.keys}".lowercase(tr); words.all { hay.contains(it) } }
+                    }.toSet()
+                    if (hits.isEmpty()) {
+                        Text("Sonuç yok", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp))
+                    } else {
+                        CompositionLocalProvider(LocalCardFilter provides hits) { HomeAllSections() }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+        } else {
+            val c = HOME_CATS[cat.coerceIn(0, HOME_CATS.lastIndex)]
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface)
+                            .clickable { open = -1 },
+                        contentAlignment = Alignment.Center,
+                    ) { Text("‹", color = MaterialTheme.colorScheme.onSurface, fontSize = 26.sp, fontWeight = FontWeight.Medium) }
+                    Column {
+                        Text(c.name, color = MaterialTheme.colorScheme.onBackground, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp)
+                        Text(c.desc, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    }
+                }
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    CompositionLocalProvider(LocalCardFilter provides c.titles.toSet()) { HomeAllSections() }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
-            Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
-        SectionCard("Uygulama ikonu", "Ana ekrandaki ikonun rengi") {
-            var darkIcon by remember { mutableStateOf(AppIcon.isDark(ctx)) }
-            RadioRow("Beyaz", "Açık zeminli ikon", !darkIcon) { darkIcon = false; AppIcon.set(ctx, false) }
-            RadioRow("Koyu", "Antrasit zeminli ikon", darkIcon) { darkIcon = true; AppIcon.set(ctx, true) }
-            Text("Ana ekrandaki ikonun değişmesi birkaç saniye sürebilir; bazı başlatıcılarda uygulamayı yeniden açmak gerekir.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-        }
-        Spacer(Modifier.height(8.dp))
     }
 
     if (tryOpen) {
@@ -511,6 +544,104 @@ private fun HomeScreen() {
         ) {
             TryScreen(isIslandRunning = { ctx.islandServiceRunning() }, onClose = { tryOpen = false })
         }
+    }
+}
+
+/** Ana Sayfa kategorisi: içindeki kart başlıkları (SectionCard başlığıyla birebir aynı olmalı). */
+private class HomeCat(val name: String, val glyph: String, val desc: String, val titles: List<String>, val keys: String = "")
+
+private val HOME_CATS = listOf(
+    HomeCat("Görünüm", "◐", "Tasarım, portal, şekil, kamuflaj", listOf(
+        "Özel ada tasarımı", "Portal ada", "Ada şekli", "Kamuflaj", "Uygulama açılış animasyonu", "Ada yenileme hızı", "Uygulama ikonu",
+    ), "görsel desen fotoğraf face id hz ikon"),
+    HomeCat("Ada olayları", "✦", "Ada sakinleri, eğilen dünya, takvim", listOf(
+        "Ada sakinleri", "Ada olayları ile",
+    ), "hayvan kedi efekt hava kar yağmur"),
+    HomeCat("Müzik", "♪", "Şarkının havası, kapak efektleri", listOf(
+        "Şarkının havası", "Müzik ve kapak", "Kapak portalı",
+    ), "kapak albüm şarkı"),
+    HomeCat("Bildirimler", "✉", "Kod, erteleme, akıllı kopyala, geçmiş", listOf(
+        "Bildirim araçları", "Akıllı bildirim", "Bildirim testi", "Sessiz bildirimler", "Silinen bildirimler",
+        "Bildirim çevirisi", "Adadan akan bildirim", "Bildirim kuşları", "Çöp kutusu ada", "Bildirim efektleri",
+    ), "otp doğrulama kod ertele iban kargo kopyala test"),
+    HomeCat("Canlı etkinlikler", "◎", "Navigasyon, sipariş, maç, indirme", listOf(
+        "Navigasyon", "Sipariş takibi", "Canlı etkinlik: yeni türler", "Kulaklık kartı", "Rahatsız Etmeyin", "Erişim noktası",
+    ), "skor maç kargo yemek indirme hotspot odak"),
+    HomeCat("Şarj ve pil", "↯", "Şarj halkası, süre tahmini, %80", listOf(
+        "Şarj halkası", "Şarj ve pil",
+    ), "pil batarya elektrik yüzde 80"),
+    HomeCat("Kısayollar ve araçlar", "⌘", "Başparmak, çekmece, ters çevir, kapsül", listOf(
+        "Başparmak modu", "Ada çekmecesi", "Yelpaze menü", "Ters çevirince sessiz", "Zaman kapsülü",
+    ), "sessiz rahatsız etmeyin not favori"),
+)
+
+/** Ana Sayfa'daki tüm kart grupları; hangilerinin çizileceğini LocalCardFilter belirler. */
+@Composable
+private fun HomeAllSections() {
+    CustomDesignSection()      // özel ada tasarımı (DesignSection.kt)
+    ExtrasSections()           // portal, başparmak, kamuflaj, zaman kapsülü ve diğerleri (ExtrasSection.kt)
+    NotifToolsSections()       // bildirim araçları, akıllı bildirim, test (NotifTools.kt)
+    ComboSections()            // ada sakinleri, olaylar, şarj ve pil... (ComboSection.kt)
+    HomeMiscSections()         // yenileme hızı, uygulama ikonu
+}
+
+@Composable
+private fun HomeCategoryGrid(onOpen: (Int) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        HOME_CATS.indices.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { i ->
+                    val c = HOME_CATS[i]
+                    Column(
+                        Modifier.weight(1f).height(118.dp).clip(RoundedCornerShape(18.dp)).background(cs.surface)
+                            .clickable { onOpen(i) }.padding(14.dp),
+                        verticalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Box(
+                            Modifier.size(34.dp).clip(CircleShape).background(cs.primary.copy(alpha = 0.14f)),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(c.glyph, color = cs.primary, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(c.name, color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Text(c.desc, color = cs.onSurfaceVariant, fontSize = 11.5.sp, lineHeight = 14.sp, maxLines = 2)
+                        }
+                    }
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeMiscSections() {
+    val ctx = LocalContext.current
+    SectionCard("Ada yenileme hızı", "Adanın animasyonları saniyede kaç kare çizilsin") {
+        val hz by RefreshRateStore.flow(ctx).collectAsState()
+        val supported = remember { RefreshRate.supported(ctx) }
+        SegmentedTabs(RefreshRateStore.OPTIONS.map { "$it Hz" }, RefreshRateStore.OPTIONS.indexOf(hz).coerceAtLeast(0)) { i ->
+            RefreshRateStore.set(ctx, RefreshRateStore.OPTIONS[i])
+        }
+        val note = buildString {
+            append("Yüksek değer daha akıcı, düşük değer daha az pil harcar. Değişiklik hemen uygulanır.")
+            if (supported.isNotEmpty()) append(" Bu ekranın desteklediği hızlar: ${supported.joinToString(", ")} Hz.")
+            if (supported.isNotEmpty() && hz > (supported.maxOrNull() ?: hz)) {
+                append(" Ekran $hz Hz'e çıkamadığı için en yüksek ${supported.maxOrNull()} Hz kullanılır.")
+            }
+            if (RefreshRate.legacyLimited(hz)) {
+                append(" Android 15'ten eski sürümlerde ada yalnızca hızı artırabilir; $hz Hz'de sistem kendi hızını kullanır " +
+                    "(arka plandaki uygulamaları yavaşlatmamak için).")
+            }
+        }
+        Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+    }
+    SectionCard("Uygulama ikonu", "Ana ekrandaki ikonun rengi") {
+        var darkIcon by remember { mutableStateOf(AppIcon.isDark(ctx)) }
+        RadioRow("Beyaz", "Açık zeminli ikon", !darkIcon) { darkIcon = false; AppIcon.set(ctx, false) }
+        RadioRow("Koyu", "Antrasit zeminli ikon", darkIcon) { darkIcon = true; AppIcon.set(ctx, true) }
+        Text("Ana ekrandaki ikonun değişmesi birkaç saniye sürebilir; bazı başlatıcılarda uygulamayı yeniden açmak gerekir.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
     }
 }
 
