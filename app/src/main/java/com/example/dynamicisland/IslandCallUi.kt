@@ -165,7 +165,7 @@ private fun SpeakerIcon(on: Boolean, tint: Color, modifier: Modifier = Modifier)
 
 /** Küçük adadaki ses dalgası: yeşil -> beyaz -> turuncu renk geçişli, hareketli çubuklar. */
 @Composable
-internal fun CallWave(modifier: Modifier = Modifier) {
+internal fun CallWave(modifier: Modifier = Modifier, allGreen: Boolean = false) {
     val tr = rememberInfiniteTransition(label = "wave")
     val phase: Float by tr.animateFloat(
         initialValue = 0f,
@@ -185,7 +185,8 @@ internal fun CallWave(modifier: Modifier = Modifier) {
             val v: Float = 0.30f + 0.70f * kotlin.math.abs(kotlin.math.sin(phase + i * 0.85f))
             val h: Float = (size.height * env * v).coerceAtLeast(bw)
             val color: Color =
-                if (t < 0.5f) androidx.compose.ui.graphics.lerp(green, Pal.c("call_wave_mid"), t * 2f)
+                if (allGreen) green
+                else if (t < 0.5f) androidx.compose.ui.graphics.lerp(green, Pal.c("call_wave_mid"), t * 2f)
                 else androidx.compose.ui.graphics.lerp(Pal.c("call_wave_mid"), orange, (t - 0.5f) * 2f)
             val x: Float = gap * i + gap / 2f
             val y1: Float = (size.height - h) / 2f

@@ -5,7 +5,7 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 
 /**
- * Ada servisinin, ayrı dosyalara taşınan olay denetleyicilerine (Shazam, ekran kaydı...) açtığı küçük arayüz.
+ * Ada servisinin, ayrı dosyalara taşınan olay denetleyicilerine (SoundCapsule, ekran kaydı...) açtığı küçük arayüz.
  * Denetleyiciler servisin özel alanlarına doğrudan dokunmaz; yalnızca buradaki işlevleri kullanır.
  */
 interface IslandHost {

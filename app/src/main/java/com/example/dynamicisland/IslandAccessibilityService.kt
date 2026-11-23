@@ -46,6 +46,49 @@ class IslandAccessibilityService : AccessibilityService() {
 
         /** Adadaki durdur düğmesi: sistem kaydedicinin yüzen çubuğundaki durdur düğmesine dokunur. */
         fun stopScreenRec(): Boolean = instance?.doStopScreenRec() ?: false
+
+        /**
+         * Sound Capsule (müzik tanıma) dinlemesini durdurur: tanıma uygulamasının ekranı / açılır penceresi görünüyorsa
+         * "iptal / kapat / durdur" düğmesine basar. Bulamazsa ve [back] true ise, uygulama öndeyken geri tuşu gönderir.
+         */
+        fun stopListening(pkgs: Set<String>, back: Boolean): Boolean {
+            val s = instance ?: return false
+            s.handler.postDelayed({ runCatching { s.stopListeningNow(pkgs, back) } }, 120L)
+            return true
+        }
+    }
+
+    private fun stopListeningNow(pkgs: Set<String>, back: Boolean) {
+        val hints = listOf("iptal", "cancel", "kapat", "close", "durdur", "stop", "dismiss", "vazgeç")
+        val ws = runCatching { windows }.getOrNull().orEmpty()
+        var appVisible = false
+        for (w in ws) {
+            val root = runCatching { w.root }.getOrNull() ?: continue
+            val pkg = root.packageName?.toString() ?: continue
+            if (pkg !in pkgs) continue
+            appVisible = true
+            val hit = findByHint(root, hints, 0)
+            if (hit != null && runCatching { hit.performAction(AccessibilityNodeInfo.ACTION_CLICK) }.getOrDefault(false)) return
+        }
+        if (back && (appVisible || currentFg in pkgs)) runCatching { performGlobalAction(GLOBAL_ACTION_BACK) }
+    }
+
+    /** Yazısı / açıklaması / kimliği ipuçlarından birini içeren ilk tıklanabilir öğe (ya da tıklanabilir atası). */
+    private fun findByHint(n: AccessibilityNodeInfo, hints: List<String>, depth: Int): AccessibilityNodeInfo? {
+        if (depth > 30) return null
+        val t = (n.text?.toString().orEmpty() + " " + n.contentDescription?.toString().orEmpty() + " " +
+            n.viewIdResourceName.orEmpty()).lowercase()
+        if (hints.any { t.contains(it) }) {
+            var c: AccessibilityNodeInfo? = n
+            var k = 0
+            while (c != null && !c.isClickable && k < 4) { c = c.parent; k++ }
+            if (c != null && c.isClickable) return c
+        }
+        for (i in 0 until n.childCount) {
+            val ch = n.getChild(i) ?: continue
+            findByHint(ch, hints, depth + 1)?.let { return it }
+        }
+        return null
     }
 
     private class Win(val w: AccessibilityWindowInfo, val pkg: String?, val r: Rect)

@@ -28,7 +28,7 @@ const val STACK_MIN_ITEMS = 2
 const val STACK_HOLD_MS = 9_000L
 const val STACK_CLOSE_MS = 520L
 
-fun stackCardWidthDp(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = when (c) {
+fun stackCardWidthDp(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = xExpandedSizeDp(c, cfg, screenWDp)?.first ?: when (c) {
     is IslandContent.ScreenRec -> recExpandedWidthDp(cfg, screenWDp)
     is IslandContent.Status -> when (c.kind) {
         StatusKind.Charging -> CHARGE_PILL_W_DP
@@ -50,7 +50,7 @@ private fun stackKeyOf(c: IslandContent): String = when (c) {
     is IslandContent.Media -> "media"
     is IslandContent.ScreenRec -> "rec"
     is IslandContent.Call -> "call"
-    is IslandContent.Shazam -> "shazam"
+    is IslandContent.SoundCapsule -> "soundCapsule"
     is IslandContent.Status -> "status-" + c.kind.name
     is IslandContent.Notif -> "notif"
     else -> c::class.java.simpleName
@@ -83,7 +83,7 @@ fun IslandStackPanel(
     onDecline: () -> Unit,
     onSpeaker: () -> Unit,
     onRecStop: () -> Unit,
-    onShazamStop: () -> Unit,
+    onSoundCapsuleStop: () -> Unit,
 ) {
     val screenWDp = LocalConfiguration.current.screenWidthDp.toFloat()
     val fullProgress = remember { IslandProgress(mutableStateOf(1f), mutableStateOf(1f)) }
@@ -148,7 +148,7 @@ fun IslandStackPanel(
                         onOpenMusic = onOpenMusic,
                         onSwipe = { dir -> if (dir < 0) onClose() },       // yukarı kaydır = hepsini kapat
                         artFlip = null,
-                        onRecStop = onRecStop, onShazamStop = onShazamStop,
+                        onRecStop = onRecStop, onSoundCapsuleStop = onSoundCapsuleStop,
                     )
                 }
             }

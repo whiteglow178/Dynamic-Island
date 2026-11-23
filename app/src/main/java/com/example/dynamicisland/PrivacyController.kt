@@ -101,7 +101,11 @@ class PrivacyController(private val host: IslandHost) {
         content = next
         val cur = host.content
         val curStatus = cur as? IslandContent.Status
+        // Ortada başka olay varken (ayar açıksa) nokta ortayı almaz: sağdaki baloncukta görünür
+        val otherCenter = host.settings.more.micSideRight && cur !is IslandContent.Idle &&
+            !(curStatus != null && (curStatus.kind == StatusKind.Camera || curStatus.kind == StatusKind.Mic))
         when {
+            next != null && prev == null && otherCenter -> if (host.expanded) host.update { it } else host.rest()
             next != null && prev?.title != next.title && !host.busy -> {
                 // Ayara göre: kısa süre genişleyip küçülür ya da hiç genişlemeden doğrudan küçük (nokta) olarak görünür
                 if (host.settings.privacyExpand) host.showTemporarily(next, 4_000L)

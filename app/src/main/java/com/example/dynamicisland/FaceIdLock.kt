@@ -337,21 +337,41 @@ private fun DrawScope.fidBody(
         }
     }
 
-    // ---- 2c) ✓ (yalnız kilit açıldıysa): orta noktadan başlayıp iki kola büyür
+    // ---- 2c) ✓ (yalnız kilit açıldıysa): kalemle çizilir gibi sol uçtan başlar, köşeye iner, sağ kola uzar
+    //         (ekran kaydındaki gibi; birden belirmez). Çizilirken halka hafifçe parlar.
     if (!failed) {
-        val gk = fidOut(fidSeg(v, FaceIdTl.CHECK0, FaceIdTl.CHECK1))
+        val gk = fidSmooth(fidSeg(v, FaceIdTl.CHECK0, FaceIdTl.CHECK1))
         if (gk > 0f) {
-            val ca = vis
-            val vx = -0.08f * ringR * gk; val vy = 0.30f * ringR * gk
-            if (gk < 0.2f) drawCircle(green.copy(alpha = ca), sw * 0.6f, Offset(cx, ccy))
-            val lx = vx + (-0.30f * ringR) * gk; val ly = vy + (-0.30f * ringR) * gk
-            val rx = vx + (0.48f * ringR) * gk; val ry = vy + (-0.60f * ringR) * gk
-            val ck = Path().apply {
-                moveTo(cx + lx, ccy + ly); lineTo(cx + vx, ccy + vy); lineTo(cx + rx, ccy + ry)
-            }
-            if (gk >= 0.2f) fidStroke(ck, green.copy(alpha = ca), sw)
+            drawCheckStroke(cx, ccy, ringR, gk, green.copy(alpha = vis), sw)
+            if (gk < 1f) drawCircle(green.copy(alpha = 0.10f * vis * sin(PI.toFloat() * gk)), ringR, Offset(cx, ccy), style = Stroke(width = sw * 3.2f))
         }
     }
+}
+
+/**
+ * Onay işaretini [k] (0..1) oranında çizer: sol uç -> köşe -> sağ uç boyunca tek, kesintisiz çizgi.
+ * İşaret [r] yarıçaplı halkanın içine oturur. Hem kare hem küçük Face ID'de kullanılır.
+ */
+internal fun DrawScope.drawCheckStroke(cx: Float, cy: Float, r: Float, k: Float, color: Color, w: Float) {
+    if (k <= 0f) return
+    val l = Offset(cx - 0.40f * r, cy + 0.02f * r)
+    val v = Offset(cx - 0.10f * r, cy + 0.32f * r)
+    val e = Offset(cx + 0.42f * r, cy - 0.30f * r)
+    val l1 = (v - l).getDistance()
+    val l2 = (e - v).getDistance()
+    val d = (l1 + l2) * k.coerceIn(0f, 1f)
+    val p = Path().apply {
+        moveTo(l.x, l.y)
+        if (d <= l1) {
+            val t = d / l1
+            lineTo(l.x + (v.x - l.x) * t, l.y + (v.y - l.y) * t)
+        } else {
+            lineTo(v.x, v.y)
+            val t = (d - l1) / l2
+            lineTo(v.x + (e.x - v.x) * t, v.y + (e.y - v.y) * t)
+        }
+    }
+    drawPath(p, color, style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
 // ================================================================== Pencere (kilit ekranı)
@@ -361,12 +381,17 @@ private class FaceIdState {
     val unlocked = mutableStateOf(false)
     val fail = mutableStateOf(-1f)          // başarısızlığa geçilen t (saniye); -1 = başarılı akış
     val geo = mutableStateOf(FaceIdGeo(100f, 30f, 300f, 40f, false))
+    val compact = mutableStateOf(false)      // küçültülmüş Face ID (ayar)
 }
 
 /** Animasyon saatini ilerletir; bitince onDone çağırır. Kilit açılınca karar anına kadar 3 kat hızlanır. */
 @Composable
 private fun rememberFaceIdClock(
     runId: Int, speed: State<Float>, unlocked: State<Boolean>, fail: MutableState<Float>, onDone: () -> Unit,
+    decideT: Float = FaceIdTl.EXP + FaceIdTl.DECIDE_V,     // karar anı (animasyon başından, sn)
+    ffT: Float = FaceIdTl.EXP + FaceIdTl.FF_V,             // kilit açılınca buraya kadar hızlı sarılır
+    endOk: Float = FaceIdTl.END,
+    failLen: Float = FaceIdTl.F_END,
 ): State<Float> {
     val t = remember(runId) { mutableStateOf(0f) }
     val done = rememberUpdatedState(onDone)
@@ -377,13 +402,13 @@ private fun rememberFaceIdClock(
             val now = withFrameNanos { it }
             if (last != 0L) {
                 val dt = min((now - last) / 1_000_000_000f, 0.05f)
-                val warp = if (unlocked.value && t.value - FaceIdTl.EXP < FaceIdTl.FF_V) 3f else 1f
+                val warp = if (unlocked.value && t.value < ffT) 3f else 1f
                 t.value += dt * speed.value.coerceIn(0.25f, 3f) * warp
             }
             last = now
             // karar anı: kilit hâlâ açılmadıysa gri titreme akışı
-            if (fail.value < 0f && !unlocked.value && t.value - FaceIdTl.EXP >= FaceIdTl.DECIDE_V) fail.value = t.value
-            val endT = if (fail.value >= 0f) fail.value + FaceIdTl.F_END else FaceIdTl.END
+            if (fail.value < 0f && !unlocked.value && t.value >= decideT) fail.value = t.value
+            val endT = if (fail.value >= 0f) fail.value + failLen else endOk
             if (t.value >= endT) { done.value(); break }
         }
     }
@@ -405,10 +430,83 @@ internal fun rememberFaceIdSprite(): ImageBitmap? {
 private fun FaceIdWindowContent(settings: StateFlow<IslandSettings>, st: FaceIdState, onDone: () -> Unit) {
     val s by settings.collectAsState()
     val speed = rememberUpdatedState(s.faceIdSpeed)
+    val g = st.geo.value
+    if (st.compact.value) {
+        // Küçültülmüş Face ID: ada kapalı boyutta kalır; solda kilit, sağda yüz -> dönen halka -> ✓
+        val t = rememberFaceIdClock(
+            st.runId.value, speed, st.unlocked, st.fail, onDone,
+            decideT = FaceIdMini.DECIDE, ffT = FaceIdMini.DECIDE, endOk = FaceIdMini.END, failLen = FaceIdMini.F_END,
+        )
+        Canvas(Modifier.fillMaxSize()) { drawFaceIdMini(t.value, s, g.pillW, g.pillH, st.fail.value) }
+        return
+    }
     val sprite = rememberFaceIdSprite()
     val t = rememberFaceIdClock(st.runId.value, speed, st.unlocked, st.fail, onDone)
-    val g = st.geo.value
     Canvas(Modifier.fillMaxSize()) { drawFaceId(t.value, s, g, sprite, st.fail.value) }
+}
+
+// ================================================================== Küçültülmüş Face ID (ada kapalı boyutta)
+
+/** Küçük Face ID zaman çizelgesi (sn, animasyon başından). */
+object FaceIdMini {
+    const val IN = 0.20f            // içerik belirir
+    const val DECIDE = 1.60f        // karar: kilit açıldıysa halka, açılmadıysa gri titreme
+    const val RING1 = DECIDE + 0.55f   // köşe parantezleri halkaya dönüp bir tur döner
+    const val CHECK0 = RING1
+    const val CHECK1 = CHECK0 + 0.40f  // ✓ kalemle çizilir
+    const val LOCK1 = CHECK0 + 0.30f   // kilit açılır
+    const val FADE0 = CHECK1 + 0.60f
+    const val END = FADE0 + 0.25f
+    const val F_FADE0 = 0.80f
+    const val F_END = 1.15f
+}
+
+/**
+ * Küçük Face ID: [pillW] x [pillH] boyutundaki kapalı adanın içinde (tuvalin ortasında) çizilir.
+ * Solda beyaz kilit (✓ ile birlikte açılır), sağda nabız atan yüz; kilit açılınca parantezler dönen bir halkaya dönüşür
+ * ve içinde ✓ kalemle çizilir. Açılmazsa yüz griye döner ve titrer.
+ */
+fun DrawScope.drawFaceIdMini(t: Float, s: IslandSettings, pillW: Float, pillH: Float, failT: Float) {
+    val failed = failT >= 0f
+    val fv = if (failed) t - failT else 0f
+    val green = Color(s.faceIdColorArgb)
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    val endT = if (failed) failT + FaceIdMini.F_END else FaceIdMini.END
+    val fadeA = if (failed) failT + FaceIdMini.F_FADE0 else FaceIdMini.FADE0
+    drawRoundRect(Color.Black, Offset(cx - pillW / 2f, cy - pillH / 2f), Size(pillW, pillH), CornerRadius(pillH / 2f))
+    val vis = fidSeg(t, 0f, FaceIdMini.IN) * (1f - fidSeg(t, fadeA, endT))
+    if (vis <= 0.004f) return
+    // ---- sol: kilit
+    val lockOpen = if (!failed) fidSmooth(fidSeg(t, FaceIdMini.CHECK0, FaceIdMini.LOCK1)) else 0f
+    drawLockGlyph(Offset(cx - pillW / 2f + pillH * 0.62f, cy), pillH * 0.46f, Color.White.copy(alpha = vis), lockOpen)
+    // ---- sağ: yüz / halka / ✓
+    val fx0 = cx + pillW / 2f - pillH * 0.62f
+    val a = pillH * 0.25f
+    val sw = max(1.4f, pillH * 0.06f)
+    val u = max(0f, fv - 0.05f)
+    val shake = if (failed) pillH * 0.16f * sin(2f * PI.toFloat() * 5f * u) * exp(-3.5f * u) else 0f
+    val fx = fx0 + shake
+    if (!failed) {
+        val ringK = fidSmooth(fidSeg(t, FaceIdMini.DECIDE, FaceIdMini.RING1))
+        if (ringK <= 0f) {
+            val pulse = fidPulse(t - FaceIdMini.IN)
+            fidFace(fx, cy, a, sw, green.copy(alpha = pulse * vis), green.copy(alpha = pulse * vis))
+        } else {
+            // Parantezler halkaya dönüşür ve döner; özellikler söner
+            val featA = (1f - ringK * 3f).coerceIn(0f, 1f)
+            if (featA > 0f) fidFeatures(fx, cy, a, sw, green.copy(alpha = featA * vis))
+            val delta = fidLerp(0.35f, PI.toFloat() / 4f, ringK)
+            val az = ringK * 2f * PI.toFloat()
+            for (p in fidRingPaths(fx, cy, a, ringK, delta, 0f, 0f, az)) fidStroke(p, green.copy(alpha = vis), sw)
+            val gk = fidSmooth(fidSeg(t, FaceIdMini.CHECK0, FaceIdMini.CHECK1))
+            if (gk > 0f) drawCheckStroke(fx, cy, a * FID_RING, gk, green.copy(alpha = vis), sw)
+        }
+    } else {
+        val mix = fidSmooth(fidSeg(fv, 0.05f, 0.30f))
+        val col = colorLerp(green, FID_GRAY, mix)
+        fidFace(fx, cy, a, sw, col.copy(alpha = vis), col.copy(alpha = vis))
+    }
 }
 
 class FaceIdController(
@@ -505,6 +603,7 @@ class FaceIdController(
         running = true
         st.unlocked.value = false
         st.fail.value = -1f
+        st.compact.value = s.more.faceIdCompact
         st.geo.value = geoFor(s)
         st.runId.value = st.runId.value + 1
         show(s)
@@ -533,6 +632,15 @@ class FaceIdController(
         val d = ctx.resources.displayMetrics.density
         val a = anchor(s)
         val g = geoFor(s)
+        if (st.compact.value) {
+            // Küçük Face ID: pencere kapalı ada + pay kadar; ada tam yerinde çizilir
+            val pw = ceil(a.pillW + 2f * g.pad).toInt().coerceAtLeast(2)
+            val ph = ceil(a.pillH + 2f * g.pad).toInt().coerceAtLeast(2)
+            p.width = pw; p.height = ph
+            p.x = (a.cx - pw / 2f).roundToInt()
+            p.y = (a.cy - ph / 2f).roundToInt()
+            return
+        }
         val side = ceil(g.side).toInt().coerceAtLeast(2)
         val off = s.faceIdOffsetYDp * d
         val y = if (!a.inverted) (a.cy - a.pillH / 2f + off) - g.pad
@@ -635,9 +743,39 @@ internal fun FaceIdLoop(s: IslandSettings, pillWpx: Float, pillHpx: Float, inver
 /** Face ID penceresinin ada çevresindeki payı (dp); servis penceresiyle aynı. */
 internal const val FACE_ID_PAD_DP = 24f
 
+/** Ayarlardaki küçük Face ID önizlemesi: sırayla başarılı ve başarısız akış. */
+@Composable
+private fun FaceIdMiniPreview(s: IslandSettings) {
+    val d = LocalDensity.current.density
+    val t = remember { mutableStateOf(0f) }
+    val failT = remember { mutableStateOf(-1f) }
+    val wantFail = remember { mutableStateOf(false) }
+    val speed = rememberUpdatedState(s.faceIdSpeed)
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            val now = withFrameNanos { it }
+            if (last != 0L) t.value += min((now - last) / 1_000_000_000f, 0.05f) * speed.value.coerceIn(0.25f, 3f)
+            last = now
+            if (wantFail.value && failT.value < 0f && t.value >= FaceIdMini.DECIDE) failT.value = t.value
+            val endT = if (failT.value >= 0f) failT.value + FaceIdMini.F_END else FaceIdMini.END
+            if (t.value > endT + 0.8f) { t.value = 0f; failT.value = -1f; wantFail.value = !wantFail.value }
+        }
+    }
+    val pw = s.compactWidthDp
+    val ph = s.compactHeightDp
+    Box(
+        Modifier.fillMaxWidth().height((ph + 40f).dp).clip(RoundedCornerShape(14.dp)).background(Pal.c("preview_lockbg")),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size((pw + 16f).dp, (ph + 16f).dp)) { drawFaceIdMini(t.value, s, pw * d, ph * d, failT.value) }
+    }
+}
+
 /** Ayar ekranında animasyonu döngüyle oynatır: sırayla başarılı (✓) ve başarısız (gri titreme) akış. */
 @Composable
 fun FaceIdPreview(s: IslandSettings) {
+    if (s.more.faceIdCompact) { FaceIdMiniPreview(s); return }
     val d = LocalDensity.current.density
     val t = remember { mutableStateOf(0f) }
     val failT = remember { mutableStateOf(-1f) }

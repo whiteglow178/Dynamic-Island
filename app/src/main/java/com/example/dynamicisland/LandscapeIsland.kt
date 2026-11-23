@@ -223,7 +223,7 @@ internal class LandActions(
     val onDecline: () -> Unit,
     val onSpeaker: () -> Unit,
     val onRecStop: () -> Unit,
-    val onShazamStop: () -> Unit,
+    val onSoundCapsuleStop: () -> Unit,
 )
 
 /** Yatay modda pencere + çizim ölçüleri (px). Konumlar pencerenin sol-üstüne göredir. */
@@ -243,7 +243,7 @@ internal data class LandGeo(
 /** Baloncuk olarak gösterilecek içerik mi? (Favori / çeviri / asistan / boşta gösterilmez.) */
 private fun landShows(c: IslandContent): Boolean = when (c) {
     is IslandContent.Notif, is IslandContent.Media, is IslandContent.Call,
-    is IslandContent.Status, is IslandContent.ScreenRec, is IslandContent.Shazam -> true
+    is IslandContent.Status, is IslandContent.ScreenRec, is IslandContent.SoundCapsule -> true
     else -> false
 }
 
@@ -253,7 +253,7 @@ private fun landKey(c: IslandContent): String = when (c) {
     is IslandContent.Call -> "call"
     is IslandContent.Status -> "s:" + c.kind.name
     is IslandContent.ScreenRec -> "rec"
-    is IslandContent.Shazam -> "shazam"
+    is IslandContent.SoundCapsule -> "soundCapsule"
     else -> ""
 }
 
@@ -280,7 +280,7 @@ private fun landPanelDp(u: IslandUiState, s: IslandSettings, screenWDp: Float, s
         is IslandContent.Media -> (t + s.expandedWidthDp) to expandedHeightDpFor(c, s)
         is IslandContent.Call -> (t + s.expandedWidthDp) to expandedHeightDpFor(c, s)
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Recording) (t + REC_PILL_W_DP) to REC_PILL_H_DP else return null
-        is IslandContent.Shazam -> if (c.phase == ShazamPhase.Listening) (t + 300f) to SHAZAM_PILL_H_DP else return null
+        is IslandContent.SoundCapsule -> if (c.phase == SoundCapsulePhase.Listening) (t + 300f) to SOUND_CAPSULE_PILL_H_DP else return null
         else -> return null
     }
     return min(wh.first, maxW) to min(wh.second, maxH)
@@ -928,7 +928,7 @@ private fun LandPanelContent(
         is IslandContent.Favorites -> LandFavoritesPanel(c, actions.onLaunch)
         is IslandContent.Call -> CallContent(c, accent, rb, actions.onAnswer, actions.onDecline, actions.onSpeaker)
         is IslandContent.ScreenRec -> ScreenRecContent(c, actions.onRecStop)
-        is IslandContent.Shazam -> ShazamContent(c, actions.onShazamStop)
+        is IslandContent.SoundCapsule -> SoundCapsuleContent(c, actions.onSoundCapsuleStop)
         else -> {}
     }
 }
@@ -1049,11 +1049,11 @@ private fun LandBubbleContent(c: IslandContent, thickPx: Int) {
         }
         is IslandContent.ScreenRec ->
             if (c.phase == RecPhase.Processing) RecSpinner(ic * 0.8f) else RecDot(c.phase == RecPhase.Recording, ic * 0.55f)
-        is IslandContent.Shazam -> {
+        is IslandContent.SoundCapsule -> {
             val cv = c.cover
             if (cv != null) Image(cv, null, Modifier.size(ic).clip(RoundedCornerShape(30)), contentScale = ContentScale.Crop)
             else Box(Modifier.size(ic).clip(CircleShape).background(Color(0xFF0A84FF)), contentAlignment = Alignment.Center) {
-                Text("S", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("♪", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
         else -> {}

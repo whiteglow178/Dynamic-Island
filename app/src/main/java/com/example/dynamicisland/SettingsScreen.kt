@@ -974,6 +974,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Face ID animasyonu", "Ekran açılıp telefon kilitliyken bir kez oynar: ada kare olur, yüz atar, halka 3B döner, ✓ çizilir, ada hap şekline döner. Kilit açılırsa ✓ aşamasına hızlanır. Animasyon sırasında kilit noktası gizlenir",
                 draft.faceIdEnabled) { draft = draft.copy(faceIdEnabled = it) }
             if (draft.faceIdEnabled) {
+                SwitchRow("Küçültülmüş Face ID", "Açıkken ada kareye dönüşmez, kapalı boyutunda kalır: solda kilit, sağda Face ID yüzü. Kilit açılınca yüz dönen bir halkaya dönüşür, içinde ✓ kalemle çizilir ve kilit açılır",
+                    draft.more.faceIdCompact) { draft = draft.copy(more = draft.more.copy(faceIdCompact = it)) }
                 FaceIdPreview(draft)
                 SubHeader("Renk")
                 key(version) { ColorPicker(draft.faceIdColorArgb) { draft = draft.copy(faceIdColorArgb = it) } }
@@ -985,6 +987,73 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 Text("Ada, erişilebilirlik servisi açıkken kilit ekranının üstünde görünür. Servis kapalıysa bazı telefonlarda kilit ekranında görünmeyebilir.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             }
+        }
+
+        // ---- Yeni ada özellikleri
+        pendingGroup = "Yeni ada özellikleri"
+        sec("Basılı tutarak aç", "Olay varken ada dokununca değil, basılı tutunca genişlesin") {
+            SwitchRow("Basılı tutunca genişlesin", "Adada bir olay (müzik, arama, zamanlayıcı, bildirim...) varken kısa dokunuş adayı açmaz; parmağını basılı tutunca ada yavaşça büyür ve süre dolunca tamamen açılır",
+                draft.more.holdExpand) { draft = draft.copy(more = draft.more.copy(holdExpand = it)) }
+            if (draft.more.holdExpand) {
+                SliderRow("Basılı tutma süresi", draft.more.holdExpandMs, 200f..2000f, "${draft.more.holdExpandMs.toInt()} ms") {
+                    draft = draft.copy(more = draft.more.copy(holdExpandMs = kotlin.math.round(it / 50f) * 50f))
+                }
+                SliderRow("Basılıyken büyüme", draft.more.holdGrowPct, 0f..60f, "%${draft.more.holdGrowPct.toInt()}") {
+                    draft = draft.copy(more = draft.more.copy(holdGrowPct = kotlin.math.round(it)))
+                }
+                Text("Büyüme: basılı tutarken adanın açılacağı boyuta ne kadar yaklaşacağı. %0 seçilirse ada basılıyken büyümez, süre dolunca birden açılır.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        }
+        sec("Alarm ve zamanlayıcı", "Saat uygulamasının alarmı / zamanlayıcısı ve adadan zamanlayıcı kurma") {
+            SwitchRow("Alarm ve zamanlayıcı adası", "Saat uygulamasında zamanlayıcı çalışırken kapalı adada turuncu simge ve kalan süre görünür; dokununca duraklat ve kapat düğmeleri açılır. Alarm çalınca ada genişler: ertele (zZ) ve kapat. Süre dolunca ada kendiliğinden genişler",
+                draft.more.clockIsland) { draft = draft.copy(more = draft.more.copy(clockIsland = it)) }
+            SubHeader("Adadan zamanlayıcı kur")
+            SegmentedTabs(listOf("Kapalı", "Dokununca", "Basılı tutunca"), draft.more.timerIdleTrigger) {
+                draft = draft.copy(more = draft.more.copy(timerIdleTrigger = it))
+            }
+            Text("Boştaki adaya dokununca / basılı tutunca turuncu cetvelli kurma paneli açılır: cetveli sola / sağa kaydır, \"Zamanlayıcıyı Başlat\"a dokun. Bu seçenek açıkken boştaki adanın diğer dokunma özelliklerinden önce gelir.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SwitchRow("Süre dolunca ses", "Adadan kurulan zamanlayıcı bitince alarm sesi çalar ve telefon titrer (ada kapatılana kadar, en çok 1 dakika)",
+                draft.more.timerSound) { draft = draft.copy(more = draft.more.copy(timerSound = it)) }
+        }
+        sec("Kilit simgesi", "Kilitliyken adanın solunda kilit, açılınca açık kilit") {
+            SwitchRow("Kilit simgesi", "Ekran kilitliyken boştaki adanın solunda beyaz kilit görünür. Kilit açılınca (ana ekrana geçince) kilit açılır ve kısa süre sonra kaybolur. Face ID animasyonu sürerken gizlenir",
+                draft.more.lockIcon) { draft = draft.copy(more = draft.more.copy(lockIcon = it)) }
+        }
+        sec("Arama görünümü", "Cevaplanan ve gelen aramanın küçük ada görünümü") {
+            SwitchRow("Yalnızca yeşil telefon", "Cevaplanan arama küçükken adada yalnızca yeşil telefon simgesi görünür. Kapalıyken telefonun yanında süre, sağda ses dalgası görünür",
+                draft.more.callIconOnly) { draft = draft.copy(more = draft.more.copy(callIconOnly = it)) }
+            if (!draft.more.callIconOnly) {
+                SwitchRow("Ses dalgası tamamen yeşil", "Açıkken sağdaki ses dalgası tamamen yeşil olur. Kapalıyken yeşilden turuncuya renk geçişlidir",
+                    draft.more.callWaveGreen) { draft = draft.copy(more = draft.more.copy(callWaveGreen = it)) }
+            }
+            SwitchRow("Gelen aramayı küçült", "Gelen aramada cevaplamadan / reddetmeden adayı yukarı kaydırınca ada küçülür: solda arayan kişinin resmi, sağda gri ters telefon. Dokununca ya da aşağı kaydırınca yeniden açılır",
+                draft.more.incomingMinimize) { draft = draft.copy(more = draft.more.copy(incomingMinimize = it)) }
+        }
+        sec("Mikrofon / kamera noktası", "Ortada olay varken nokta sağdaki baloncukta") {
+            SwitchRow("Nokta sağda", "Bir uygulama mikrofonu ya da kamerayı kullanırken ortadaki adada zaten bir olay (müzik, arama...) varsa, turuncu / yeşil nokta ortayı almaz; adanın sağında ayrı bir dairede görünür",
+                draft.more.micSideRight) { draft = draft.copy(more = draft.more.copy(micSideRight = it)) }
+        }
+        sec("Rahatsız Etmeyin kartı", "Hapa dokununca genişlesin, aya dokununca aç / kapat") {
+            SwitchRow("Dokununca genişlesin", "Rahatsız Etmeyin hapına dokununca ada genişler: solda dairede ay, ortada \"Rahatsız Etmeyin\", sağda Açık / Kapalı",
+                draft.more.focusTapExpand) { draft = draft.copy(more = draft.more.copy(focusTapExpand = it)) }
+            if (draft.more.focusTapExpand) {
+                SwitchRow("Aya dokununca aç / kapat", "Genişlemiş kartta aya dokununca Rahatsız Etmeyin açılır ya da kapanır (bildirim erişimiyle çalışır)",
+                    draft.more.focusToggle) { draft = draft.copy(more = draft.more.copy(focusToggle = it)) }
+            }
+            Text("Rahatsız Etmeyin göstergesinin kendisi Ana Sayfa'daki iOS bölümünden açılır.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+        sec("Kulaklık, ses kaydı, skor", "Kulaklık küçük adası, ses kaydı adası, takım logoları") {
+            SwitchRow("Kulaklık önce küçük", "Kulaklık bağlanınca ada önce küçük kalır: solda kulaklık, sağda yeşil pil halkası. Dokununca kart açılır (ad, \"Bağlandı\" ve pil yüzdesi)",
+                draft.more.headphoneCompact) { draft = draft.copy(more = draft.more.copy(headphoneCompact = it)) }
+            SwitchRow("Ses kaydı adası", "Ses kaydedici uygulamayla kayıt yaparken kapalı adada kırmızı ses dalgası ve süre görünür; dokununca durdur düğmesi açılır",
+                draft.more.voiceRecIsland) { draft = draft.copy(more = draft.more.copy(voiceRecIsland = it)) }
+            SwitchRow("Takım logoları", "Maç skoru adasında takımların logoları görünür (internetten bulunur, bellekte saklanır). Logo bulunamazsa takımın baş harfi görünür",
+                draft.more.scoreLogos) { draft = draft.copy(more = draft.more.copy(scoreLogos = it)) }
+            SwitchRow("Düşük pil hapına dokununca genişlesin", "\"Düşük pil uyarısı genişlesin\" kapalıyken ince hapa dokununca ada büyük karta açılır; kartta sağdaki pil kapsülüne dokununca düşük güç modu açılır",
+                draft.more.lowBattTapExpand) { draft = draft.copy(more = draft.more.copy(lowBattTapExpand = it)) }
         }
 
         // ---- Renk düzenleyici: uygulamadaki her rengi tek tek ayarlama

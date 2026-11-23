@@ -157,6 +157,9 @@ class SystemStatusController(private val host: IslandHost) {
         return f != NotificationManager.INTERRUPTION_FILTER_ALL && f != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
     }
 
+    /** Adadan açılıp kapatıldı: yayın gelince aynı durum için hap yeniden gösterilmesin. */
+    fun markFocus(on: Boolean) { zenOn = on }
+
     private fun onZen() {
         val on = zenActive()
         if (zenOn == on) return

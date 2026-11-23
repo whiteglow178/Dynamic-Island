@@ -104,7 +104,7 @@ private val TryItems = listOf(
     TryItem("Ekran Kaydı", "Geri sayım, kayıt, işleniyor ve kaydedildi aşamaları.", Color(0xFFE8334A), 7),
     TryItem("Asistan", "Asistan animasyonu ve ekran kenarı parıltısı.", Color(0xFFAF52DE), 8),
     TryItem("Favoriler", "Favori uygulamalar paneli. Ayarlardan favori uygulama seçili olmalı.", Color(0xFF5E5CE6), 9),
-    TryItem("Shazam", "Şarkı tanıma. Önce dinler, sonra şarkıyı bulup adayı genişletir ve albüm kapağını animasyonla gösterir.", Color(0xFF1E9BFF), 10),
+    TryItem("Sound Capsule", "Şarkı tanıma. Önce dinler, sonra şarkıyı bulup adayı genişletir ve albüm kapağını animasyonla gösterir.", Color(0xFF1E9BFF), 10),
     TryItem("İnternet", "Wi-Fi bağlandı ve bağlantı kesildi görünümü. Her dokunuşta değişir.", Color(0xFF0A84FF), 11),
     TryItem("Uçak Modu", "Uçak modu açıldı görünümü.", Color(0xFFFF9F0A), 12),
     TryItem("Zil Sesi", "Zil sesi seviyesi: ada yana genişler, seviye çubuğu değişir.", Color(0xFFD1D1D6), 13),
@@ -146,7 +146,7 @@ private fun runRecDemo() {
     }
 }
 
-private var shazamDemoJob: Job? = null
+private var soundCapsuleDemoJob: Job? = null
 
 /** Demo albüm kapağı: gün batımı renkleri + güneş (gerçek kapak yerine). */
 private fun makeDemoCover(): androidx.compose.ui.graphics.ImageBitmap {
@@ -168,13 +168,13 @@ private fun makeDemoCover(): androidx.compose.ui.graphics.ImageBitmap {
     return bmp.asImageBitmap()
 }
 
-private fun runShazamDemo() {
-    shazamDemoJob?.cancel()
-    shazamDemoJob = demoScope.launch {
-        val key = "demo_shazam"
-        IslandBus.post(IslandEvent.ShazamListening(key))
+private fun runSoundCapsuleDemo() {
+    soundCapsuleDemoJob?.cancel()
+    soundCapsuleDemoJob = demoScope.launch {
+        val key = "demo_soundCapsule"
+        IslandBus.post(IslandEvent.SoundCapsuleListening(key))
         delay(3000)
-        IslandBus.post(IslandEvent.ShazamFound("Sweater Weather", "The Neighbourhood", makeDemoCover(), null, key))
+        IslandBus.post(IslandEvent.SoundCapsuleFound("Sweater Weather", "The Neighbourhood", makeDemoCover(), null, key))
     }
 }
 
@@ -286,9 +286,9 @@ private fun tryIslandScript(
             delay(4000); ui.closeIsland()
         }
         10 -> {
-            ui.value = IslandUiState(content = IslandContent.Shazam(ShazamPhase.Listening), expanded = false)
+            ui.value = IslandUiState(content = IslandContent.SoundCapsule(SoundCapsulePhase.Listening), expanded = false)
             delay(3000)
-            ui.openIsland(IslandContent.Shazam(ShazamPhase.Found, "Sweater Weather", "The Neighbourhood", makeDemoCover()))
+            ui.openIsland(IslandContent.SoundCapsule(SoundCapsulePhase.Found, "Sweater Weather", "The Neighbourhood", makeDemoCover()))
             delay(4500); ui.closeIsland()
         }
         11 -> {
@@ -455,7 +455,7 @@ internal fun TryScreen(isIslandRunning: () -> Boolean, onClose: () -> Unit) {
             7 -> runRecDemo()
             8 -> runAssistantDemo()
             9 -> IslandBus.post(IslandEvent.ShowFavorites)
-            10 -> runShazamDemo()
+            10 -> runSoundCapsuleDemo()
             else -> Unit
         }
     }
@@ -1023,18 +1023,14 @@ private fun DrawScope.drawGlyph(kind: Int, c: Color, gap: Color) {
                 }, c,
             )
         }
-        10 -> { // shazam: resmi S işareti (logodan ölçüldü): iki kalın, yuvarlak uçlu kanca; ikincisi 180° döndürülmüş
-            val hook = Path().apply {
-                moveTo(447f, 917f)
-                lineTo(313f, 1051f)
-                arcTo(Rect(257f, 995f, 637f, 1375f), 225f, -180f, false)
-                lineTo(633f, 1268f)
-            }
-            val st = Stroke(width = 125f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-            val k = 19f / 745f
-            withTransform({ translate(12f, 12f); scale(k, k, Offset.Zero); translate(-540f, -1224.5f) }) {
-                drawPath(hook, c, style = st)
-                withTransform({ rotate(180f, Offset(540f, 1224.5f)) }) { drawPath(hook, c, style = st) }
+        10 -> { // Sound Capsule: 45° eğik kapsül + içinde üç ses çubuğu (uygulamaya özgü simge)
+            val st = Stroke(width = 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            withTransform({ rotate(-45f, Offset(12f, 12f)) }) {
+                drawRoundRect(c, Offset(2.5f, 7f), androidx.compose.ui.geometry.Size(19f, 10f),
+                    androidx.compose.ui.geometry.CornerRadius(5f, 5f), style = st)
+                drawLine(c, Offset(8.6f, 10.6f), Offset(8.6f, 13.4f), strokeWidth = 2.2f, cap = StrokeCap.Round)
+                drawLine(c, Offset(12f, 9.4f), Offset(12f, 14.6f), strokeWidth = 2.2f, cap = StrokeCap.Round)
+                drawLine(c, Offset(15.4f, 10.6f), Offset(15.4f, 13.4f), strokeWidth = 2.2f, cap = StrokeCap.Round)
             }
         }
         11 -> drawWifiGlyph(c)

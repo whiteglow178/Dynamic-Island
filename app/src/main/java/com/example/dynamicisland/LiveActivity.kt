@@ -51,6 +51,7 @@ object LiveFlags {
     @Volatile var delivery = false
     @Volatile var progress = false
     @Volatile var score = false
+    @Volatile var logos = true          // maç skorunda takım logoları
     val any: Boolean get() = nav || delivery || progress || score
 }
 
@@ -412,6 +413,26 @@ private fun DeliveryTrack(c: IslandContent.Live) {
 @Composable
 private fun ScorePanel(c: IslandContent.Live, rb: RainbowStyle?) {
     Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 12.dp)) {
+        if (LiveFlags.logos) {
+            // Logolu görünüm: her takımın logosu üstte, adı altta; ortada büyük skor
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    TeamLogo(c.teamA, 34.dp)
+                    Text(c.teamA, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                }
+                Text(
+                    "${c.scoreA}  -  ${c.scoreB}", color = if (c.goal) LIVE_GREEN else Color.White,
+                    fontSize = 30.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                    modifier = if (c.goal) Modifier else Modifier.rainbowFill(rb),
+                )
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    TeamLogo(c.teamB, 34.dp)
+                    Text(c.teamB, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                }
+            }
+        } else
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
             Text(c.teamA, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 2,
                 overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, lineHeight = 18.sp, modifier = Modifier.weight(1f))

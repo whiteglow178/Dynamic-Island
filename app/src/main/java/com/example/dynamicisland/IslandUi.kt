@@ -281,7 +281,7 @@ private const val EXPAND_LEAD_MS = 24L          // pencere büyüdükten sonra e
 private const val EXPAND_WAIT_MAX_MS = 220L    // pencere büyümezse en fazla bu kadar beklenir (güvenlik)
 
 /** Servisteki syncWindow ile aynı hesap: açık haldeki ada yüksekliği (dp), pay hariç. */
-internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float = when (c) {
+internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float = xExpandedSizeDp(c, cfg, 0f)?.second ?: when (c) {
     IslandContent.Assistant -> cfg.assistantHeightDp
     is IslandContent.Favorites -> cfg.favoritesHeightDp(c.apps.size)
     IslandContent.Translate -> cfg.translateHeightDp(TranslateSession.bodyDp.value)
@@ -297,7 +297,7 @@ internal fun expandedHeightDpFor(c: IslandContent, cfg: IslandSettings): Float =
     is IslandContent.Live -> LIVE_H_DP
     IslandContent.Drawer -> cfg.drawerHeightDp()
     is IslandContent.ScreenRec -> REC_PILL_H_DP
-    is IslandContent.Shazam -> SHAZAM_PILL_H_DP
+    is IslandContent.SoundCapsule -> SOUND_CAPSULE_PILL_H_DP
     is IslandContent.Media -> cfg.expandedHeightDp + cfg.musicExtraDp()
     is IslandContent.Notif -> cfg.expandedHeightDp + notifChipsExtraDp(c)
     else -> cfg.expandedHeightDp
@@ -319,7 +319,7 @@ fun IslandRoot(
     onOpenMusic: () -> Unit = {},
     onSwipe: (Int) -> Unit = {},     // +1 = aşağı, -1 = yukarı
     onRecStop: () -> Unit = {},
-    onShazamStop: () -> Unit = {},       // genişlemiş Shazam "Listening..." panelindeki X düğmesi
+    onSoundCapsuleStop: () -> Unit = {},       // genişlemiş SoundCapsule "Listening..." panelindeki X düğmesi
     onNotifSwipeSide: () -> Unit = {},   // bildirim üstünde sağa / sola kaydırma
     onSideTap: (Int) -> Unit = {},       // yan baloncuğa dokunma: 0 = sağ, 1 = sol
     onStackClose: () -> Unit = {},       // yığın görünümünde karta dokunma / yukarı kaydırma: yığın kapanır
@@ -430,7 +430,7 @@ fun IslandRoot(
                 items = s.stack, closing = s.stackClosing, cfg = cfg, lyrics = lyrics,
                 onClose = onStackClose, onCommand = cmd, onOutput = onOutput, onOpenMusic = onOpenMusic,
                 onAnswer = onAnswer, onDecline = onDecline, onSpeaker = onSpeaker,
-                onRecStop = onRecStop, onShazamStop = onShazamStop,
+                onRecStop = onRecStop, onSoundCapsuleStop = onSoundCapsuleStop,
             )
         }
         return
@@ -483,7 +483,10 @@ fun IslandRoot(
                 if (recWide) maxOf(cw, CALL_COMPACT_W_DP.dp) else cw,
                 tween(240, easing = FastOutSlowInEasing), label = "recCw",
             )
-            if (content is IslandContent.Shazam) geo = geo.copy(eh = SHAZAM_PILL_H_DP.dp)
+            if (content is IslandContent.SoundCapsule) geo = geo.copy(eh = SOUND_CAPSULE_PILL_H_DP.dp)
+            // Yeni tasarımlar (zamanlayıcı, alarm, Rahatsız Etmeyin kartı, ses kaydı, logolu skor): IslandExtrasUi.kt
+            if (pillCompactSizeDp(cfg, content) == null) xCompactWidthDp(content, cfg)?.let { geo = geo.copy(cw = it.dp) }
+            xExpandedSizeDp(content, cfg, LocalConfiguration.current.screenWidthDp.toFloat())?.let { (w, h) -> geo = geo.copy(ew = w.dp, eh = h.dp) }
             if (content is IslandContent.ScreenRec) {
                 val screenWDp = LocalConfiguration.current.screenWidthDp.toFloat()
                 geo = geo.copy(cw = recCw, ew = recExpandedWidthDp(cfg, screenWDp).dp, eh = REC_PILL_H_DP.dp)
@@ -541,7 +544,7 @@ fun IslandRoot(
             // Ada açılınca (ya da başka olay gelince) her zaman tam görünür
             LaunchedEffect(s.expanded) { if (s.expanded) popIn.snapTo(1f) }
             Box(Modifier.graphicsLayer { alpha = if (hidden) 0f else popIn.value }) {
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onShazamStop = onShazamStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX, fxMode = 2)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, cmd, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow, onOpenMusic = onOpenMusic, onSwipe = onSwipe, artFlip = artFlip, onRecStop = onRecStop, onSoundCapsuleStop = onSoundCapsuleStop, onNotifSwipeSide = onNotifSwipeSide, fromX = fromX, fxMode = 2)
             }
         }
     }
@@ -768,7 +771,7 @@ fun IslandPill(
     onSwipe: (Int) -> Unit = {},
     artFlip: ArtFlip? = null,
     onRecStop: () -> Unit = {},
-    onShazamStop: () -> Unit = {},
+    onSoundCapsuleStop: () -> Unit = {},
     onNotifSwipeSide: () -> Unit = {},
     fxMode: Int = 0,        // ada olayları: 0 kapalı, 1 önizleme (yalnızca ada içi), 2 gerçek ada (parçalar ekrana düşer)
     fromX: Dp = 0.dp,       // yan baloncuktan açılıyorsa baloncuğun ada merkezine göre yatay konumu (0 = normal açılış)
@@ -868,6 +871,18 @@ fun IslandPill(
     var warm by remember { mutableStateOf(false) }
     LaunchedEffect(warm) { if (warm) { delay(1_500); warm = false } }
     val compactVisible by remember(progress) { derivedStateOf { progress.mean < 0.5f && fromNow == 0.dp } }
+    // Basılı tutarak açma (ayar): olaylı ada dokununca değil, basılı tutunca açılır; basılıyken ada açılacağı boyuta doğru büyür
+    var holding by remember { mutableStateOf(false) }
+    val holdGrow = animateFloatAsState(
+        if (holding) 1f else 0f,
+        if (holding) tween(cfg.more.holdExpandMs.toInt().coerceAtLeast(100), easing = LinearEasing) else tween(160),
+        label = "holdGrow",
+    )
+    val holdFrac = (cfg.more.holdGrowPct / 100f).coerceIn(0f, 0.6f)
+    val holdModeNow by rememberUpdatedState(
+        cfg.more.holdExpand && IslandActions.serviceLive && fxMode == 2 && !swallow &&
+            content !is IslandContent.Idle && content !is IslandContent.Assistant && content !is IslandContent.Translate,
+    )
 
     CompositionLocalProvider(LocalIslandFx provides (if (fxActive) fx else null)) {
     Box(
@@ -876,8 +891,9 @@ fun IslandPill(
             .graphicsLayer { if (fromNow != 0.dp) translationX = fromNow.toPx() * (1f - progress.w.value).coerceIn(0f, 1f) }
             .graphicsLayer { alpha = if (fxMode == 2 && FxBridge.islandHidden) 0f else 1f }   // ada parçalanınca gövde görünmez
             .layout { measurable, _ ->
-                val w = lerp(if (fromNow != 0.dp) geo.ch else geo.cw, geo.ew, progress.w.value).roundToPx().coerceAtLeast(1)
-                val h = lerp(geo.ch, geo.eh, progress.h.value).roundToPx().coerceAtLeast(1)
+                val hg = holdGrow.value * holdFrac
+                val w = lerp(if (fromNow != 0.dp) geo.ch else geo.cw, geo.ew, max(progress.w.value, hg)).roundToPx().coerceAtLeast(1)
+                val h = lerp(geo.ch, geo.eh, max(progress.h.value, hg)).roundToPx().coerceAtLeast(1)
                 val placeable = measurable.measure(Constraints.fixed(w, h))
                 layout(w, h) { placeable.place(0, 0) }
             }
@@ -892,12 +908,14 @@ fun IslandPill(
                 awaitEachGesture {
                     val down = awaitFirstDown()
                     if (isMediaNow) warm = true
+                    val holdMode = holdModeNow && progress.mean < 0.5f
+                    if (holdMode) { holding = true; IslandActions.onHoldPress(true) }
                     val slop = 40.dp.toPx()
                     val swipeMin = 18.dp.toPx()
                     var outcome = 0      // 0 = basılı tutma, 1 = dokunma, 2 = iptal, 3 = dikey kaydırma
                     var swipeDir = 0
                     var swipeDirX = 0
-                    withTimeoutOrNull(cfgNow.longPressMs.toLong()) {
+                    withTimeoutOrNull(if (holdMode) cfgNow.more.holdExpandMs.toLong() else cfgNow.longPressMs.toLong()) {
                         while (true) {
                             val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
                             if (change == null || change.isConsumed) { outcome = 2; break }
@@ -915,9 +933,10 @@ fun IslandPill(
                             if (delta.getDistance() > slop) { outcome = 2; break }
                         }
                     }
+                    if (holdMode && outcome != 0) { holding = false; IslandActions.onHoldPress(false) }
                     when (outcome) {
                         0 -> {
-                            longPressNow()
+                            if (holdMode) { IslandActions.onHoldExpand(); holding = false } else longPressNow()
                             do {
                                 val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
                             } while (c != null && c.pressed)
@@ -928,7 +947,8 @@ fun IslandPill(
                             val x = down.position.x
                             val artZone = min(size.height * 1.15f, size.width * 0.4f)
                             // Küçük adada albüm kapağı bölgesi; açık adada kapak / şarkı adı panelin kendi dokunuşunu işler
-                            if (isMediaNow && compact && c.openCompArt && x <= artZone) openMusicNow() else tapNow()
+                            if (isMediaNow && compact && c.openCompArt && x <= artZone) openMusicNow()
+                            else if (!holdMode) tapNow()      // basılı tutarak açma açıkken kısa dokunuş adayı açmaz
                         }
                         4 -> {
                             // Sağdan sola = sonraki şarkı, soldan sağa = önceki şarkı
@@ -997,7 +1017,7 @@ fun IslandPill(
             MusicBottomFx(Color(content.accent), true)
         }
 
-        val musicBlur = cfg.animEnabled && ((cfg.musicBlurAnim && content is IslandContent.Media) || content is IslandContent.Shazam)
+        val musicBlur = cfg.animEnabled && ((cfg.musicBlurAnim && content is IslandContent.Media) || content is IslandContent.SoundCapsule)
         val artSpin: () -> Float = { artFlip?.spin?.value ?: 0f }
         if ((panelVisible || (warm && content is IslandContent.Media)) && !swallow) {
             Box(
@@ -1017,7 +1037,11 @@ fun IslandPill(
                             StatusKind.Charging -> ChargeContent(content, rb)
                             StatusKind.Ringer -> RingerContent(content, rb, !cfg.ringerExpand, ringerPillHeightDp(cfg))
                             StatusKind.Volume -> VolumeContent(content, rb)
-                            StatusKind.Network, StatusKind.Airplane, StatusKind.Focus, StatusKind.Hotspot -> SysPillContent(content, geo.eh.value, rb)
+                            StatusKind.Network, StatusKind.Airplane, StatusKind.Hotspot -> SysPillContent(content, geo.eh.value, rb)
+                            StatusKind.Focus -> if (content.phase == 1) FocusCardContent(content, geo.eh.value, cfg.more.focusToggle, rb)
+                                else SysPillContent(content, geo.eh.value, rb)
+                            StatusKind.Timer, StatusKind.Alarm -> if (content.phase == 3) TimerSetPanel() else TimerPanel(content, geo.eh.value, rb)
+                            StatusKind.VoiceRec -> VoiceRecPanel(content, geo.eh.value)
                             StatusKind.Headphones -> HeadphoneCardContent(content, rb)
                             StatusKind.RingVolume -> RingVolumeContent(content, geo.eh.value, rb)
                             StatusKind.LowBattery -> LowBatteryPillContent(content, geo.eh.value, rb)
@@ -1029,10 +1053,10 @@ fun IslandPill(
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     IslandContent.Translate -> TranslatePanel(cfg.compactHeightDp.dp)
                     is IslandContent.ScreenRec -> ScreenRecContent(content, onRecStop)
-                    is IslandContent.Shazam -> ShazamContent(content, onShazamStop)
+                    is IslandContent.SoundCapsule -> SoundCapsuleContent(content, onSoundCapsuleStop)
                     IslandContent.Photo -> Unit      // fotoğraf arka planda (DesignFill) çizilir; üstünde çentik / içerik yok
                     is IslandContent.Capsule -> CapsuleContent(content)
-                    is IslandContent.Live -> LivePanel(content, rb)
+                    is IslandContent.Live -> if (content.kind == LiveKind.Nav) NavPanel(content, rb) else LivePanel(content, rb)
                     IslandContent.Drawer -> DrawerPanel(cfg.compactHeightDp.dp) { k -> DrawerBridge.onKey?.invoke(k) }
                     IslandContent.Idle -> Unit
                 }
@@ -1090,14 +1114,17 @@ fun IslandPill(
                     Modifier.fillMaxSize().padding(start = 9.dp, end = 14.dp).then(fade),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    PhoneIcon(0f, Modifier.size(12.dp), CallGreen)
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        content.duration ?: "0:00", color = CallGreen, fontWeight = FontWeight.Medium,
-                        fontSize = 12.sp, maxLines = 1,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    CallWave(Modifier.width(34.dp).height((geo.ch - 16.dp).coerceAtLeast(10.dp)))
+                    PhoneIcon(0f, Modifier.size(if (cfg.more.callIconOnly) 14.dp else 12.dp), CallGreen)
+                    if (!cfg.more.callIconOnly) {
+                        // Ayar kapalıysa: telefonun yanında süre, sağda ses dalgası
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            content.duration ?: "0:00", color = CallGreen, fontWeight = FontWeight.Medium,
+                            fontSize = 12.sp, maxLines = 1,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        CallWave(Modifier.width(34.dp).height((geo.ch - 16.dp).coerceAtLeast(10.dp)), allGreen = cfg.more.callWaveGreen)
+                    }
                 }
             }
         }
@@ -1162,7 +1189,14 @@ fun IslandPill(
             }
         }
 
-        if (content is IslandContent.Live && compactVisible && !cfg.dotMode) {
+        if (compactVisible && !swallow && hasXCompact(content, cfg)) {
+            // Yeni kapalı ada tasarımları (zamanlayıcı, ses kaydı, kulaklık, küçültülmüş gelen arama, logolu skor, navigasyon)
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                XCompactLayer(content, cfg, geo.cw, geo.ch) { (1f - progress.mean * 2f).coerceIn(0f, 1f) }
+            }
+        }
+
+        if (content is IslandContent.Live && compactVisible && !cfg.dotMode && !hasXCompact(content, cfg)) {
             // Canlı etkinlik (navigasyon / sipariş): solda ok ya da uygulama simgesi, sağda mesafe / kalan süre
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 LiveCompact(content, Modifier.fillMaxSize().graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) })
@@ -1177,13 +1211,13 @@ fun IslandPill(
             }
         }
 
-        if (content is IslandContent.Shazam && compactVisible && !cfg.dotMode) {
-            // Kapalı ada: solda Shazam logosu, sağda mavi ses dalgası. Ada genişlerken ikisi de bulanıp kaybolur.
+        if (content is IslandContent.SoundCapsule && compactVisible && !cfg.dotMode) {
+            // Kapalı ada: solda SoundCapsule logosu, sağda mavi ses dalgası. Ada genişlerken ikisi de bulanıp kaybolur.
             // Bulundu görünümü küçülürken (açıldıktan >1,5 sn sonra) logo yerine şarkının kapağı görünür.
-            val shz = remember { ShazamHold() }
-            if (content.phase == ShazamPhase.Listening) shz.foundAt = 0L
+            val shz = remember { SoundCapsuleHold() }
+            if (content.phase == SoundCapsulePhase.Listening) shz.foundAt = 0L
             else if (shz.foundAt == 0L) shz.foundAt = android.os.SystemClock.elapsedRealtime()
-            val expandingNow = content.phase == ShazamPhase.Listening ||
+            val expandingNow = content.phase == SoundCapsulePhase.Listening ||
                 android.os.SystemClock.elapsedRealtime() - shz.foundAt < 1_500L
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val fade = Modifier.graphicsLayer {
@@ -1194,7 +1228,7 @@ fun IslandPill(
                 val sz = (geo.ch - 12.dp).coerceAtLeast(14.dp)
                 val cover = content.cover
                 if (expandingNow || cover == null) {
-                    ShazamGlyphSweep(Modifier.align(Alignment.CenterStart).padding(start = 9.dp).size(sz).then(fade))
+                    SoundCapsuleGlyphSweep(Modifier.align(Alignment.CenterStart).padding(start = 9.dp).size(sz).then(fade))
                 } else {
                     Image(
                         bitmap = cover, contentDescription = null, contentScale = ContentScale.Crop,
@@ -1203,7 +1237,7 @@ fun IslandPill(
                     )
                 }
                 if (expandingNow) {
-                    ShazamWave(
+                    SoundCapsuleWave(
                         Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
                             .width(22.dp).height((geo.ch - 16.dp).coerceAtLeast(10.dp)).then(fade),
                     )

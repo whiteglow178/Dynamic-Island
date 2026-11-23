@@ -105,10 +105,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var resizeListener: View.OnLayoutChangeListener? = null
     private var dotWin = false     // nokta modu açık mı (pencere küçülürken gizleme eşiği için)
 
-    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0, val stackW: Int = 0, val stackH: Int = 0, val extraH: Int = 0, val gesture: Boolean = false)
+    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false, val side: Int = 0, val stackW: Int = 0, val stackH: Int = 0, val extraH: Int = 0, val gesture: Boolean = false,
+                              val xcw: Float = 0f, val xew: Float = 0f, val xeh: Float = 0f)   // yeni tasarımların ölçüleri (IslandExtrasUi.kt), 0 = yok
 
     // ---- Çoklu olay: en yeni olay ortada, öncekiler sağ / sol baloncukta
-    private enum class Bg { Media, Rec, Call, Shazam, Timer, Notif, Privacy, Live }   // Notif: yalnızca nokta modunda; Shazam / Timer: 4 ya da 5 nokta modunda   // Shazam / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
+    private enum class Bg { Media, Rec, Call, SoundCapsule, Timer, Notif, Privacy, Live, Voice }   // Notif: yalnızca nokta modunda; SoundCapsule / Timer: 4 ya da 5 nokta modunda   // SoundCapsule / Timer yalnızca 4 ya da 5 nokta modunda arka plan olayı sayılır
     private val bgOrder = ArrayList<Bg>()      // başlama sırası: en eski başta, en yeni sonda
     private var winSide = 0                    // pencerenin şu an yan baloncuklar için ayırdığı pay (px)
     private var mediaBgUntil = 0L              // parça geçişinde "durdu" bildirimi gelse de baloncuk kısa süre kalır
@@ -142,7 +143,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { play.attach() }             // oyuncak ada efektleri de adanın ALTINDA kalır
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
-        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() }; runCatching { landscape.rehost() }; runCatching { thumb.rehost() } }
+        IslandAccessibilityService.onChanged = { runCatching { reattach() }; runCatching { lockDot.rehost() }; runCatching { lockIcon.rehost() }; runCatching { faceId.rehost() }; runCatching { torch.rehost() }; runCatching { landscape.rehost() }; runCatching { thumb.rehost() } }
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
@@ -153,9 +154,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         startExtras()                           // başparmak modu, zaman kapsülü, kamuflaj
         DrawerBridge.onKey = { k -> runCatching { onDrawerKey(k) } }
         NotifChipBus.onChip = { n, chip -> runCatching { onNotifChip(n, chip) } }
+        wireIslandActions()                     // yeni ada düğmeleri (zamanlayıcı, alarm, düşük güç, Rahatsız Etmeyin...)
         startAppLock()                          // uygulama açılış animasyonu (ek kurulum gerekmez)
         runCatching { lockDot.start() }         // kilit ekranında adanın yanında yanıp sönen nokta
         runCatching { faceId.start() }          // kilit ekranında Face ID animasyonu
+        runCatching { lockIcon.start() }        // kilit ekranında adanın solunda kilit simgesi
         runCatching { torch.start() }           // fener açılınca ada göstergesi + ışık kartı
         runCatching { landscape.start() }       // yatay mod: dikey ada + yan baloncuklar
         runCatching { sfxTriggers.start() }     // şarja takma / çıkarma / sessize alma sesleri
@@ -251,7 +254,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandContent.Drawer -> 19                               // ada çekmecesi
         is IslandContent.Live -> 20                              // navigasyon / sipariş takibi
         is IslandContent.ScreenRec -> if (c.phase == RecPhase.Countdown || c.phase == RecPhase.Processing) 10 else 9
-        is IslandContent.Shazam -> 11
+        is IslandContent.SoundCapsule -> 11
     }
 
     // ---------------------------------------------------------------- Olay mantığı
@@ -300,9 +303,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
-            is IslandEvent.ShazamListening -> shazam.onListening()
-            is IslandEvent.ShazamFound -> shazam.onFound(e)
-            is IslandEvent.ShazamGone -> shazam.onGone()
+            is IslandEvent.SoundCapsuleListening -> soundCapsule.onListening()
+            is IslandEvent.SoundCapsuleFound -> soundCapsule.onFound(e)
+            is IslandEvent.SoundCapsuleGone -> soundCapsule.onGone()
             is IslandEvent.NotifTrashed -> {
                 val st = settings.value
                 // Çöp kutusu ada: silinen bildirimin simgesi adaya uçar, ada yutar (efekt penceresinde çizilir)
@@ -313,6 +316,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.LiveUpdate -> scope.launch { onLive(e.live) }
             is IslandEvent.LiveGone -> if (liveContent?.key == e.key) endLive()
             is IslandEvent.ShowFavorites -> if (!assistantActive && !call.active && ui.value.content is IslandContent.Idle) favorites.open()
+            is IslandEvent.ClockTimer -> clock.onSysTimer(e)
+            is IslandEvent.ClockAlarm -> clock.onSysAlarm(e)
+            is IslandEvent.ClockGone -> clock.onSysGone(e.key)
+            is IslandEvent.VoiceRec -> voice.onRec(e)
+            is IslandEvent.VoiceRecGone -> voice.onGone(e.key)
         }
     }
 
@@ -390,6 +398,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             extraH = if (u.content is IslandContent.Translate) TranslateSession.bodyDp.value
                 else notifChipsExtraDp(u.content).toInt(),
             gesture = GestureStore.flow(applicationContext).value.enabled,
+            xcw = xCompactWidthDp(u.content, s) ?: 0f,
+            xew = xExpandedSizeDp(u.content, s, screenWDp)?.first ?: 0f,
+            xeh = xExpandedSizeDp(u.content, s, screenWDp)?.second ?: 0f,
         )
     }
 
@@ -464,11 +475,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         Bg.Media -> mediaBgActive() && !hidingMedia()
         Bg.Rec -> rec.phase.let { it == RecPhase.Countdown || it == RecPhase.Recording || it == RecPhase.Processing }
         Bg.Call -> call.ongoing
-        Bg.Shazam -> extraBg() && shazam.phase == ShazamPhase.Listening
-        Bg.Timer -> extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis()
+        Bg.SoundCapsule -> extraBg() && soundCapsule.phase == SoundCapsulePhase.Listening
+        Bg.Timer -> clock.active() || (extraBg() && (timerContent?.endsAt ?: 0L) > System.currentTimeMillis())
         Bg.Notif -> settings.value.dotMode && notif.bg != null
         Bg.Privacy -> privacy.content != null
         Bg.Live -> liveContent != null
+        Bg.Voice -> voice.active
     }
 
     /** Biten olayları listeden çıkarır, yeni başlayanı sona (= en yeni) ekler. */
@@ -480,12 +492,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun bgContent(b: Bg): IslandContent? = when (b) {
         Bg.Media -> lastMedia
         Bg.Rec -> rec.content()
-        Bg.Shazam -> IslandContent.Shazam(ShazamPhase.Listening)
-        Bg.Timer -> timerContent
+        Bg.SoundCapsule -> IslandContent.SoundCapsule(SoundCapsulePhase.Listening)
+        Bg.Timer -> clock.content() ?: timerContent
         Bg.Notif -> notif.bg
         Bg.Privacy -> privacy.content
         Bg.Call -> call.content()
         Bg.Live -> liveContent
+        Bg.Voice -> voice.content()
     }
 
     /** Ortadaki içerik hangi arka plan olayına ait? (bildirim, durum, favoriler vb. için null) */
@@ -493,10 +506,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Media -> Bg.Media
         is IslandContent.ScreenRec -> if (c.phase != RecPhase.Saved) Bg.Rec else null
         is IslandContent.Call -> if (!c.isIncoming) Bg.Call else null
-        is IslandContent.Shazam -> if (extraBg() && c.phase == ShazamPhase.Listening) Bg.Shazam else null
+        is IslandContent.SoundCapsule -> if (extraBg() && c.phase == SoundCapsulePhase.Listening) Bg.SoundCapsule else null
         is IslandContent.Notif -> if (settings.value.dotMode && notif.bg == c) Bg.Notif else null
         is IslandContent.Live -> if (liveContent?.key == c.key) Bg.Live else null
         is IslandContent.Status -> when {
+            clock.owns(c) -> Bg.Timer
+            voice.owns(c) -> Bg.Voice
             extraBg() && c.kind == StatusKind.Timer && c.endsAt > System.currentTimeMillis() && timerContent?.endsAt == c.endsAt -> Bg.Timer
             (c.kind == StatusKind.Camera || c.kind == StatusKind.Mic) && privacy.content == c -> Bg.Privacy
             else -> null
@@ -511,7 +526,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var sideLayout: List<Bg>? = null
     private var sidesHidden = false     // geri dönüşte baloncuklar kısa süre ortadaki adaya karışır (mevcut birleşme animasyonu)
 
-    /** 4 / 5 nokta modu açık mı? Açıkken Shazam dinleme ve zamanlayıcı da yan noktalarda görünen arka plan olayıdır. */
+    /** 4 / 5 nokta modu açık mı? Açıkken SoundCapsule dinleme ve zamanlayıcı da yan noktalarda görünen arka plan olayıdır. */
     private fun extraBg(): Boolean = settings.value.let { it.dotMode && it.dotCount >= 4 }
 
     /** Yan noktaların sayısı: 3 nokta = 2, 4 nokta = 3, 5 nokta = 4; nokta modu kapalıyken 2 yan baloncuk. */
@@ -539,7 +554,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
-    private fun defaultSides(center: Bg): List<Bg> = bgOrder.asReversed().filter { it != center }.take(maxSides())
+    private fun defaultSides(center: Bg): List<Bg> {
+        val list = bgOrder.asReversed().filter { it != center }
+        // Mikrofon / kamera noktası sağdaki (ilk) baloncukta
+        val ordered = if (settings.value.more.micSideRight && Bg.Privacy in list) listOf(Bg.Privacy) + list.filter { it != Bg.Privacy } else list
+        return ordered.take(maxSides())
+    }
 
     private fun orderedSides(center: Bg): List<Bg> {
         val layout = sideLayout ?: return defaultSides(center)
@@ -610,7 +630,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cc is IslandContent.Capsule -> update { it }                // zaman kapsülü okunurken müzik araya girmez
             cc is IslandContent.Drawer -> update { it }                 // çekmece açıkken müzik araya girmez
             cc is IslandContent.Translate -> update { it }              // çeviri yazılırken müzik paneline geçme
-            cc is IslandContent.Shazam -> update { it }                 // Shazam dinlerken / sonucu gösterirken müzik ortayı almaz
+            cc is IslandContent.SoundCapsule -> update { it }                 // SoundCapsule dinlerken / sonucu gösterirken müzik ortayı almaz
             cc is IslandContent.ScreenRec && cc.phase == RecPhase.Saved -> update { it }   // "kaydedildi" görünümü bozulmasın
             // Müzik yeni başladı: en yeni olay olarak ortaya geçer, önceki ortadaki olay yan baloncuğa ayrılır
             nowActive && !wasActive && m != null && cc !is IslandContent.Media -> {
@@ -715,14 +735,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (revertOrder == null) sideLayout = null
         syncBgOrder()
         if (call.ringing) { call.publish(); return }     // gelen arama hep ortada
-        // Shazam hâlâ dinliyorsa (araya bildirim vb. girdiyse) dinleme görünümüne dön
-        if (!extraBg() && shazam.phase == ShazamPhase.Listening) {
-            update { IslandUiState(IslandContent.Shazam(ShazamPhase.Listening), expanded = false) }
+        // Çalan alarm / süresi dolan zamanlayıcı: kapatılana kadar açık kalır
+        if (clock.ringing) { clock.content()?.let { c -> update { IslandUiState(c, expanded = true) }; return } }
+        // SoundCapsule hâlâ dinliyorsa (araya bildirim vb. girdiyse) dinleme görünümüne dön
+        if (!extraBg() && soundCapsule.phase == SoundCapsulePhase.Listening) {
+            update { IslandUiState(IslandContent.SoundCapsule(SoundCapsulePhase.Listening), expanded = false) }
             return
         }
         // Ortaya en yeni etkin olay gelir; öncekiler update() içinde yan baloncuk olur.
         // Duraklatılmış müzik (yalnızca baloncuk tutma süresi içinde) ortayı almaz.
-        val top = bgOrder.lastOrNull { it != Bg.Media || lastMedia?.playing == true }
+        // Mikrofon / kamera noktası sağda: başka etkin olay varsa ortayı almaz, sağdaki baloncukta kalır
+        val micRight = settings.value.more.micSideRight
+        val others = bgOrder.count { it != Bg.Privacy && (it != Bg.Media || lastMedia?.playing == true) }
+        val top = bgOrder.lastOrNull { (it != Bg.Media || lastMedia?.playing == true) && !(micRight && it == Bg.Privacy && others > 0) }
         val c = top?.let { bgContent(it) }
         when {
             c == null -> update { IslandUiState() }
@@ -820,6 +845,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val s = settings.value
                 val bird = perchedNotif
                 if (s.more.notifBirds && bird != null) { birdAway(); openNotification(bird) }
+                else if (s.showIdle && s.more.timerIdleTrigger == 1) clock.openSetter()     // zamanlayıcı kurma paneli
                 else if (s.designPhotoReady() && s.more.designPhotoTrigger == 0) openPhoto()
                 else if (s.more.drawerEnabled && s.showIdle && s.more.drawerTrigger == 0) openDrawer()
                 else if (s.translateReady() && s.translateTrigger == 0) openTranslate()
@@ -830,18 +856,49 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 // Gelen arama hep açık (düğmeler kendi dokunuşunu işler). Aktif aramada dokununca aç / küçült.
                 if (!call.incoming && peeking()) collapseNow()          // baloncuktan açılmış arama: dokununca baloncuğa geri küçülür
                 else if (!call.incoming) call.toggleExpanded()
+                else if (!cur.expanded) call.expandIncoming()             // küçültülmüş gelen arama: yeniden açılır
             }
             is IslandContent.Status -> {
                 val st = cur.content as IslandContent.Status
-                // Düşük pil: dokununca düşük güç modu açılır (izin varsa) ya da pil tasarrufu ayarı açılır
-                if (st.kind == StatusKind.LowBattery || st.kind == StatusKind.LowBatteryCard) {
+                val more = settings.value.more
+                // Zamanlayıcı / alarm: kapalıysa açılır (düğmelerle), açıksa küçülür; kurma panelinde dokunuş bir şey yapmaz
+                if ((st.kind == StatusKind.Timer || st.kind == StatusKind.Alarm) && (clock.owns(st) || st.phase == 3)) {
+                    if (st.phase != 3) clock.onTap(cur.expanded, st)
+                    return
+                }
+                // Ses kaydı: aç / küçült
+                if (st.kind == StatusKind.VoiceRec && voice.owns(st)) { voice.onTap(cur.expanded); return }
+                // Kulaklık: küçük adaya dokununca kart açılır
+                if (st.kind == StatusKind.Headphones && !cur.expanded) {
+                    collapseJob?.cancel(); update { it.copy(expanded = true) }; scheduleCollapse(5_000L); return
+                }
+                // Rahatsız Etmeyin hapı: dokununca genişler (aya dokunarak aç / kapat)
+                if (st.kind == StatusKind.Focus && st.phase == 0 && more.focusTapExpand) {
+                    collapseJob?.cancel()
+                    update { it.copy(content = st.copy(phase = 1, title = "Rahatsız Etmeyin"), expanded = true) }
+                    scheduleCollapse(5_000L); return
+                }
+                if (st.kind == StatusKind.Focus && st.phase == 1) return          // kartın kendisine dokunma: aya dokunulmalı
+                // Düşük pil: genişlemeyen hapa dokununca (ayar açıksa) büyük kart açılır; kartta pil kapsülü düşük güç modunu açar
+                if (st.kind == StatusKind.LowBattery && more.lowBattTapExpand) {
+                    collapseJob?.cancel()
+                    val pct = (st.progress * 100f).toInt()
+                    val saver = st.extra == 1
+                    update { it.copy(content = st.copy(
+                        kind = StatusKind.LowBatteryCard, title = "%$pct Pil",
+                        subtitle = if (saver) "Düşük Güç Modu açık" else "Düşük Güç Modu için dokun",
+                    ), expanded = true) }
+                    scheduleCollapse(6_000L); return
+                }
+                if (st.kind == StatusKind.LowBatteryCard) return                  // kartta yalnızca pil kapsülü düşük güç modunu açar
+                if (st.kind == StatusKind.LowBattery) {
                     if (sysStatus.onLowBatteryTap(st)) return
                 }
                 collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
             }
-            is IslandContent.Shazam -> {
-                // Bulunan şarkıya dokununca Shazam açılır; dinlerken dokunma "Listening..." panelini açar / küçültür
-                if ((cur.content as IslandContent.Shazam).phase == ShazamPhase.Found) { call.send(shazam.open); shazam.end() }
+            is IslandContent.SoundCapsule -> {
+                // Bulunan şarkıya dokununca SoundCapsule açılır; dinlerken dokunma "Listening..." panelini açar / küçültür
+                if ((cur.content as IslandContent.SoundCapsule).phase == SoundCapsulePhase.Found) { call.send(soundCapsule.open); soundCapsule.end() }
                 else if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
                 else { collapseJob?.cancel(); update { it.copy(expanded = true) } }
             }
@@ -890,6 +947,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { settings.collect {
             LiveFlags.nav = it.more.navIsland; LiveFlags.delivery = it.more.deliveryIsland
             LiveFlags.progress = it.more.progressIsland; LiveFlags.score = it.more.scoreIsland
+            LiveFlags.logos = it.more.scoreLogos
+            ClockFlags.enabled = it.more.clockIsland; ClockFlags.voiceRec = it.more.voiceRecIsland
             NotifFlags.otp = it.more.otpIsland; NotifFlags.history = it.more.notifHistory; NotifFlags.remind = it.more.unreadRemind
             NotifFlags.important = it.more.importantOnly; NotifFlags.names = ImportantMatch.parse(it.more.importantNames)
             NotifFlags.digest = it.more.silentDigest
@@ -1151,13 +1210,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (assistantActive || call.active || appHide.hidden || landscape.active) return@launch
             val cur = ui.value
             if (cur.expanded && cur.content !is IslandContent.Status) return@launch    // açık panel varken araya girmez
-            showTemporarily(
-                IslandContent.Status(
-                    StatusKind.Headphones, title = name, subtitle = "Bağlandı",
-                    value = if (pct >= 0) "%$pct" else "", progress = if (pct >= 0) pct / 100f else -1f, extra = if (wired) 1 else 0,
-                ),
-                3_500L,
+            val hp = IslandContent.Status(
+                StatusKind.Headphones, title = name, subtitle = "Bağlandı",
+                value = if (pct >= 0) "$pct" else "", progress = if (pct >= 0) pct / 100f else -1f, extra = if (wired) 1 else 0,
             )
+            if (s.more.headphoneCompact && !s.dotMode) {
+                // Önce küçük ada (simge + pil halkası); dokununca kart açılır
+                collapseJob?.cancel()
+                update { IslandUiState(hp, expanded = false) }
+                scheduleCollapse(4_000L)
+            } else showTemporarily(hp, 3_500L)
         }
     }
 
@@ -1274,7 +1336,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     // ---------------------------------------------------------------- Ayrı dosyalara taşınan olaylar
-    // Shazam -> ShazamController.kt, ekran kaydı -> ScreenRecController.kt. Servisle konuşmaları IslandHost üzerinden olur.
+    // SoundCapsule -> SoundCapsuleController.kt, ekran kaydı -> ScreenRecController.kt. Servisle konuşmaları IslandHost üzerinden olur.
     private val host: IslandHost = object : IslandHost {
         override val scope: kotlinx.coroutines.CoroutineScope get() = this@IslandOverlayService.scope
         override val context: android.content.Context get() = this@IslandOverlayService
@@ -1303,12 +1365,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         override suspend fun collapseAndRest() = this@IslandOverlayService.collapseAndRest()
         override fun publishScreenRec(c: IslandContent.ScreenRec, expanded: Boolean) = publishRec(c, expanded)
     }
-    private val shazam: ShazamController by lazy { ShazamController(host) }
+    private val soundCapsule: SoundCapsuleController by lazy { SoundCapsuleController(host) }
     private val rec: ScreenRecController by lazy { ScreenRecController(host) }
     private val privacy: PrivacyController by lazy { PrivacyController(host) }
     private val ringer: RingerController by lazy { RingerController(host) }
     private val volume: VolumeController by lazy { VolumeController(host) }
     private val sysStatus: SystemStatusController by lazy { SystemStatusController(host) }
+    private val clock: ClockController by lazy { ClockController(host) }
+    private val voice: VoiceRecController by lazy { VoiceRecController(host) }
     private val chargeEta by lazy { ChargeTimeEstimator(this, settings) { IslandBus.post(IslandEvent.Status(it, 4_000L)) } }
     private val flipSilence by lazy { FlipSilence(this, settings, scope) }
 
@@ -1339,10 +1403,96 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }.also { c ->
             c.onCover = { on ->
                 lockDot.suppress = on; lockDot.recheck()
+                runCatching { lockIcon.suppress = on; lockIcon.recheck() }
                 // Face ID animasyonu adanın yerinde oynar: o sürece asıl ada gizlenir (üst üste iki ada görünmesin)
                 faceLockHidden = on
                 applyMainHidden()
             }
+        }
+    }
+
+    // ---- Kilit ekranında adanın solunda kilit simgesi (açılınca açık kilit) -> LockIcon.kt
+    private val lockIcon by lazy {
+        LockIconController(this, this, this, wm, settings, scope,
+            canShow = { ui.value.content is IslandContent.Idle && !settings.value.dotMode },
+        ) { s ->
+            val sw = wm.currentWindowMetrics.bounds.width()
+            FaceIdAnchor(
+                cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+                cy = islandCenterYPx(s).toFloat(),
+                pillW = dp(compactWidthFor(s, false)).toFloat(),
+                pillH = dp(s.compactHeightDp).toFloat(),
+                inverted = s.invertedIsland,
+            )
+        }
+    }
+
+    // ---------------------------------------------------------------- Yeni ada düğmeleri (IslandActions)
+    private fun wireIslandActions() {
+        IslandActions.serviceLive = true
+        IslandActions.onLowPower = { scope.launch { runCatching { onLowPowerButton() } } }
+        IslandActions.onTimerPause = { scope.launch { runCatching { clock.pauseResume() } } }
+        IslandActions.onTimerCancel = { scope.launch { runCatching { clock.cancel() } } }
+        IslandActions.onTimerRestart = { scope.launch { runCatching { clock.restart() } } }
+        IslandActions.onTimerStart = { ms -> scope.launch { runCatching { clock.start(ms) } } }
+        IslandActions.onAlarmSnooze = { scope.launch { runCatching { clock.snooze() } } }
+        IslandActions.onAlarmDismiss = { scope.launch { runCatching { clock.dismiss() } } }
+        IslandActions.onFocusToggle = { scope.launch { runCatching { toggleFocus() } } }
+        IslandActions.onVoiceStop = { scope.launch { runCatching { voice.onStop() } } }
+        IslandActions.onHoldExpand = { scope.launch { runCatching { onHoldExpand() } } }
+        IslandActions.onHoldPress = { on -> scope.launch { runCatching { onHoldPress(on) } } }
+    }
+
+    /** Düşük pil kartındaki pil kapsülü: düşük güç modunu açar (açıksa kapatır). */
+    private fun onLowPowerButton() {
+        val st = ui.value.content as? IslandContent.Status ?: return
+        if (st.kind != StatusKind.LowBattery && st.kind != StatusKind.LowBatteryCard) return
+        sysStatus.onLowBatteryTap(st)
+        scheduleCollapse(4_000L)
+    }
+
+    /** Genişlemiş Rahatsız Etmeyin kartında aya dokunma: modu açar / kapatır (bildirim erişimi yeterli). */
+    private fun toggleFocus() {
+        val st = ui.value.content as? IslandContent.Status ?: return
+        if (st.kind != StatusKind.Focus) return
+        val on = st.extra != 1
+        val ok = IslandNotificationListener.setFocus(on)
+        if (!ok) {
+            runCatching { startActivity(Intent(android.provider.Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            return
+        }
+        sysStatus.markFocus(on)
+        update { u -> if (u.content is IslandContent.Status && (u.content as IslandContent.Status).kind == StatusKind.Focus)
+            u.copy(content = st.copy(value = if (on) "Açık" else "Kapalı", extra = if (on) 1 else 0)) else u }
+        scheduleCollapse(3_000L)
+    }
+
+    // ---------------------------------------------------------------- Basılı tutarak açma
+    private var holdGrowJob: Job? = null
+
+    /** Parmak olaylı adaya değdi: pencere açık boyuta önceden büyür (ada basılı tutarken büyüyebilsin). */
+    private fun onHoldPress(on: Boolean) {
+        val cur = ui.value
+        if (cur.expanded) return
+        holdGrowJob?.cancel()
+        if (!on) {
+            holdGrowJob = scope.launch { delay(260); if (!ui.value.expanded) syncWindow(winKey(ui.value)) }
+            return
+        }
+        val key = winKey(cur.copy(expanded = true))
+        holdGrowJob = scope.launch { syncWindow(key) }
+    }
+
+    /** Basılı tutma süresi doldu: ada açılır (müzik dahil). */
+    private fun onHoldExpand() {
+        holdGrowJob?.cancel()
+        val cur = ui.value
+        if (cur.expanded) return
+        when (val c = cur.content) {
+            IslandContent.Idle -> Unit
+            is IslandContent.Media -> { collapseJob?.cancel(); update { it.copy(expanded = true) }; scheduleMusicCollapse() }
+            is IslandContent.Call -> if (c.isIncoming) call.expandIncoming() else call.toggleExpanded()
+            else -> onPillTap()
         }
     }
 
@@ -1355,7 +1505,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 onCommand = ::onCommand, onOutput = ::openOutputPanel, onLaunch = ::launchFavorite,
                 onOpenMusic = ::openMusicApp, onSideTap = ::onSideTap, onNotifSwipeSide = ::onNotifSwipeSide,
                 onAnswer = call::onAnswer, onDecline = call::onDecline, onSpeaker = call::onSpeaker,
-                onRecStop = rec::onStop, onShazamStop = shazam::onStop,
+                onRecStop = rec::onStop, onSoundCapsuleStop = soundCapsule::onStop,
             ),
             onActive = { on -> setMainIslandHidden(on) },
             onZoneChanged = { syncSideMusic(); call.syncSideButtons() },      // dönüş / ada bölgesi değişti: kenar çubukları yeniden kurulur
@@ -1565,6 +1715,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (gesturePad.canShow()) gesturePad.show()
                 else android.widget.Toast.makeText(this, "Çizerek komut için erişilebilirlik ya da 'üstte göster' izni gerekli", android.widget.Toast.LENGTH_LONG).show()
             }
+            else if (s.showIdle && s.more.timerIdleTrigger == 2) clock.openSetter()        // zamanlayıcı kurma paneli
             else if (s.designPhotoReady() && s.more.designPhotoTrigger == 1) openPhoto()
             else if (s.more.drawerEnabled && s.showIdle && s.more.drawerTrigger == 1) openDrawer()
             else if (s.translateReady() && s.translateTrigger == 1) openTranslate()
@@ -1652,13 +1803,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandContent.ScreenRec -> Bg.Rec
             is IslandContent.Call -> Bg.Call
             is IslandContent.Status -> when (c.kind) {
-                StatusKind.Timer -> Bg.Timer
+                StatusKind.Timer, StatusKind.Alarm -> Bg.Timer
+                StatusKind.VoiceRec -> Bg.Voice
                 StatusKind.Camera, StatusKind.Mic -> Bg.Privacy
                 else -> return
             }
             is IslandContent.Notif -> Bg.Notif
             is IslandContent.Live -> Bg.Live
-            else -> return      // Shazam dinleme noktası dokununca açılmaz
+            else -> return      // SoundCapsule dinleme noktası dokununca açılmaz
         }
         // 0 = sağ iç, 1 = sol iç, 2 = sağ dış, 3 = sol dış (dış yuvalar ±2: animasyon dış noktadan başlar)
         val from = if (settings.value.iphoneCircleOn()) settings.value.iphoneDir() else when (index) { 0 -> 1; 1 -> -1; 2 -> 2; else -> -2 }
@@ -1684,8 +1836,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             Bg.Timer -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
             Bg.Notif -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse((settings.value.notifExpandedSec * 1000f).toLong()) }
             Bg.Privacy -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(4_000) }
-            Bg.Shazam -> Unit
+            Bg.SoundCapsule -> Unit
             Bg.Live -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(8_000) }
+            Bg.Voice -> { update { IslandUiState(c, expanded = true, fromSide = from) }; scheduleCollapse(6_000) }
         }
     }
 
@@ -1738,7 +1891,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val c = cur.side.getOrNull(index) ?: return
         val screenWDp = wm.currentWindowMetrics.bounds.width() / density
         val fits = sideFitsWhenExpanded(c, settings.value, screenWDp)
-        val key = WinKey(kindOf(c), true, false, settings.value, false, if (fits) 1 else 0)
+        val xs = xExpandedSizeDp(c, settings.value, screenWDp)
+        val key = WinKey(kindOf(c), true, false, settings.value, false, if (fits) 1 else 0,
+            xcw = xCompactWidthDp(c, settings.value) ?: 0f, xew = xs?.first ?: 0f, xeh = xs?.second ?: 0f)
         preGrowJob?.cancel()
         preGrowJob = scope.launch {
             syncWindow(key)
@@ -1780,6 +1935,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val dir = if (s.invertedIsland && !landscape.active) -rawDir else rawDir      // ters adada yön aynalanır: yukarı kaydırma açar, aşağı kaydırma kapatır
         if (cur.swallow) return
         if (dir > 0 && !landscape.active && openStack()) return
+        // Gelen arama: yukarı kaydırınca küçülür (cevaplamadan / reddetmeden), aşağı kaydırınca yeniden açılır
+        val cc = cur.content
+        if (cc is IslandContent.Call && cc.isIncoming && s.more.incomingMinimize) {
+            if (dir < 0 && cur.expanded) call.minimizeIncoming() else if (dir > 0 && !cur.expanded) call.expandIncoming()
+            return
+        }
+        // Zamanlayıcı / alarm / ses kaydı / kurma paneli: yukarı kaydırınca küçülür (çalan alarm hariç), aşağı kaydırınca açılır
+        if (cc is IslandContent.Status && (cc.kind == StatusKind.Timer || cc.kind == StatusKind.Alarm || cc.kind == StatusKind.VoiceRec)) {
+            if (cc.phase == 2) return
+            if (dir < 0 && cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            else if (dir > 0 && !cur.expanded) onPillTap()
+            return
+        }
         when (val c = cur.content) {
             // Başparmak modu: boştaki adayı aşağı kaydırınca ada başparmağın altına iner
             IslandContent.Idle -> if (dir > 0 && s.more.thumbEnabled && s.showIdle && !landscape.active) ThumbStore.set(this, true)
@@ -1797,8 +1965,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 else if (s.notifDeleteSwipeUp) dismissNotif(c)           // çakışırsa silme önceliklidir
                 else if (s.notifCollapseSwipeUp) collapseNow()
             }
-            is IslandContent.Shazam -> when {
-                c.phase == ShazamPhase.Found -> shazam.end()
+            is IslandContent.SoundCapsule -> when {
+                c.phase == SoundCapsulePhase.Found -> soundCapsule.end()
                 dir > 0 && !cur.expanded -> { collapseJob?.cancel(); update { it.copy(expanded = true) } }
                 dir < 0 && cur.expanded -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
             }
@@ -2228,7 +2396,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
                     onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
                     onAnswer = call::onAnswer, onDecline = call::onDecline, onSpeaker = call::onSpeaker,
-                    onRecStop = rec::onStop, onShazamStop = shazam::onStop,
+                    onRecStop = rec::onStop, onSoundCapsuleStop = soundCapsule::onStop,
                     onNotifSwipeSide = ::onNotifSwipeSide, onSideTap = ::onSideTap, onSidePress = ::onSidePress,
                     onStackClose = ::onStackTap,
                 )
@@ -2496,12 +2664,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         setFocusable(k.kind == 12 && k.expanded)          // çeviri paneli: klavye için odak
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
         val pillC = pillCompactSizeForKind(s, k.kind)      // hap tasarımı: kapalı ada daha büyük
-        val cw = dp(if (pillC != null) pillC.first else if (s.dotMode) s.compactWidthDp else if (k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
+        val cw = dp(if (k.xcw > 0f && pillC == null) k.xcw else if (pillC != null) pillC.first else if (s.dotMode) s.compactWidthDp else if (k.kind == 5 || k.kind == 6 || k.kind == 10) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val chWin = if (pillC != null) dp(pillC.second) else ch     // kapalı halde pencere yüksekliği (konum hesabı ch ile kalır: ada kameradan aşağı büyür)
         val music = k.kind == 2
         val assistant = k.kind == 3
         val ew = dp(
             when {
+                k.xew > 0f -> k.xew                                           // yeni tasarımlar (zamanlayıcı, Rahatsız Etmeyin kartı...)
                 assistant -> s.assistantWidthDp
                 k.kind == 8 -> maxOf(CHARGE_PILL_W_DP, s.compactWidthDp)     // şarj: kompakt pill
                 k.kind == 13 -> ringerPillWidthDp(s, true, wm.currentWindowMetrics.bounds.width() / density)   // zil / sessiz (en geniş hal)
@@ -2514,6 +2683,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val favN = (ui.value.content as? IslandContent.Favorites)?.apps?.size ?: 0
         val eh = dp(
             when {
+                k.xeh > 0f -> k.xeh
                 assistant -> s.assistantHeightDp
                 k.kind == 5 -> 74f          // gelen arama
                 k.kind == 6 -> 88f          // aktif arama
@@ -2527,7 +2697,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 k.kind == 19 -> s.drawerHeightDp()     // ada çekmecesi
                 k.kind == 20 -> LIVE_H_DP              // navigasyon / sipariş
                 k.kind == 9 || k.kind == 10 -> REC_PILL_H_DP   // ekran kaydı
-                k.kind == 11 -> SHAZAM_PILL_H_DP        // Shazam sonucu
+                k.kind == 11 -> SOUND_CAPSULE_PILL_H_DP        // SoundCapsule sonucu
                 k.kind == 4 -> s.favoritesHeightDp(favN)
                 k.kind == 12 -> s.translateHeightDp(k.extraH)   // çeviri paneli: sonuç uzunluğuna göre
                 else -> s.expandedHeightDp + (if (music) s.musicExtraDp() else 0f) + (if (k.kind == 1) k.extraH.toFloat() else 0f)
@@ -2538,7 +2708,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val baseX = cutCenterXOffsetPx + dp(s.offsetXDp)
         val y = (cutCenterYPx - ch / 2).coerceAtLeast(0) + dp(s.offsetYDp) - pad
         val maxShift = ((screenW - ew - 2 * pad) / 2).coerceAtLeast(0)
-        // Shazam (kind 11): pencere genişleyip küçülürken yatay konum DEĞİŞMEZ (kısıtlama konumu kaydırıp küçülürken yana kaymaya yol açıyordu)
+        // SoundCapsule (kind 11): pencere genişleyip küçülürken yatay konum DEĞİŞMEZ (kısıtlama konumu kaydırıp küçülürken yana kaymaya yol açıyordu)
         val xExp = if (k.kind == 11) baseX else baseX.coerceIn(-maxShift, maxShift)
         val settle = s.settleMs()
         // Yan baloncuklar varsa pencere iki yanda (simetrik) baloncuk payı kadar genişler; ada pencerenin ortasında kalır
@@ -2551,7 +2721,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
         val playTouch = k.kind == 0 && s.showIdle &&
             (s.playPull || s.playGame || s.playFling || s.playRhythm || s.playDoodle || s.playPlant || s.playVisitors || s.playBreath)
-        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && (s.more.thumbEnabled || s.more.drawerEnabled || s.more.notifBirds)) || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden && !thumbHidden)
+        setTouchable(((k.kind != 0 && !assistant) || (k.kind == 0 && (s.favoritesReady() || s.translateReady() || s.designPhotoReady() || (s.showIdle && (s.more.thumbEnabled || s.more.drawerEnabled || s.more.notifBirds || s.more.timerIdleTrigger != 0)) || (s.showIdle && GestureStore.flow(applicationContext).value.enabled))) || playTouch) && !appHide.hidden && !thumbHidden)
         when {
             k.stackH > 0 -> {
                 // Yığın görünümü: pencere kartların toplam boyutunda
@@ -2782,6 +2952,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { sfxTriggers.stop() }
         runCatching { lockDot.stop() }
         runCatching { faceId.stop() }
+        runCatching { lockIcon.stop() }
+        runCatching { clock.destroy() }
+        IslandActions.onHoldPress = {}; IslandActions.onHoldExpand = {}; IslandActions.serviceLive = false
         runCatching { torch.stop() }
         runCatching { gesturePad.dismiss() }
         runCatching { landscape.stop() }

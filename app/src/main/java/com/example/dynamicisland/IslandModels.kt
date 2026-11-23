@@ -21,6 +21,7 @@ enum class StatusKind {
     Focus,            // Rahatsız Etmeyin açıldı / kapandı (geniş iOS hapı)
     Hotspot,          // kişisel erişim noktası açıldı / kapandı (geniş iOS hapı)
     Headphones,       // kulaklık bağlandı: kart (ad + simge + varsa pil)
+    VoiceRec,         // ses kaydı sürüyor (ses kaydedici uygulamalar): kapalı adada dalga + süre
 }
 
 /** Açık ada genişliğinde kart olarak açılan durumlar: düşük pil kartı ve kulaklık kartı. */
@@ -40,8 +41,8 @@ fun IslandContent.Status.isPill(): Boolean = kind == StatusKind.Charging || kind
 /** Sistem ekran kaydı aşamaları. */
 enum class RecPhase { Countdown, Recording, Processing, Saved }
 
-/** Shazam: Listening = dinliyor (kapalı ada, logo + ses dalgası), Found = şarkı bulundu (ada açılır, kapak + isim). */
-enum class ShazamPhase { Listening, Found }
+/** SoundCapsule: Listening = dinliyor (kapalı ada, logo + ses dalgası), Found = şarkı bulundu (ada açılır, kapak + isim). */
+enum class SoundCapsulePhase { Listening, Found }
 
 @Immutable
 sealed interface IslandContent {
@@ -125,6 +126,14 @@ sealed interface IslandContent {
         val silent: Boolean = false,     // zil modu: sessiz mi
         val vibrate: Boolean = false,    // zil modu: titreşim mi (silent=false, vibrate=true -> titreşim)
         val extra: Int = 0,              // ağ: 0 Wi-Fi, 1 mobil, 2 diğer, 3 bağlantı yok; uçak: 1 açık; düşük pil: 1 düşük güç modu açık
+        /**
+         * Görünüm aşaması (yeni tasarımlar, bkz. IslandExtrasUi.kt):
+         *  zamanlayıcı: 0 çalışıyor, 1 duraklatıldı, 2 süre doldu, 3 kurma paneli; alarm: 2 çalıyor;
+         *  Rahatsız Etmeyin: 1 genişlemiş kart; ses kaydı: 1 duraklatıldı, 2 kaydedildi.
+         */
+        val phase: Int = 0,
+        val remainMs: Long = 0L,         // duraklatılmış zamanlayıcıda kalan süre
+        val startedAt: Long = 0L,        // ses kaydı: başlama zamanı (System.currentTimeMillis)
     ) : IslandContent
 
     /** Sistem ekran kaydı: geri sayım / kayıt / işleniyor / kaydedildi. Süre UI'da startedAt'ten hesaplanır. */
@@ -136,9 +145,9 @@ sealed interface IslandContent {
         val thumb: ImageBitmap? = null,   // kaydedildi bildirimindeki küçük resim
     ) : IslandContent
 
-    /** Shazam: dinleme animasyonu ve bulunan şarkı (albüm kapağı, şarkı adı, sanatçı). Bildirimden beslenir. */
-    data class Shazam(
-        val phase: ShazamPhase,
+    /** SoundCapsule: dinleme animasyonu ve bulunan şarkı (albüm kapağı, şarkı adı, sanatçı). Bildirimden beslenir. */
+    data class SoundCapsule(
+        val phase: SoundCapsulePhase,
         val title: String = "",
         val artist: String = "",
         val cover: ImageBitmap? = null,
@@ -227,23 +236,42 @@ sealed interface IslandEvent {
     data class AssistantChanged(val active: Boolean) : IslandEvent
     /** Ön plandaki uygulama değişti ([from] -> [to]); müzik uygulamasından çıkış animasyonu için. */
     data class AppSwitched(val from: String, val to: String) : IslandEvent
-    /** Shazam dinlemeye başladı (Shazam'ın "dinliyor" bildirimi geldi). */
-    data class ShazamListening(val key: String) : IslandEvent
-    /** Shazam şarkıyı buldu (sonuç bildirimi): başlık, sanatçı ve kapak bildirimden gelir. */
-    data class ShazamFound(
+    /** SoundCapsule dinlemeye başladı (SoundCapsule'ın "dinliyor" bildirimi geldi). */
+    data class SoundCapsuleListening(val key: String) : IslandEvent
+    /** SoundCapsule şarkıyı buldu (sonuç bildirimi): başlık, sanatçı ve kapak bildirimden gelir. */
+    data class SoundCapsuleFound(
         val title: String, val artist: String, val cover: ImageBitmap?,
         val open: android.app.PendingIntent?, val key: String,
     ) : IslandEvent
     /** Kullanıcı bir bildirimi sildi (kaydırarak ya da "Tümünü temizle"): çöp kutusu ada animasyonu için. */
     data class NotifTrashed(val pkg: String, val text: String = "") : IslandEvent
-    /** Shazam'ın dinleme bildirimi kalktı ya da "eşleşme yok" bildirimi geldi. */
-    data object ShazamGone : IslandEvent
+    /** SoundCapsule'ın dinleme bildirimi kalktı ya da "eşleşme yok" bildirimi geldi. */
+    data object SoundCapsuleGone : IslandEvent
     /** Navigasyon / sipariş bildirimi geldi ya da güncellendi. */
     data class LiveUpdate(val live: IslandContent.Live) : IslandEvent
     /** Canlı etkinliğin bildirimi kalktı. */
     data class LiveGone(val key: String) : IslandEvent
     /** Ana Sayfa > Dene: favori uygulamalar panelini aç (ayarlarda favoriler açık ve en az bir uygulama seçili olmalı). */
     data object ShowFavorites : IslandEvent
+    /** Saat uygulamasının zamanlayıcı bildirimi (geri sayıyor ya da duraklatılmış). */
+    data class ClockTimer(
+        val key: String, val endsAt: Long, val remainMs: Long, val paused: Boolean, val label: String,
+        val pause: android.app.PendingIntent?, val resume: android.app.PendingIntent?, val cancel: android.app.PendingIntent?,
+    ) : IslandEvent
+    /** Saat uygulamasında alarm çalıyor ya da zamanlayıcının süresi doldu ([timerDone]). */
+    data class ClockAlarm(
+        val key: String, val label: String, val time: String, val timerDone: Boolean,
+        val snooze: android.app.PendingIntent?, val dismiss: android.app.PendingIntent?,
+    ) : IslandEvent
+    /** Saat uygulamasının zamanlayıcı / alarm bildirimi kalktı. */
+    data class ClockGone(val key: String) : IslandEvent
+    /** Ses kaydedici uygulamada kayıt sürüyor / duraklatıldı. */
+    data class VoiceRec(
+        val key: String, val pkg: String, val startedAt: Long, val elapsedMs: Long, val paused: Boolean,
+        val stop: android.app.PendingIntent?, val pauseResume: android.app.PendingIntent?, val open: android.app.PendingIntent?,
+    ) : IslandEvent
+    /** Ses kaydı bildirimi kalktı (kayıt bitti). */
+    data class VoiceRecGone(val key: String) : IslandEvent
 }
 
 /** Arayüz -> NotificationListener (medya kontrolü) komutları. */

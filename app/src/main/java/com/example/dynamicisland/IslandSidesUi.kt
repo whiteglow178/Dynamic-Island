@@ -123,7 +123,7 @@ fun sideSizeDp(cfg: IslandSettings, dir: Int): Float =
     else min(72f, cfg.compactHeightDp)
 
 /** Açık haldeki ada genişliği (dp). Servis, genişleyen panelin yanına baloncuk sığıp sığmadığını buradan hesaplar. */
-fun expandedWidthDpFor(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = when (c) {
+fun expandedWidthDpFor(c: IslandContent, cfg: IslandSettings, screenWDp: Float): Float = xExpandedSizeDp(c, cfg, screenWDp)?.first ?: when (c) {
     is IslandContent.ScreenRec -> recExpandedWidthDp(cfg, screenWDp)
     else -> cfg.expandedWidthDp
 }
@@ -416,22 +416,23 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
                 Text(c.title.trim().take(1).uppercase().ifEmpty { "•" }, color = Pal.c("side_text"), fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
-        is IslandContent.Shazam -> {
+        is IslandContent.SoundCapsule -> {
             val sz = ch * 0.60f
             val cover = c.cover
-            if (c.phase == ShazamPhase.Found && cover != null) {
+            if (c.phase == SoundCapsulePhase.Found && cover != null) {
                 Image(
                     bitmap = cover, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium,
                     modifier = Modifier.size(sz).clip(RoundedCornerShape(sz * 0.28f)),
                 )
             } else {
-                ShazamGlyphSweep(Modifier.size(sz))
+                SoundCapsuleGlyphSweep(Modifier.size(sz))
             }
         }
         is IslandContent.Status -> when (c.kind) {
             // Gizlilik göstergesi: iOS gibi yeşil (kamera) / turuncu (mikrofon) nokta
             StatusKind.Camera -> Box(Modifier.size(ch * 0.34f).background(Pal.c("status_camera"), RoundedCornerShape(50)))
             StatusKind.Mic -> Box(Modifier.size(ch * 0.34f).background(Pal.c("status_mic"), RoundedCornerShape(50)))
+            StatusKind.VoiceRec -> Box(Modifier.size(ch * 0.30f).background(Color(0xFFFF375F), RoundedCornerShape(50)))
             else -> Text(
                 when (c.kind) {
                     StatusKind.Ringer -> if (c.silent) "🔕" else "🔔"

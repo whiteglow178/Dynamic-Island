@@ -37,6 +37,9 @@ class CallController(
     /** Aramaya yan baloncuktan dokunulduysa açılış yönü (animasyon için). */
     var fromSide = 0
 
+    /** Gelen arama kullanıcı tarafından küçültüldü (solda kişi, sağda gri telefon). */
+    private var incomingMin = false
+
     private var name = ""
     private var avatar: ImageBitmap? = null
     private var since = 0L
@@ -64,9 +67,10 @@ class CallController(
         answer = e.answer
         decline = e.decline
         tickJob?.cancel()
+        if (key != e.key) incomingMin = false
         if (e.incoming) {
             since = 0L
-            expanded = true; collapseJob?.cancel()                    // gelen arama hep açık
+            expanded = !incomingMin; collapseJob?.cancel()            // gelen arama açık (kullanıcı küçültmediyse)
         } else {
             val now = System.currentTimeMillis()
             if (since == 0L) since = e.startedAt.takeIf { it in 1..now } ?: now
@@ -161,6 +165,23 @@ class CallController(
         if (expanded) scheduleCollapse()   // düğmeyle uğraşırken küçülmesin
     }
 
+    /** Gelen aramayı küçültür (cevaplamadan / reddetmeden): solda kişinin resmi, sağda gri ters telefon. */
+    fun minimizeIncoming() {
+        if (!ringing) return
+        incomingMin = true
+        expanded = false
+        collapseJob?.cancel()
+        publish()
+    }
+
+    /** Küçültülmüş gelen aramaya dokunma: yeniden açılır (Cevapla / Reddet). */
+    fun expandIncoming() {
+        if (!ringing) return
+        incomingMin = false
+        expanded = true
+        publish()
+    }
+
     /** Aktif aramada dokunma: paneli açar / küçültür. */
     fun toggleExpanded() {
         if (expanded) { expanded = false; collapseJob?.cancel(); publish() }
@@ -189,7 +210,7 @@ class CallController(
     }
 
     private fun reset() {
-        key = null; since = 0L; answer = null; decline = null; avatar = null
+        key = null; since = 0L; answer = null; decline = null; avatar = null; incomingMin = false
     }
 
     /** Hoparlörü açar / kapatır (aktif arama ekranındaki hoparlör düğmesi). */

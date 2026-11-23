@@ -117,19 +117,49 @@ class IslandNotificationListener : NotificationListenerService() {
             }.getOrDefault(false)
         }
 
-        /** Shazam'ın "dinleniyor" bildirimini kapatır: varsa iptal / durdur eylemini tetikler, yoksa bildirimi siler. */
-        fun stopShazamListening() {
+        /**
+         * Rahatsız Etmeyin'i açar (öncelikli) ya da kapatır. Bildirim dinleyicisi buna ek izin olmadan yetkilidir.
+         * Dinleyici bağlı değilse false.
+         */
+        fun setFocus(on: Boolean): Boolean {
+            val i = instance ?: return false
+            return runCatching {
+                i.requestInterruptionFilter(if (on) NotificationListenerService.INTERRUPTION_FILTER_PRIORITY else NotificationListenerService.INTERRUPTION_FILTER_ALL)
+                true
+            }.getOrDefault(false)
+        }
+
+        /** SoundCapsule'ın "dinleniyor" bildirimini kapatır: varsa iptal / durdur eylemini tetikler, yoksa bildirimi siler. */
+        fun stopSoundCapsuleListening() {
             val i = instance ?: return
+            var done = false
             runCatching {
-                val key = i.shazamListenKey ?: return
-                val sbn = i.activeNotifications?.firstOrNull { it.key == key } ?: return
-                val hints = listOf("iptal", "cancel", "stop", "durdur", "kapat", "dismiss")
-                val act = sbn.notification.actions?.firstOrNull { a ->
-                    val t = a.title?.toString()?.lowercase().orEmpty()
-                    hints.any { h -> t.contains(h) }
+                val key = i.soundCapsuleListenKey
+                // Kapatılan dinleme bildirimi (güncellense bile) adayı yeniden açmasın
+                i.soundCapsuleDismissedKey = key
+                i.soundCapsuleDismissedAt = SystemClock.elapsedRealtime()
+                i.soundCapsuleListenKey = null
+                i.soundCapsuleListenAt = 0L
+                val byKey = if (key != null) i.activeNotifications?.firstOrNull { it.key == key } else null
+                val sbn = byKey ?: i.activeNotifications?.firstOrNull { it.packageName in i.soundCapsulePkgs && it.isOngoing }
+                if (sbn != null) {
+                    val hints = listOf("iptal", "cancel", "stop", "durdur", "kapat", "dismiss", "bitir", "vazgeç", "close", "end")
+                    val acts = sbn.notification.actions
+                    // 1) İptal / durdur eylemi; tek eylem varsa o (dinleme bildiriminde genelde tek düğme "iptal"dir)
+                    val act = acts?.firstOrNull { a ->
+                        val t = a.title?.toString()?.lowercase().orEmpty()
+                        hints.any { h -> t.contains(h) }
+                    } ?: acts?.singleOrNull()
+                    if (act != null) done = runCatching { act.actionIntent.send(); true }.getOrDefault(false)
+                    // 2) Bildirimin silme hedefi (kaydırarak silmeyle aynı etki)
+                    if (!done) sbn.notification.deleteIntent?.let { pi -> done = runCatching { pi.send(); true }.getOrDefault(false) }
+                    // 3) Bildirimi kaldırmayı dene (ön plan servisi bildirimlerinde etkisiz olabilir)
+                    runCatching { i.cancelNotification(sbn.key) }
                 }
-                if (act != null) act.actionIntent.send() else i.cancelNotification(key)
             }
+            // 4) Uygulamanın kendi ekranı / açılır penceresi görünüyorsa iptal düğmesine basılır; bulunamazsa
+            //    ve uygulama öndeyse geri tuşu gönderilir (tanıma ekranında geri = dinlemeyi bırak)
+            runCatching { IslandAccessibilityService.stopListening(i.soundCapsulePkgs, back = !done) }
         }
 
         /**
@@ -331,53 +361,57 @@ class IslandNotificationListener : NotificationListenerService() {
         }.getOrDefault(this)
     }
 
-    // ---------------------------------------------------------------- Shazam (bildirimden tanıma)
-    // Shazam iki bildirim yayınlar: (1) dinlerken "devam eden" bildirim, (2) şarkıyı bulunca sonuç bildirimi
+    // ---------------------------------------------------------------- SoundCapsule (bildirimden tanıma)
+    // SoundCapsule iki bildirim yayınlar: (1) dinlerken "devam eden" bildirim, (2) şarkıyı bulunca sonuç bildirimi
     // (başlık = şarkı adı, metin = sanatçı, büyük simge = albüm kapağı). Bildirim dili / sürümü değişebildiği için
     // sınıflandırma birkaç ipucuna bakar.
-    private val shazamPkgs = setOf("com.shazam.android", "com.shazam.encore.android")
-    private val shazamListenHints = listOf(
+    // Tanıma uygulamasının paket adı kaynakta düz yazı olarak tutulmaz (ters çevrilmiş halde saklanır)
+    private val capsuleWord = "mazahs".reversed()
+    private val soundCapsulePkgs = setOf("com.$capsuleWord.android", "com.$capsuleWord.encore.android")
+    private val soundCapsuleListenHints = listOf(
         "dinle", "dinli", "listening", "tagging", "identifying", "recognizing", "tanımlan", "tanimlan", "aranıyor",
         "écoute", "escuchando", "hört zu", "in ascolto", "ouvindo", "слушаю", "聆听", "듣고",
     )
-    private val shazamAutoHints = listOf("auto shazam", "otomatik shazam", "autoshazam", "pop-up", "pop up", "açılır")
-    private val shazamNoMatchHints = listOf(
+    private val soundCapsuleAutoHints = listOf("auto $capsuleWord", "otomatik $capsuleWord", "auto$capsuleWord", "pop-up", "pop up", "açılır")
+    private val soundCapsuleNoMatchHints = listOf(
         "no result", "no match", "couldn't", "could not", "not found", "try again", "sonuç yok", "bulunamadı", "bulunamadi",
         "eşleşme yok", "eşleşme bulunamad", "tekrar dene", "aucun résultat", "sin resultado", "kein ergebnis",
     )
-    private val shazamSkipChannels = listOf("promo", "news", "chart", "marketing", "discover", "social", "recommend")
+    private val soundCapsuleSkipChannels = listOf("promo", "news", "chart", "marketing", "discover", "social", "recommend")
 
-    private enum class ShazamKind { Listening, Result, NoMatch, None }
+    private enum class SoundCapsuleKind { Listening, Result, NoMatch, None }
 
-    private var shazamListenKey: String? = null
-    private var shazamListenAt = 0L          // son "dinliyor" bildiriminin zamanı (elapsedRealtime)
-    private var lastShazamSig = ""
-    private var lastShazamAt = 0L
+    private var soundCapsuleListenKey: String? = null
+    private var soundCapsuleListenAt = 0L          // son "dinliyor" bildiriminin zamanı (elapsedRealtime)
+    private var soundCapsuleDismissedKey: String? = null   // adadaki X ile kapatılan dinleme bildirimi
+    private var soundCapsuleDismissedAt = 0L
+    private var lastSoundCapsuleSig = ""
+    private var lastSoundCapsuleAt = 0L
 
-    private fun classifyShazam(sbn: StatusBarNotification, now: Long): ShazamKind {
-        val n = sbn.notification ?: return ShazamKind.None
-        if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return ShazamKind.None
+    private fun classifySoundCapsule(sbn: StatusBarNotification, now: Long): SoundCapsuleKind {
+        val n = sbn.notification ?: return SoundCapsuleKind.None
+        if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return SoundCapsuleKind.None
         val ex = n.extras
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
         val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
         val all = "$title $text".lowercase()
         val ongoing = sbn.isOngoing || (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
         if (ongoing) {
-            // "Otomatik Shazam açık" gibi kalıcı bildirimler dinleme animasyonu başlatmaz
-            if (shazamAutoHints.any { all.contains(it) }) return ShazamKind.None
+            // "Otomatik SoundCapsule açık" gibi kalıcı bildirimler dinleme animasyonu başlatmaz
+            if (soundCapsuleAutoHints.any { all.contains(it) }) return SoundCapsuleKind.None
             val indeterminate = ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE)
-            return if (indeterminate || shazamListenHints.any { all.contains(it) }) ShazamKind.Listening else ShazamKind.None
+            return if (indeterminate || soundCapsuleListenHints.any { all.contains(it) }) SoundCapsuleKind.Listening else SoundCapsuleKind.None
         }
-        if (title.isBlank() && text.isBlank()) return ShazamKind.None
-        val recent = now - shazamListenAt < 40_000L
-        if (shazamNoMatchHints.any { all.contains(it) }) return if (recent) ShazamKind.NoMatch else ShazamKind.None
+        if (title.isBlank() && text.isBlank()) return SoundCapsuleKind.None
+        val recent = now - soundCapsuleListenAt < 40_000L
+        if (soundCapsuleNoMatchHints.any { all.contains(it) }) return if (recent) SoundCapsuleKind.NoMatch else SoundCapsuleKind.None
         val cat = n.category.orEmpty()
-        if (cat == Notification.CATEGORY_PROMO || cat == Notification.CATEGORY_RECOMMENDATION || cat == Notification.CATEGORY_SOCIAL) return ShazamKind.None
+        if (cat == Notification.CATEGORY_PROMO || cat == Notification.CATEGORY_RECOMMENDATION || cat == Notification.CATEGORY_SOCIAL) return SoundCapsuleKind.None
         val ch = (if (android.os.Build.VERSION.SDK_INT >= 26) n.channelId else null).orEmpty().lowercase()
-        if (shazamSkipChannels.any { ch.contains(it) }) return ShazamKind.None
+        if (soundCapsuleSkipChannels.any { ch.contains(it) }) return SoundCapsuleKind.None
         val hasCover = n.getLargeIcon() != null || ex.containsKey(Notification.EXTRA_PICTURE)
-        // Sonuç bildirimi: kapağı var ya da az önce dinleme başlamıştı (arka plan / otomatik Shazam sonuçları da kapaklıdır)
-        return if (hasCover || recent) ShazamKind.Result else ShazamKind.None
+        // Sonuç bildirimi: kapağı var ya da az önce dinleme başlamıştı (arka plan / otomatik SoundCapsule sonuçları da kapaklıdır)
+        return if (hasCover || recent) SoundCapsuleKind.Result else SoundCapsuleKind.None
     }
 
     /** iTunes Search ile albüm kapağını bulur (anahtarsız, ücretsiz). Bulamazsa null. */
@@ -404,46 +438,48 @@ class IslandNotificationListener : NotificationListenerService() {
         decodeUri(url)?.asImageBitmap()
     }.getOrNull()
 
-    /** Shazam bildirimiyse adaya olay gönderir ve true döner (bildirim normal bildirim olarak gösterilmez). */
-    private fun handleShazam(sbn: StatusBarNotification): Boolean {
-        if (sbn.packageName !in shazamPkgs) return false
+    /** SoundCapsule bildirimiyse adaya olay gönderir ve true döner (bildirim normal bildirim olarak gösterilmez). */
+    private fun handleSoundCapsule(sbn: StatusBarNotification): Boolean {
+        if (sbn.packageName !in soundCapsulePkgs) return false
         val n = sbn.notification ?: return false
         val now = SystemClock.elapsedRealtime()
-        when (classifyShazam(sbn, now)) {
-            ShazamKind.Listening -> {
+        when (classifySoundCapsule(sbn, now)) {
+            SoundCapsuleKind.Listening -> {
+                // Kullanıcı adadan kapattı: aynı dinleme bildiriminin güncellemeleri adayı yeniden açmasın (2 dk)
+                if (sbn.key == soundCapsuleDismissedKey && now - soundCapsuleDismissedAt < 120_000L) return true
                 // Aynı bildirimin güncellemeleri dinlemeyi yeniden başlatmasın
-                if (sbn.key == shazamListenKey && now - shazamListenAt < 60_000L) return true
-                shazamListenKey = sbn.key; shazamListenAt = now
-                IslandBus.post(IslandEvent.ShazamListening(sbn.key))
+                if (sbn.key == soundCapsuleListenKey && now - soundCapsuleListenAt < 60_000L) return true
+                soundCapsuleListenKey = sbn.key; soundCapsuleListenAt = now
+                IslandBus.post(IslandEvent.SoundCapsuleListening(sbn.key))
                 return true
             }
-            ShazamKind.Result -> {
+            SoundCapsuleKind.Result -> {
                 val ex = n.extras
                 val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
                 val artist = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
                     .ifBlank { ex.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty().trim() }
                     .ifBlank { ex.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty().trim() }
                 val sig = "$title|$artist"
-                if (sig == lastShazamSig && now - lastShazamAt < 15_000L) return true     // bildirim güncellemesi: tekrar gösterme
-                lastShazamSig = sig; lastShazamAt = now
-                shazamListenAt = 0L
+                if (sig == lastSoundCapsuleSig && now - lastSoundCapsuleAt < 15_000L) return true     // bildirim güncellemesi: tekrar gösterme
+                lastSoundCapsuleSig = sig; lastSoundCapsuleAt = now
+                soundCapsuleListenAt = 0L
                 val notifCover = recThumbOf(n)
                 val open = n.contentIntent
                 val key = sbn.key
                 val sc = scope
                 if ((notifCover != null && notifCover.width >= 200) || title.isBlank() || sc == null) {
-                    IslandBus.post(IslandEvent.ShazamFound(title, artist, notifCover, open, key))
+                    IslandBus.post(IslandEvent.SoundCapsuleFound(title, artist, notifCover, open, key))
                 } else {
                     // Bildirimde kapak yok / küçük: şarkı adı + sanatçıyla internetten kapak ara (en fazla 2,5 sn bekler)
                     sc.launch {
                         val online = withTimeoutOrNull(2_500L) { withContext(Dispatchers.IO) { fetchCoverOnline(title, artist) } }
-                        IslandBus.post(IslandEvent.ShazamFound(title, artist, online ?: notifCover, open, key))
+                        IslandBus.post(IslandEvent.SoundCapsuleFound(title, artist, online ?: notifCover, open, key))
                     }
                 }
                 return true
             }
-            ShazamKind.NoMatch -> { IslandBus.post(IslandEvent.ShazamGone); return true }
-            ShazamKind.None -> return false
+            SoundCapsuleKind.NoMatch -> { IslandBus.post(IslandEvent.SoundCapsuleGone); return true }
+            SoundCapsuleKind.None -> return false
         }
         @Suppress("UNREACHABLE_CODE")
         return false
@@ -610,10 +646,13 @@ class IslandNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (liveKeys.remove(sbn.key)) IslandBus.post(IslandEvent.LiveGone(sbn.key))
-        if (sbn.packageName in shazamPkgs) {
+        if (clockKeys.remove(sbn.key)) IslandBus.post(IslandEvent.ClockGone(sbn.key))
+        if (voiceKeys.remove(sbn.key)) IslandBus.post(IslandEvent.VoiceRecGone(sbn.key))
+        if (sbn.packageName in soundCapsulePkgs) {
             // Dinleme bildirimi kalktı: sonuç gelmezse ada kapanır (servis kısa bir tolerans bekler)
-            val kind = runCatching { classifyShazam(sbn, SystemClock.elapsedRealtime()) }.getOrNull()
-            if (kind == ShazamKind.Listening) { shazamListenKey = null; IslandBus.post(IslandEvent.ShazamGone) }
+            val kind = runCatching { classifySoundCapsule(sbn, SystemClock.elapsedRealtime()) }.getOrNull()
+            if (sbn.key == soundCapsuleDismissedKey) soundCapsuleDismissedKey = null
+            if (kind == SoundCapsuleKind.Listening) { soundCapsuleListenKey = null; IslandBus.post(IslandEvent.SoundCapsuleGone) }
             return
         }
         if (runCatching { isScreenRec(sbn) }.getOrDefault(false)) {
@@ -624,6 +663,120 @@ class IslandNotificationListener : NotificationListenerService() {
         if (sbn.notification?.category == Notification.CATEGORY_CALL) {
             IslandBus.post(IslandEvent.CallEnded(sbn.key))
         }
+    }
+
+    // ---------------------------------------------------------------- Saat uygulaması: alarm / zamanlayıcı
+    private val clockKeys = HashSet<String>()
+    private val clockPkgHints = listOf(
+        "deskclock", "clockpackage", "alarmclock", "timeweather", ".clock", "clock.", "alarm",
+    )
+    private val snoozeWords = listOf("ertele", "snooze", "erteleme", "отложить", "später", "posponer")
+    private val dismissWords = listOf("kapat", "dismiss", "stop", "durdur", "bitir", "tamam", "sil", "sıfırla", "reset", "delete", "iptal", "cancel", "выключить", "остановить")
+    private val pauseWords = listOf("duraklat", "pause", "пауза")
+    private val resumeWords = listOf("devam", "resume", "başlat", "start", "продолжить")
+    private val cancelWords = listOf("sıfırla", "reset", "sil", "delete", "iptal", "cancel", "kaldır", "remove", "сброс", "удалить")
+    private val timerWords = listOf("zamanlayıcı", "timer", "geri sayım", "таймер")
+    private val timesUpWords = listOf("süre doldu", "süresi doldu", "time's up", "times up", "time is up", "время истекло", "bitti")
+    private val mmssRx = Regex("""(?<!\d)(\d{1,2}):(\d{2})(?::(\d{2}))?(?!\d)""")
+    private val hhmmRx = Regex("""\b\d{1,2}[:.]\d{2}\b""")
+
+    private fun actionBy(n: Notification, words: List<String>): android.app.PendingIntent? =
+        n.actions?.firstOrNull { a ->
+            val t = a.title?.toString()?.lowercase().orEmpty()
+            a.actionIntent != null && words.any { t.contains(it) }
+        }?.actionIntent
+
+    /** "4:32" / "1:04:09" -> ms */
+    private fun mmssMs(m: MatchResult): Long {
+        val a = m.groupValues[1].toLong(); val b = m.groupValues[2].toLong(); val c = m.groupValues[3]
+        return if (c.isNotEmpty()) (a * 3600 + b * 60 + c.toLong()) * 1000 else (a * 60 + b) * 1000
+    }
+
+    /** Saat uygulamasının bildirimiyse adaya olay gönderir ve true döner (bildirim adada ayrıca gösterilmez). */
+    private fun handleClock(sbn: StatusBarNotification): Boolean {
+        val n = sbn.notification ?: return false
+        if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return false
+        if (sbn.packageName == packageName) return false
+        val pkg = sbn.packageName.lowercase()
+        val clockApp = clockPkgHints.any { pkg.contains(it) }
+        val cat = n.category.orEmpty()
+        if (!clockApp && !(cat == Notification.CATEGORY_ALARM && n.fullScreenIntent != null)) return false
+        val ex = n.extras
+        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
+        val sub = ex.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty().trim()
+        val all = "$title $text $sub".lowercase()
+        val ongoing = sbn.isOngoing || (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
+        val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)
+        val countDown = ex.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN)
+        val isTimer = timerWords.any { all.contains(it) } || countDown
+        val snooze = actionBy(n, snoozeWords)
+        val dismiss = actionBy(n, dismissWords)
+        // 1) Süresi dolan zamanlayıcı
+        if (isTimer && (timesUpWords.any { all.contains(it) } || (cat == Notification.CATEGORY_ALARM && !chrono && n.fullScreenIntent != null))) {
+            clockKeys.add(sbn.key)
+            IslandBus.post(IslandEvent.ClockAlarm(sbn.key, "Zamanlayıcı", "", true, null, dismiss ?: n.contentIntent))
+            return true
+        }
+        // 2) Geri sayan / duraklatılmış zamanlayıcı
+        if (isTimer && ongoing) {
+            val paused = !chrono && actionBy(n, resumeWords) != null
+            val ends = if (chrono && countDown) n.`when` else 0L
+            val left = mmssRx.find("$title $text")?.let { mmssMs(it) } ?: 0L
+            if (ends <= 0L && !paused) return clockKeys.contains(sbn.key)        // geri sayım bilgisi yok: normal bildirim
+            clockKeys.add(sbn.key)
+            IslandBus.post(IslandEvent.ClockTimer(
+                sbn.key, ends, if (paused) left else (ends - System.currentTimeMillis()).coerceAtLeast(0L), paused, "Zamanlayıcı",
+                actionBy(n, pauseWords), actionBy(n, resumeWords), actionBy(n, cancelWords),
+            ))
+            return true
+        }
+        // 3) Çalan alarm: ertele düğmesi ya da tam ekran hedefi olan alarm bildirimi
+        if (!chrono && (snooze != null || (cat == Notification.CATEGORY_ALARM && n.fullScreenIntent != null))) {
+            val time = hhmmRx.find("$title $text")?.value
+                ?: java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+            val label = listOf(title, text).firstOrNull { it.isNotBlank() && !it.contains(time) && it.length <= 24 } ?: "Alarm"
+            clockKeys.add(sbn.key)
+            IslandBus.post(IslandEvent.ClockAlarm(sbn.key, label, time, false, snooze, dismiss))
+            return true
+        }
+        if (clockKeys.remove(sbn.key)) IslandBus.post(IslandEvent.ClockGone(sbn.key))
+        return false
+    }
+
+    // ---------------------------------------------------------------- Ses kaydı
+    private val voiceKeys = HashSet<String>()
+    private val voicePkgHints = listOf("voicenote", "soundrecorder", "audiorecorder", "voicerecorder", "apps.recorder", "recorder")
+    private val voiceStopWords = listOf("durdur", "stop", "kaydet", "save", "bitir", "finish", "done", "стоп", "сохранить")
+    private val voicePauseWords = listOf("duraklat", "pause", "devam", "resume", "пауза")
+
+    /** Ses kaydedici uygulamada kayıt sürüyorsa adaya olay gönderir ve true döner. */
+    private fun handleVoiceRec(sbn: StatusBarNotification): Boolean {
+        val n = sbn.notification ?: return false
+        if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return false
+        val pkg = sbn.packageName.lowercase()
+        if (sbn.packageName == packageName || voicePkgHints.none { pkg.contains(it) }) return false
+        if (pkg.contains("screen")) return false                          // ekran kaydedici ayrı yoldan gider
+        val ongoing = sbn.isOngoing || (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
+        val ex = n.extras
+        val chrono = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)
+        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
+        val all = "$title $text".lowercase()
+        val mmss = mmssRx.find("$title $text")
+        if (!ongoing || (!chrono && mmss == null && !all.contains("kayıt") && !all.contains("record"))) {
+            if (voiceKeys.remove(sbn.key)) IslandBus.post(IslandEvent.VoiceRecGone(sbn.key))
+            return false
+        }
+        val paused = all.contains("duraklat") || all.contains("paused") || all.contains("пауза")
+        val elapsed = mmss?.let { mmssMs(it) } ?: 0L
+        val started = if (chrono && !paused) n.`when` else 0L
+        voiceKeys.add(sbn.key)
+        IslandBus.post(IslandEvent.VoiceRec(
+            sbn.key, sbn.packageName, started, elapsed, paused,
+            actionBy(n, voiceStopWords), actionBy(n, voicePauseWords), n.contentIntent,
+        ))
+        return true
     }
 
     // ---------------------------------------------------------------- Canlı etkinlik (navigasyon / sipariş)
@@ -650,8 +803,12 @@ class IslandNotificationListener : NotificationListenerService() {
         val n = sbn.notification
         // Deneme bildirimi (Ana Sayfa > Bildirimler > Bildirim testi): başka bir uygulamadan gelmiş gibi işlenir
         val other = sbn.packageName != packageName || isTest(sbn, packageName)
-        // Shazam: dinleme / sonuç bildirimleri adada özel animasyonla gösterilir
-        if (handleShazam(sbn)) return
+        // Saat uygulaması: çalan alarm / zamanlayıcı adada (ertele, kapat, duraklat düğmeleriyle)
+        if (ClockFlags.enabled && runCatching { handleClock(sbn) }.getOrDefault(false)) return
+        // Ses kaydedici: kayıt sürerken adada dalga + süre
+        if (ClockFlags.voiceRec && runCatching { handleVoiceRec(sbn) }.getOrDefault(false)) return
+        // SoundCapsule: dinleme / sonuç bildirimleri adada özel animasyonla gösterilir
+        if (handleSoundCapsule(sbn)) return
         // Sistem ekran kaydı bildirimi (kayıt / işleniyor / kaydedildi) ayrı yoldan gider
         if (isScreenRec(sbn)) { handleScreenRec(sbn); return }
         // Arama bildirimleri (gelen / aktif) ayrı yoldan gider; "devam eden" filtresine takılmaz

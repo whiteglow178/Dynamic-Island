@@ -105,6 +105,7 @@ internal fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
     StatusKind.Camera -> Pal.c("status_camera")
     StatusKind.Mic -> Pal.c("status_mic")
     StatusKind.Volume -> Pal.c("status_text")
+    StatusKind.VoiceRec -> Color(0xFFFF375F)
     StatusKind.Network, StatusKind.Airplane, StatusKind.RingVolume, StatusKind.LowBattery, StatusKind.LowBatteryCard,
     StatusKind.Focus, StatusKind.Hotspot, StatusKind.Headphones -> sysColor(c)
 }
@@ -149,7 +150,7 @@ internal fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) 
                 StatusKind.Network, StatusKind.Airplane, StatusKind.RingVolume, StatusKind.LowBattery, StatusKind.LowBatteryCard,
     StatusKind.Focus, StatusKind.Hotspot, StatusKind.Headphones ->
                     drawSysGlyph(c, w)
-                StatusKind.Mic -> {
+                StatusKind.Mic, StatusKind.VoiceRec -> {
                     drawRoundRect(w, Offset(9f, 2.5f), Size(6f, 11f), CornerRadius(3f, 3f))
                     drawArc(w, 0f, 180f, false, Offset(5.5f, 6f), Size(13f, 12f), style = st)
                     drawLine(w, Offset(12f, 18f), Offset(12f, 21.5f), strokeWidth = 2f, cap = StrokeCap.Round)

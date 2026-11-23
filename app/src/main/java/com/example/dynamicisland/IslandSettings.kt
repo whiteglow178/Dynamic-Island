@@ -601,6 +601,25 @@ data class MoreSettings(
     val smartCopy: Boolean = false,         // adadaki bildirimde IBAN / kargo no / telefon / adres / bağlantı çipleri
     val charge80: Boolean = false,          // şarjda %80 uyarısı (ChargeFlip.kt)
     val charge80Night: Boolean = true,      // %80 uyarısı gece titreşimsiz ve küçük
+    // ---- Yeni ada özellikleri (IslandExtrasUi.kt, ClockController.kt)
+    val lowBattTapExpand: Boolean = true,   // genişlemeyen düşük pil hapına dokununca büyük kart açılsın
+    val clockIsland: Boolean = true,        // saat uygulamasının alarmı / zamanlayıcısı adada (ertele / kapat / duraklat)
+    val timerIdleTrigger: Int = 0,          // boştaki adadan zamanlayıcı kurma: 0 kapalı, 1 dokununca, 2 basılı tutunca
+    val timerSound: Boolean = true,         // ada zamanlayıcısı bitince alarm sesi + titreşim
+    val faceIdCompact: Boolean = false,     // Face ID: kare yerine küçük adada (solda kilit, sağda yüz / halka / ✓)
+    val lockIcon: Boolean = true,           // kilit ekranında adanın solunda kilit; açılınca açık kilit
+    val scoreLogos: Boolean = true,         // maç skorunda takım logoları (internetten, önbellekli)
+    val micSideRight: Boolean = true,       // ortada olay varken mikrofon / kamera noktası sağdaki baloncukta
+    val holdExpand: Boolean = false,        // olaylı adaya dokununca değil, basılı tutunca genişlesin
+    val holdExpandMs: Float = 600f,         // basılı tutma süresi (ms)
+    val holdGrowPct: Float = 25f,           // basılı tutarken adanın açılacağı boyuta doğru büyüme oranı (%)
+    val headphoneCompact: Boolean = true,   // kulaklık: önce küçük ada (simge + pil halkası), dokununca kart
+    val focusTapExpand: Boolean = true,     // Rahatsız Etmeyin hapına dokununca genişlesin
+    val focusToggle: Boolean = true,        // genişleyince aya dokunarak Rahatsız Etmeyin açılıp kapansın
+    val callIconOnly: Boolean = true,       // cevaplanan arama küçükken yalnızca yeşil telefon simgesi
+    val callWaveGreen: Boolean = false,     // arama ses dalgası tamamen yeşil (yeşil -> turuncu yerine)
+    val incomingMinimize: Boolean = true,   // gelen arama yukarı kaydırınca küçülsün (solda kişi, sağda gri telefon)
+    val voiceRecIsland: Boolean = true,     // ses kaydı sürerken adada dalga + süre
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -733,6 +752,12 @@ class SettingsRepository(context: Context) {
         val C_PSOC = booleanPreferencesKey("c_psoc"); val C_PBALL = booleanPreferencesKey("c_pball")
         val N_OTP = booleanPreferencesKey("n_otp"); val N_HIST = booleanPreferencesKey("n_hist"); val N_REM = booleanPreferencesKey("n_rem")
         val N_IMP = booleanPreferencesKey("n_imp"); val N_NAMES = stringPreferencesKey("n_names"); val N_DIG = booleanPreferencesKey("n_dig")
+        val X_LBTAP = booleanPreferencesKey("x_lbtap"); val X_CLOCK = booleanPreferencesKey("x_clock"); val X_TTRIG = intPreferencesKey("x_ttrig")
+        val X_TSND = booleanPreferencesKey("x_tsnd"); val X_FIDC = booleanPreferencesKey("x_fidc"); val X_LOCK = booleanPreferencesKey("x_lock")
+        val X_LOGO = booleanPreferencesKey("x_logo"); val X_MICR = booleanPreferencesKey("x_micr"); val X_HOLD = booleanPreferencesKey("x_hold")
+        val X_HOLDMS = floatPreferencesKey("x_holdms"); val X_HOLDG = floatPreferencesKey("x_holdg"); val X_HPC = booleanPreferencesKey("x_hpc")
+        val X_FTAP = booleanPreferencesKey("x_ftap"); val X_FTOG = booleanPreferencesKey("x_ftog"); val X_CICON = booleanPreferencesKey("x_cicon")
+        val X_CWAVE = booleanPreferencesKey("x_cwave"); val X_INMIN = booleanPreferencesKey("x_inmin"); val X_VREC = booleanPreferencesKey("x_vrec")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1035,6 +1060,17 @@ class SettingsRepository(context: Context) {
                 otpIsland = p[K.N_OTP] ?: d.more.otpIsland, notifHistory = p[K.N_HIST] ?: d.more.notifHistory,
                 unreadRemind = p[K.N_REM] ?: d.more.unreadRemind, importantOnly = p[K.N_IMP] ?: d.more.importantOnly,
                 importantNames = p[K.N_NAMES] ?: d.more.importantNames, silentDigest = p[K.N_DIG] ?: d.more.silentDigest,
+                lowBattTapExpand = p[K.X_LBTAP] ?: d.more.lowBattTapExpand, clockIsland = p[K.X_CLOCK] ?: d.more.clockIsland,
+                timerIdleTrigger = (p[K.X_TTRIG] ?: d.more.timerIdleTrigger).coerceIn(0, 2), timerSound = p[K.X_TSND] ?: d.more.timerSound,
+                faceIdCompact = p[K.X_FIDC] ?: d.more.faceIdCompact, lockIcon = p[K.X_LOCK] ?: d.more.lockIcon,
+                scoreLogos = p[K.X_LOGO] ?: d.more.scoreLogos, micSideRight = p[K.X_MICR] ?: d.more.micSideRight,
+                holdExpand = p[K.X_HOLD] ?: d.more.holdExpand,
+                holdExpandMs = (p[K.X_HOLDMS] ?: d.more.holdExpandMs).coerceIn(200f, 2000f),
+                holdGrowPct = (p[K.X_HOLDG] ?: d.more.holdGrowPct).coerceIn(0f, 60f),
+                headphoneCompact = p[K.X_HPC] ?: d.more.headphoneCompact,
+                focusTapExpand = p[K.X_FTAP] ?: d.more.focusTapExpand, focusToggle = p[K.X_FTOG] ?: d.more.focusToggle,
+                callIconOnly = p[K.X_CICON] ?: d.more.callIconOnly, callWaveGreen = p[K.X_CWAVE] ?: d.more.callWaveGreen,
+                incomingMinimize = p[K.X_INMIN] ?: d.more.incomingMinimize, voiceRecIsland = p[K.X_VREC] ?: d.more.voiceRecIsland,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1166,6 +1202,12 @@ class SettingsRepository(context: Context) {
             it[K.C_PSOC] = m.petSocial; it[K.C_PBALL] = m.petBall
             it[K.N_OTP] = m.otpIsland; it[K.N_HIST] = m.notifHistory; it[K.N_REM] = m.unreadRemind
             it[K.N_IMP] = m.importantOnly; it[K.N_NAMES] = m.importantNames; it[K.N_DIG] = m.silentDigest
+            it[K.X_LBTAP] = m.lowBattTapExpand; it[K.X_CLOCK] = m.clockIsland; it[K.X_TTRIG] = m.timerIdleTrigger
+            it[K.X_TSND] = m.timerSound; it[K.X_FIDC] = m.faceIdCompact; it[K.X_LOCK] = m.lockIcon
+            it[K.X_LOGO] = m.scoreLogos; it[K.X_MICR] = m.micSideRight; it[K.X_HOLD] = m.holdExpand
+            it[K.X_HOLDMS] = m.holdExpandMs; it[K.X_HOLDG] = m.holdGrowPct; it[K.X_HPC] = m.headphoneCompact
+            it[K.X_FTAP] = m.focusTapExpand; it[K.X_FTOG] = m.focusToggle; it[K.X_CICON] = m.callIconOnly
+            it[K.X_CWAVE] = m.callWaveGreen; it[K.X_INMIN] = m.incomingMinimize; it[K.X_VREC] = m.voiceRecIsland
         }
     }
 

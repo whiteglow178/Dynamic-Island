@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -98,17 +99,14 @@ internal fun DrawScope.drawBatteryGlyph(color: Color, fill: Color, frac: Float) 
 internal val FOCUS_PURPLE = Color(0xFF7D7AFF)
 internal val HOTSPOT_GREEN = Color(0xFF34C759)
 
-/** Hilal (Rahatsız Etmeyin). */
+/**
+ * Hilal (Rahatsız Etmeyin): tam daireden, sağ üste kaydırılmış ikinci daire kesilerek çizilir.
+ * Böylece ay simetrik ve düzgün (yamuk değil) olur; 24x24 kutunun ortasında durur.
+ */
 internal fun DrawScope.drawMoonGlyph(color: Color) {
-    val moon = Path().apply {
-        moveTo(14.5f, 2.5f)
-        cubicTo(8.6f, 2.8f, 4f, 7.6f, 4f, 13.5f)
-        cubicTo(4f, 19.6f, 8.9f, 22f, 13.5f, 22f)
-        cubicTo(17.2f, 22f, 20.2f, 20.1f, 21.5f, 17.3f)
-        cubicTo(15.6f, 18.3f, 10.6f, 14.2f, 10.6f, 9.2f)
-        cubicTo(10.6f, 6.6f, 12.1f, 4.1f, 14.5f, 2.5f)
-        close()
-    }
+    val outer = Path().apply { addOval(androidx.compose.ui.geometry.Rect(Offset(11.4f, 12.6f), 8.6f)) }
+    val cut = Path().apply { addOval(androidx.compose.ui.geometry.Rect(Offset(16.2f, 7.8f), 7.4f)) }
+    val moon = Path().apply { op(outer, cut, androidx.compose.ui.graphics.PathOperation.Difference) }
     drawPath(moon, color)
 }
 
@@ -270,7 +268,12 @@ internal fun LowBatteryCardContent(c: IslandContent.Status, rb: RainbowStyle?) {
         }
         Box(
             Modifier.size(width = 82.dp, height = 52.dp).clip(RoundedCornerShape(50))
-                .background(if (saver) accent else accent.copy(alpha = 0.32f)),
+                .background(if (saver) accent else accent.copy(alpha = 0.32f))
+                // Pil kapsülüne dokununca düşük güç modu açılır (kartın geri kalanına dokunmak bir şey yapmaz)
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                ) { IslandActions.onLowPower() },
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.size(width = 38.dp, height = 18.dp)) {
@@ -448,24 +451,20 @@ private fun DrawScope.drawMosaic(w: Float, h: Float) {
 @Composable
 internal fun HeadphoneCardContent(c: IslandContent.Status, rb: RainbowStyle?) {
     val pct = c.progress
+    // Ekran kaydındaki gibi: solda büyük kulaklık simgesi (zeminsiz), üstte küçük gri "Bağlandı", altında kalın ad
     Row(
-        Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 8.dp),
+        Modifier.fillMaxSize().padding(start = 20.dp, end = 18.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(52.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(Modifier.size(30.dp)) {
-                val sc = size.width / 24f
-                withTransform({ scale(sc, sc, Offset.Zero) }) { drawHeadphoneGlyph(Color.White, c.extra == 1) }
-            }
+        Canvas(Modifier.size(40.dp)) {
+            val sc = size.width / 24f
+            withTransform({ scale(sc, sc, Offset.Zero) }) { drawHeadphoneGlyph(Color.White, c.extra == 1) }
         }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(c.title, color = Pal.c("status_text"), fontWeight = FontWeight.SemiBold, fontSize = 17.sp,
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(c.subtitle, color = Pal.c("status_text_dim"), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(c.title, color = Pal.c("status_text"), fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
-            Text(c.subtitle, color = Pal.c("status_text_dim"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (pct >= 0f) {
             val ring = if (pct <= 0.2f) Color(0xFFFF453A) else HOTSPOT_GREEN
