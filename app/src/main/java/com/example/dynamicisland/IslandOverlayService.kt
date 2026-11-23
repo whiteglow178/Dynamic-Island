@@ -23,7 +23,13 @@ import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.Constraints
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.LifecycleService
@@ -69,6 +75,18 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private lateinit var wm: WindowManager
     private var dialog: Dialog? = null
     private var composeView: ComposeView? = null
+    /**
+     * Yana kayma çözümü (kökten): görüntü penceresi ([dialog]) ekran genişliğinde, yatayda HİÇ oynamaz ve dokunuş
+     * almaz; yalnızca boyu değişir. Adanın "mantıksal" penceresinin genişliği ve yatay kayması bu durumda tutulur ve
+     * içerik bu kutuya yerleştirilir (IslandRoot sarmalayıcısı). Sistem (MIUI / HyperOS) pencere sol kenarı değişince
+     * görüntüyü eski yerde bırakabiliyordu; sol kenar hiç değişmediği için bu artık olamaz.
+     * Dokunuşları ve cam bulanıklığını mantıksal pencere boyutundaki görünmez [touchDialog] alır ve görüntüye iletir:
+     * kaysa bile görünmez ve dokunma alanı (pencere çerçevesi) hep doğru yerdedir.
+     */
+    private class LogicalBox(val w: Int, val x: Int)
+    private val logicalBox = androidx.compose.runtime.mutableStateOf(LogicalBox(1, 0))
+    private var touchDialog: Dialog? = null
+    private var touchView: View? = null
     private val fxWindow by lazy { IslandFxWindow(this, this, this, wm) }   // adadan düşen efekt parçaları (tam ekran, dokunmatik olmayan)
     private var collapseJob: Job? = null
     private var mediaGraceJob: Job? = null     // şarkı geçişinde oynatıcı bir an "durdu" / boş bildirirse adayı hemen kapatma
@@ -1540,7 +1558,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         applyMainHidden()
     }
     private fun applyMainHidden() {
-        runCatching { dialog?.window?.decorView?.visibility = if (mainHidden || thumbHidden || faceFlashHidden || faceLockHidden || chargeRingHidden) View.INVISIBLE else View.VISIBLE }
+        val vis = if (mainHidden || thumbHidden || faceFlashHidden || faceLockHidden || chargeRingHidden) View.INVISIBLE else View.VISIBLE
+        runCatching { dialog?.window?.decorView?.visibility = vis }
+        runCatching { touchDialog?.window?.decorView?.visibility = vis }     // gizliyken dokunuşa tepki vermesin
         refreshDecor()
     }
 
@@ -2426,13 +2446,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun detachOverlay() {
         composeView?.removeCallbacks(calibrateRunnable)
-        composeView?.removeCallbacks(settlePoke)
         composeView?.let { v ->
             v.disposeComposition()
             // Sahipler kaldırılmaz: pencere eklenip hemen kaldırılırsa bekleyen ilk çizim sahibi bulamayıp çöker
         }
         runCatching { dialog?.dismiss() }
+        runCatching { touchDialog?.dismiss() }
         dialog = null
+        touchDialog = null
+        touchView = null
+        logicalBox.value = LogicalBox(1, 0)
         composeView = null
         calibDy = 0; calibTries = 0
         curW = 1; curH = 1
@@ -2443,6 +2466,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
             setContent {
+                // Mantıksal pencere kutusu: genişlik = eski pencere genişliği, yatay konum = eski pencerenin yeri.
+                // Yalnızca yerleşimde okunur: kutu değişince yeniden oluşturma değil, yalnızca yeniden yerleşim olur.
+                Box(
+                    Modifier.layout { m, c ->
+                        val box = logicalBox.value
+                        val w = box.w.coerceAtLeast(1)
+                        val h = c.maxHeight.coerceAtLeast(1)
+                        val p = m.measure(Constraints.fixed(w, h))
+                        layout(c.maxWidth, c.maxHeight) { p.place((c.maxWidth - w) / 2 + box.x, 0) }
+                    }
+                ) {
+                // Eskiden pencere kenarı adanın dışına taşanları kırpıyordu: aynı kırpma mantıksal kutuda yapılır
+                Box(Modifier.fillMaxSize().clipToBounds()) {
                 PlayIslandHost(settings, ui) {
                 IslandRoot(
                     state = ui, settingsFlow = settings, lyricsFlow = lyrics,
@@ -2455,10 +2491,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     onStackClose = ::onStackTap,
                 )
                 }
+                }
+                }
             }
         }
         composeView = view
-        startXWatch(view)
         view.viewTreeObserver.addOnWindowFocusChangeListener { has -> onOverlayFocus(has) }
 
         // Dialog penceresi: Window.setBackgroundBlurRadius SADECE pencere sınırlarını bulanıklaştırır
@@ -2496,12 +2533,65 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             attributes = lp
         }
+        d.window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)   // görüntü penceresi dokunuş almaz (touchDialog alır)
+        buildTouchWindow(host, type)        // görüntünün ALTINDA: önce eklenir
         d.window?.decorView?.let { stripInsets(it) }   // show'dan ÖNCE: ilk inset dağıtımı da yutulur
         d.show()
         d.window?.decorView?.let { stripInsets(it) }   // show'dan SONRA: kalan dolguları sıfırla
         dialog = d
         applyMainHidden()
         applyRefreshRate()
+    }
+
+    /**
+     * Görünmez dokunma penceresi: adanın eski (mantıksal) pencere boyutu ve yerinde durur, dokunuşları görüntü
+     * penceresindeki içeriğe aynı ekran konumuyla iletir. Cam bulanıklığı da bu pencerede (yalnızca ada bölgesi).
+     */
+    private fun buildTouchWindow(host: Context, type: Int) {
+        val tv = object : View(this) {
+            private val a = IntArray(2)
+            private val b = IntArray(2)
+            override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+                val cv = composeView ?: return true
+                getLocationOnScreen(a)
+                cv.getLocationOnScreen(b)
+                val e = android.view.MotionEvent.obtain(ev)
+                e.offsetLocation((a[0] - b[0]).toFloat(), (a[1] - b[1]).toFloat())
+                try { cv.dispatchTouchEvent(e) } finally { e.recycle() }
+                return true      // pencere dokunuşu yutar (eskiden olduğu gibi altına geçmez)
+            }
+        }
+        val td = Dialog(ContextThemeWrapper(host, android.R.style.Theme_Translucent_NoTitleBar))
+        td.setCancelable(false)
+        td.setCanceledOnTouchOutside(false)
+        td.setContentView(tv, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        td.window?.apply {
+            setType(type)
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            addFlags(
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            )
+            setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+            setDecorFitsSystemWindows(false)
+            decorView.setPadding(0, 0, 0, 0)
+            val lp = WindowManager.LayoutParams().also { it.copyFrom(attributes) }
+            lp.width = 1; lp.height = 1; lp.x = 0; lp.y = 0
+            lp.format = PixelFormat.TRANSLUCENT
+            lp.fitInsetsTypes = 0
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            attributes = lp
+        }
+        td.window?.decorView?.let { stripInsets(it) }
+        td.show()
+        td.window?.decorView?.let { stripInsets(it) }
+        touchDialog = td
+        touchView = tv
     }
 
     /** Ana Sayfa > Ada yenileme hızı: ada penceresine / görünümüne uygulanır (RefreshRate.kt). */
@@ -2557,48 +2647,34 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         lastGeoAt = android.os.SystemClock.uptimeMillis()
         val ay = if (big) y - calibDy else y
         val ah = if (big) h + calibDy else h
+
+        // 1) İçerik: mantıksal kutu (genişlik + yatay konum). Görüntü penceresi yatayda oynamadığı için ada
+        //    ekranda her zaman hesaplanan yerde çizilir.
+        val box = logicalBox.value
+        if (box.w != w || box.x != x) logicalBox.value = LogicalBox(w, x)
+
+        // 2) Görüntü penceresi: ekran genişliğinde, x = 0 (sol kenarı hiç değişmez); yalnızca yükseklik / üst konum
+        val sw = runCatching { wm.currentWindowMetrics.bounds.width() }.getOrDefault(w).coerceAtLeast(1)
         val cur = win.attributes
-        if (!force && cur.width == w && cur.height == ah && cur.x == x && cur.y == ay) return
-        // Yeni nesne: aynı nesneyi geri atamak WindowManager güncellemesini tetiklemez
-        val lp = WindowManager.LayoutParams().also { it.copyFrom(cur) }
-        lp.width = w; lp.height = ah; lp.x = x; lp.y = ay
-        disableMoveAnimation(lp)
-        // Yana kayma düzeltmesi: pencere boyutu / konumu değişince sistem taşıma animasyonu oynatır; arka arkaya
-        // değişimde yarıda kalırsa pencere yüzeyi yanlış yerde (çerçeve doğru olduğu için ölçümle görünmez) takılabiliyor.
-        // Animasyon bittikten sonra 1 px'lik bir dürtme yüzeyi doğru yere oturtur.
-        if (!pokeCall && big && (cur.width != w || abs(cur.x - x) > 2)) scheduleSettlePoke()
-        // Pencere KÜÇÜLÜRKEN ve yatay konumu da DEĞİŞİRKEN sistem eski kareyi bir an yanlış yerde
-        // gösterebiliyor (yana kayma): yalnızca o durumda içeriği kısa süre gizleyip geri getiriyoruz.
-        // Konum aynıysa (ada pencerenin ortasında kalıyorsa) gizlemeye gerek yok; gizlemek
-        // kapanırken adanın bir an kaybolup geri gelmesine (göz kırpma) yol açıyordu.
-        // Nokta modunda küçük yatay fark (birkaç dp) gizlemeye değmez: gizlemek adanın göz kırpmasına yol açıyordu
-        val moved = if (dotWin) abs(cur.x - x) > dp(12f) else cur.x != x
-        if (big && curW > 1 && w < curW && moved) {
-            composeView?.let { v ->
-                v.animate().cancel()
-                v.removeCallbacks(showAgain)
-                resizeListener?.let { v.removeOnLayoutChangeListener(it) }
-                v.alpha = 0f
-                // Sistem yeni boyutu gerçekten uygulayınca (yerleşim değişince) kısa süre sonra göster;
-                // böylece eski/yanlış konumdaki kareler görünmez ve ada yana kayarak gelmez.
-                val l = object : View.OnLayoutChangeListener {
-                    override fun onLayoutChange(
-                        view: View, left: Int, top: Int, right: Int, bottom: Int,
-                        oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int,
-                    ) {
-                        if (right - left == oldRight - oldLeft) return
-                        view.removeOnLayoutChangeListener(this)
-                        if (resizeListener === this) resizeListener = null
-                        view.removeCallbacks(showAgain)
-                        view.postDelayed(showAgain, RESIZE_HIDE_MS)
-                    }
-                }
-                resizeListener = l
-                v.addOnLayoutChangeListener(l)
-                v.postDelayed(showAgain, 250)      // güvenlik: yerleşim değişmezse yine de göster
+        if (force || cur.width != sw || cur.height != ah || cur.x != 0 || cur.y != ay) {
+            // Yeni nesne: aynı nesneyi geri atamak WindowManager güncellemesini tetiklemez
+            val lp = WindowManager.LayoutParams().also { it.copyFrom(cur) }
+            lp.width = sw; lp.height = ah; lp.x = 0; lp.y = ay
+            disableMoveAnimation(lp)
+            win.attributes = lp
+        }
+
+        // 3) Dokunma penceresi: eskiden görüntü penceresinin olduğu boyut ve yer (görünmez; kaysa da fark edilmez)
+        touchDialog?.window?.let { tw ->
+            val tc = tw.attributes
+            if (force || tc.width != w || tc.height != ah || tc.x != x || tc.y != ay) {
+                val lp = WindowManager.LayoutParams().also { it.copyFrom(tc) }
+                lp.width = w; lp.height = ah; lp.x = x; lp.y = ay
+                disableMoveAnimation(lp)
+                tw.attributes = lp
             }
         }
-        win.attributes = lp
+
         curW = w; curH = h
         if (big) {
             if (recalibrate) calibTries = 0
@@ -2606,66 +2682,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
-    private var pokeCall = false
-    private val settlePoke = Runnable {
-        val v = composeView ?: return@Runnable
-        if (!v.isAttachedToWindow || curW <= 1 || curH <= 1 || xFixing) return@Runnable
-        val ox = wantX
-        pokeCall = true
-        try { setGeometry(curW, curH, ox + 1, wantYIn, recalibrate = false, force = true) } finally { pokeCall = false }
-        v.postDelayed({
-            // Bu arada başka bir geometri uygulandıysa (wantX değiştiyse) ona dokunma
-            if (wantX == ox + 1) {
-                pokeCall = true
-                try { setGeometry(curW, curH, ox, wantYIn, recalibrate = false) } finally { pokeCall = false }
-            }
-        }, 40L)
-    }
-
-    private fun scheduleSettlePoke() {
-        composeView?.let { it.removeCallbacks(settlePoke); it.postDelayed(settlePoke, SETTLE_POKE_MS) }
-    }
-
     private var lastGeoAt = 0L
-    private var xFixing = false
-
-    /**
-     * Sistem pencereyi (özellikle küçülürken / hızlı aç-kapa sırasında) yana kaydırıp orada bırakabiliyor; durum
-     * değişene kadar ada yanda kalıyordu. Pencerenin gerçek yatay konumu düzenli aralıkla ölçülür, yanlışsa yeniden uygulanır.
-     */
-    private val powerMgr by lazy { getSystemService(android.os.PowerManager::class.java) }
-
-    private fun startXWatch(view: View) {
-        val r = object : Runnable {
-            override fun run() {
-                if (view !== composeView) return
-                // Pil: ekran kapalıyken konum ölçülmez (kimse görmüyor); yavaş aralıkla beklenir, ekran açılınca normale döner
-                if (powerMgr?.isInteractive == false) { view.postDelayed(this, 2000L); return }
-                if (view.isAttachedToWindow && curW > 1 && curH > 1 && !xFixing &&
-                    android.os.SystemClock.uptimeMillis() - lastGeoAt > 250L
-                ) {
-                    val sw = wm.currentWindowMetrics.bounds.width()
-                    if (curW < sw) {
-                        val loc = IntArray(2)
-                        view.getLocationOnScreen(loc)
-                        val dx = loc[0] - ((sw - curW) / 2 + wantX)
-                        if (abs(dx) > 2) {
-                            xFixing = true
-                            val ox = wantX
-                            setGeometry(curW, curH, ox + 1, wantYIn, recalibrate = false, force = true)
-                            view.postDelayed({
-                                // Bu arada başka bir geometri uygulandıysa (wantX değiştiyse) ona dokunma
-                                if (wantX == ox + 1) setGeometry(curW, curH, ox, wantYIn, recalibrate = false)
-                                xFixing = false
-                            }, 32)
-                        }
-                    }
-                }
-                view.postDelayed(this, 250L)
-            }
-        }
-        view.postDelayed(r, 300L)
-    }
 
     /**
      * Ada gerçekte olması gereken yerde mi? Değilse (sistem içeriği aşağı kaydırdıysa)
@@ -2677,33 +2694,29 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val loc = IntArray(2)
         v.getLocationOnScreen(loc)
         val dy = loc[1] - wantY
-        // Yatay konum: pencere ortalı (gravity) + x kadar kaymış olmalı. Sistem pencereyi küçülürken yana kaydırıp
-        // orada bırakırsa (ada ekranın bir yanında kalır) konum yeniden uygulanır.
-        val screenW = wm.currentWindowMetrics.bounds.width()
-        val dx = if (curW < screenW) loc[0] - ((screenW - curW) / 2 + wantX) else 0
-        if ((abs(dy) <= 2 && abs(dx) <= 2) || calibTries >= 3) return
+        // Yatay konum artık ölçülmez: görüntü penceresi yatayda hiç oynamaz (sol kenarı hep 0)
+        if (abs(dy) <= 2 || calibTries >= 3) return
         calibTries++
-        if (abs(dy) > 2) calibDy = (calibDy + dy).coerceIn(-300, 600)
-        if (abs(dx) > 2) {
-            // Aynı değerleri yeniden atamak sistemde işlem yapmayabilir: 1 px kaydırıp hemen gerçek konuma getir
-            setGeometry(curW, curH, wantX + 1, wantYIn, recalibrate = false, force = true)
-            v.postDelayed({ setGeometry(curW, curH, wantX - 1, wantYIn, recalibrate = false) }, 32)
-        } else setGeometry(curW, curH, wantX, wantYIn, recalibrate = false)
+        calibDy = (calibDy + dy).coerceIn(-300, 600)
+        setGeometry(curW, curH, wantX, wantYIn, recalibrate = false)
     }
+
 
     /** Boşta görünen adaya dokunuş yakalamasın: durum çubuğu altından normal çalışsın. */
     private fun setTouchable(on: Boolean) {
-        val win = dialog?.window ?: return
+        // Dokunuşu yalnızca görünmez dokunma penceresi alır; görüntü penceresi hep dokunulmaz kalır
+        val win = touchDialog?.window ?: return
         val flag = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         val blocked = (win.attributes.flags and flag) != 0
         if (on && blocked) win.clearFlags(flag)
         else if (!on && !blocked) win.addFlags(flag)
     }
 
+
     private fun setBlur(on: Boolean, s: IslandSettings) {
         if (Build.VERSION.SDK_INT < 31) return
         val r = if (on && s.glassEnabled && s.blurRadiusPx > 0 && wm.isCrossWindowBlurEnabled) s.blurRadiusPx else 0
-        dialog?.window?.setBackgroundBlurRadius(r)
+        touchDialog?.window?.setBackgroundBlurRadius(r)      // bulanıklık ada bölgesinde (dokunma penceresi görüntünün altında)
     }
 
     /**
