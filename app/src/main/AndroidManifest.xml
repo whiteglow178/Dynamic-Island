@@ -21,6 +21,9 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Yalnızca adb ile verilirse: erişilebilirlik servisi çökünce uygulama kendini onarır -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <!-- Ters çevirince sessiz: sessiz açılırken kısa titreşim; ekran kapandıktan sonra 8 sn uyanık kalıp ters konmayı algılamak -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Kamera göstergesi: ön plandaki uygulamanın kamera uygulaması olup olmadığını anlamak için (izin değil) -->
     <queries>
