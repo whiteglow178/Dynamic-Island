@@ -17,6 +17,51 @@ val ISLAND_SHAPE_NAMES = listOf("Hap", "Kalp", "Bulut", "Kedi", "Elmas")
 
 private const val MORPH_POINTS = 96
 
+/** Çentiğin alt köşe yarıçapı (px): kapalıyken yüksekliğin ~%42'si, açıkken en çok 26dp. */
+fun notchBottomRadius(w: Float, h: Float, density: Float): Float =
+    min(min(h * 0.42f, 26f * density), w / 2f)
+
+/**
+ * Çentik (notch) gövdesi: üst kenarı düz ve ekranın tepesine yapışık, yalnızca alt köşeleri yuvarlak.
+ * Üst köşelerdeki içe kavisli "kulaklar" gövdenin DIŞINA taşar; onları [drawNotchEars] çizer
+ * (içerik alanı daralmasın, kapak / yazılar kulakların altında kalmasın diye).
+ */
+object NotchShape : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val w = size.width; val h = size.height
+        val r = notchBottomRadius(w, h, density.density)
+        val p = Path().apply {
+            moveTo(0f, 0f)
+            lineTo(w, 0f)
+            lineTo(w, h - r)
+            arcTo(androidx.compose.ui.geometry.Rect(w - 2 * r, h - 2 * r, w, h), 0f, 90f, false)
+            lineTo(r, h)
+            arcTo(androidx.compose.ui.geometry.Rect(0f, h - 2 * r, 2 * r, h), 90f, 90f, false)
+            close()
+        }
+        return Outline.Generic(p)
+    }
+}
+
+/** Çentiğin iki üst köşesinin dışındaki içe kavisli kulaklar (gövdeyle aynı renk). [e]: kulak genişliği (px). */
+fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNotchEars(color: androidx.compose.ui.graphics.Color, e: Float) {
+    if (e <= 0f) return
+    val w = size.width
+    val ear = Path().apply {
+        // sol kulak: gövdenin sol üst köşesinden dışarı; kavis köşeye doğru içe kıvrılır
+        moveTo(0f, 0f)
+        lineTo(0f, e)
+        cubicTo(0f, e * 0.45f, -e * 0.45f, 0f, -e, 0f)
+        close()
+        // sağ kulak
+        moveTo(w, 0f)
+        lineTo(w + e, 0f)
+        cubicTo(w + e * 0.45f, 0f, w, e * 0.45f, w, e)
+        close()
+    }
+    drawPath(ear, color)
+}
+
 /**
  * Boştaki ada için şekil: [morph] 0 = normal hap, 1 = seçilen şekil (kalp / bulut / kedi / elmas).
  * İki şeklin kenarı aynı noktadan (üst orta) saat yönünde eşit aralıklı noktalarla örneklenir ve

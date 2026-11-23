@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -723,7 +724,10 @@ private fun DrawScope.drawGlassRim(cornerT: Float = -1f) {
 @Composable
 internal fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape, cornerT: Float = -1f, borderTint: Color? = null): Modifier {
     val liquid = cfg.glassEnabled && cfg.liquidEnabled
-    var m = this.clip(shape).drawBehind { drawRect(body.value) }
+    // Çentik: üst köşelerdeki kulaklar gövdenin dışına taşar; kırpmadan önce çizilir
+    val notch = shape === NotchShape
+    var m = if (notch) this.drawBehind { drawNotchEars(body.value, NOTCH_EAR_DP.dp.toPx()) } else this
+    m = m.clip(shape).drawBehind { drawRect(body.value) }
     if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular, cornerT) }
     if (liquid) m = m.liquidBackdrop(cfg.liquidRefraction, cfg.liquidDispersion, cornerT)
     else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase(cornerT) }
@@ -735,8 +739,12 @@ internal fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, sha
             // Şekil kırpıldığı için çizginin yalnızca iç yarısı görünür; bu yüzden 2x kalınlık
             val w = cfg.borderWidthDp.dp.toPx() * 2f
             val brush = rainbowBrush(rbBorder.phase.value, size.width, rbBorder.alpha)
-            val r = minOf(36.dp.toPx(), size.height / 2f)
-            drawRoundRect(brush, cornerRadius = CornerRadius(r, r), style = Stroke(width = w))
+            if (notch) {
+                drawOutline(shape.createOutline(size, layoutDirection, this), brush, style = Stroke(width = w))
+            } else {
+                val r = minOf(36.dp.toPx(), size.height / 2f)
+                drawRoundRect(brush, cornerRadius = CornerRadius(r, r), style = Stroke(width = w))
+            }
         }
     }
     // Kenar ışığı, içeriğin (yazı/kapak) üstüne çizilir; kullanıcı çerçevesi yine de en üstte kalır
@@ -748,11 +756,13 @@ internal fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, sha
 }
 
 /** Blur filtresi yerine kademeli (azalan opaklıkta) halkalar: GPU dostu, her cihazda çalışır. */
-internal fun Modifier.islandGlow(enabled: Boolean, color: State<Color>, intensity: Float): Modifier =
+internal fun Modifier.islandGlow(enabled: Boolean, color: State<Color>, intensity: Float, notch: Boolean = false): Modifier =
     if (!enabled) this else this.drawBehind {
         val rings = 6
         val step = GLOW_PAD_DP.dp.toPx() / rings
-        val base = min(36.dp.toPx(), size.height / 2f)
+        val base = if (notch) notchBottomRadius(size.width, size.height, density) else min(36.dp.toPx(), size.height / 2f)
+        // Çentik: üst kenar ekranın tepesinde; hale yalnızca yanlarda ve altta görünsün diye üstü ekranın dışına uzatılır
+        val up = if (notch) size.height + base else 0f
         val c = color.value
         for (i in 1..rings) {
             val inflate = (i - 0.5f) * step
@@ -760,8 +770,8 @@ internal fun Modifier.islandGlow(enabled: Boolean, color: State<Color>, intensit
             val a = (intensity * 0.6f * fall * fall).coerceIn(0f, 1f)
             drawRoundRect(
                 color = c.copy(alpha = a),
-                topLeft = Offset(-inflate, -inflate),
-                size = Size(size.width + 2 * inflate, size.height + 2 * inflate),
+                topLeft = Offset(-inflate, -inflate - up),
+                size = Size(size.width + 2 * inflate, size.height + 2 * inflate + up),
                 cornerRadius = CornerRadius(base + inflate),
                 style = Stroke(width = step),
             )
@@ -839,13 +849,15 @@ fun IslandPill(
     val isNotifNow by rememberUpdatedState(content is IslandContent.Notif)
     val notifSideNow by rememberUpdatedState(onNotifSwipeSide)
     // Ada şekli: boştayken seçilen şekle (kalp / bulut / kedi / elmas) akarak dönüşür, bir şey gelince hapa döner
-    val shapeStyle = if (!assistant && !cfg.dotMode) cfg.more.islandShape else 0
+    val notch = cfg.more.notchMode && !assistant          // çentik modu: ada ekranın üstüne yapışık çentik şeklinde
+    val shapeStyle = if (!assistant && !cfg.dotMode && !notch) cfg.more.islandShape else 0
     val shapeMorph by animateFloatAsState(
         if (shapeStyle != 0 && content is IslandContent.Idle) 1f else 0f,
         spring(dampingRatio = 0.62f, stiffness = 260f), label = "shapeMorph",
     )
     val shape: Shape = when {
         assistant -> AssistantShape(cornerT)
+        notch -> NotchShape
         shapeStyle != 0 && shapeMorph > 0.001f -> IslandMorphShape(shapeStyle, shapeMorph)
         else -> PillShape
     }
@@ -930,7 +942,7 @@ fun IslandPill(
                 layout(w, h) { placeable.place(0, 0) }
             }
             .onGloballyPositioned { fx.origin = it }
-            .islandGlow(cfg.glowEnabled && shapeMorph < 0.02f, glow, cfg.glowIntensity)      // şekilli adada hap halesi çizilmez
+            .islandGlow(cfg.glowEnabled && shapeMorph < 0.02f, glow, cfg.glowIntensity, notch)      // şekilli adada hap halesi çizilmez
             .islandNeon(cfg)              // renkli çerçeve (neon / gökkuşağı / ateş) -> IslandDecor.kt
             .islandSurface(cfg, body, shape, cornerT, if (cfg.borderArtColor && artColor != null) brightTone(artColor) else null)
             .pointerInput(Unit) {

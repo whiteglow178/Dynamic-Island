@@ -17,6 +17,7 @@ import kotlin.math.ceil
 
 const val GLOW_PAD_DP = 14f     // parıltı için pencere kenar boşluğu
 const val BOUNCE_PAD_DP = 16f
+const val NOTCH_EAR_DP = 7f      // çentiğin üst köşelerindeki içe kavisli kulakların genişliği
 const val NEON_PAD_DP = 18f     // renkli çerçevenin (neon / ateş) dışa taşan ışığı için pay   // "Zıplamalı" animasyonun taşma payı
 const val FAV_COLUMNS = 4       // favori panelinde bir satırdaki uygulama sayısı
 const val FAV_ROW_DP = 78f      // favori panelinde bir satırın yüksekliği
@@ -319,6 +320,9 @@ data class IslandSettings(
      * kullanıcının kaydedilmiş ada boyutları değişmez (yalnızca bu kopya değişir).
      */
     fun effective(): IslandSettings {
+        // Çentik modu: ekranın üstüne yapışık tek parça; nokta / iPhone / ters ada modlarıyla birlikte olmaz.
+        // Genişlik / yükseklik / konum kamera deliğine göre serviste hesaplanır (IslandOverlayService.fitNotch).
+        if (more.notchMode) return copy(dotMode = false, iphoneMode = false, invertedIsland = false)
         // Ters ada + özel ölçüler: kapalı ada boyutu ve konumu ters adanın kendi ayarlarından gelir
         val base = if (invertedIsland && invCustom) copy(
             compactWidthDp = invWidthDp, compactHeightDp = invHeightDp,
@@ -374,6 +378,7 @@ data class IslandSettings(
         if (playPhysics) playPhysicsRangeDp + 8f else 0f,          // kayan / titreyen ada kesilmesin
         if (playMagnet || playPocket || playPuff || playEater || more.trashIsland) 8f else 0f,
         if (playPull) 24f else 0f,                                  // çekilen ada aşağı uzayabilsin
+        if (more.notchMode) NOTCH_EAR_DP + 1f else 0f,              // çentiğin kulakları adanın iki yanından taşar
     )
 
     /** Adanın gizleneceği uygulamaların paket adları. */
@@ -641,6 +646,9 @@ data class MoreSettings(
     val artCircle: Int = 0,                 // daire albüm kapağı: 0 kapalı, 1 küçük + geniş ada, 2 yalnızca küçük, 3 yalnızca geniş
     val sideWide: Boolean = false,          // yan baloncuk hafif uzun kapsül: zamanlayıcıda süre, müzikte kapak + ekolayzır
     val avoidIcons: Boolean = false,        // durum çubuğunun solundaki bildirim simgelerine çarpmamak için ada sağa uzar
+    val notchMode: Boolean = false,         // çentik (notch) modu: ada ekranın üstüne yapışık, kulaklı çentik şeklinde
+    val notchWidthDp: Float = 190f,         // çentiğin genişliği (dp)
+    val notchDepthDp: Float = 0f,           // çentiğin kameranın altına ne kadar ineceği (ek derinlik, dp)
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -781,6 +789,7 @@ class SettingsRepository(context: Context) {
         val X_CWAVE = booleanPreferencesKey("x_cwave"); val X_INMIN = booleanPreferencesKey("x_inmin"); val X_VREC = booleanPreferencesKey("x_vrec")
         val X_TFULL = booleanPreferencesKey("x_tfull"); val X_SYSW = floatPreferencesKey("x_sysw"); val X_CHGW = floatPreferencesKey("x_chgw")
         val X_ORBIT = booleanPreferencesKey("x_orbit"); val X_EQX = intPreferencesKey("x_eqx"); val X_ARTC = intPreferencesKey("x_artc"); val X_SIDEW = booleanPreferencesKey("x_sidew"); val X_AVOID = booleanPreferencesKey("x_avoid")
+        val X_NOTCH = booleanPreferencesKey("x_notch"); val X_NOTCHW = floatPreferencesKey("x_notchw"); val X_NOTCHD = floatPreferencesKey("x_notchd")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1103,6 +1112,9 @@ class SettingsRepository(context: Context) {
                 artCircle = (p[K.X_ARTC] ?: d.more.artCircle).coerceIn(0, 3),
                 sideWide = p[K.X_SIDEW] ?: d.more.sideWide,
                 avoidIcons = p[K.X_AVOID] ?: d.more.avoidIcons,
+                notchMode = p[K.X_NOTCH] ?: d.more.notchMode,
+                notchWidthDp = (p[K.X_NOTCHW] ?: d.more.notchWidthDp).coerceIn(80f, 320f),
+                notchDepthDp = (p[K.X_NOTCHD] ?: d.more.notchDepthDp).coerceIn(-10f, 30f),
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1242,6 +1254,7 @@ class SettingsRepository(context: Context) {
             it[K.X_CWAVE] = m.callWaveGreen; it[K.X_INMIN] = m.incomingMinimize; it[K.X_VREC] = m.voiceRecIsland
             it[K.X_TFULL] = m.timerFullWidth; it[K.X_SYSW] = m.sysPillPct; it[K.X_CHGW] = m.chargePillW
             it[K.X_ORBIT] = m.eqOrbit; it[K.X_EQX] = m.eqStyleX; it[K.X_ARTC] = m.artCircle; it[K.X_SIDEW] = m.sideWide; it[K.X_AVOID] = m.avoidIcons
+            it[K.X_NOTCH] = m.notchMode; it[K.X_NOTCHW] = m.notchWidthDp; it[K.X_NOTCHD] = m.notchDepthDp
         }
     }
 

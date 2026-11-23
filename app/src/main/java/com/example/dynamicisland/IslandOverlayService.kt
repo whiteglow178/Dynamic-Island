@@ -122,9 +122,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         density = resources.displayMetrics.density
         // Üç nokta modunda kapalı ada, ortadaki noktanın çapında daire olur (kaydedilen ayarlar değişmez, yalnızca bu kopya)
-        // Bildirim simgelerine yer aç: durum çubuğu simgeleri değişince kapalı ada sağa uzar (yalnızca bu kopya)
+        // Çentik modu kamera deliğinin yerine göre ölçülür: ayarlar okunmadan önce delik bulunmalı
+        runCatching { detectCutout() }
+        // Bildirim simgelerine yer aç: durum çubuğu simgeleri değişince kapalı ada soldan kısalır (yalnızca bu kopya)
         settings = combine(SettingsRepository(applicationContext).flow, StatusIcons.edges) { raw, edges ->
-            fitStatusIcons(raw.effective(), edges)
+            fitStatusIcons(fitNotch(raw.effective()), edges)
         }.stateIn(scope, SharingStarted.Eagerly, IslandSettings())
         // Çeviri paneli: panelden kapatma isteği + panelde seçilen dilleri ayarlara kaydetme
         TranslateSession.closeRequest = ::closeTranslate
@@ -2290,6 +2292,23 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
      * Ada kamera deliğini her zaman örter: sol uç kameranın merkezinden ada yüksekliğinin yarısından fazla
      * sağa geçmez. Kaydedilen ayarlar değişmez; yalnızca servisin kullandığı kopya.
      */
+    /**
+     * Çentik modu: kapalı ada ekranın en tepesinden başlar (üst kenarı ekrana yapışık), kamera deliğini örter ve
+     * deliğin altına ada yüksekliğinin yarısı + ayardaki ek derinlik kadar iner. Genişlik çentik genişliği olur.
+     * Yatay ekranda uygulanmaz (yatay ada kendi düzenini kullanır). Kaydedilen ayarlar değişmez.
+     */
+    private fun fitNotch(s: IslandSettings): IslandSettings {
+        if (!s.more.notchMode) return s
+        val b = runCatching { wm.currentWindowMetrics.bounds }.getOrNull() ?: return s
+        if (b.width() > b.height()) return s
+        val d = density
+        val cy = cutCenterYPx / d
+        val h = maxOf(cy + 10f, cy + s.compactHeightDp / 2f + s.more.notchDepthDp, 16f)
+        // Pencere konumuyla aynı tam sayı hesabı: üst kenar ekranın 1 px üstünde kalır (arada boşluk olmasın)
+        val base = (cutCenterYPx - dp(h) / 2).coerceAtLeast(0)
+        return s.copy(compactWidthDp = s.more.notchWidthDp, compactHeightDp = h, offsetYDp = -(base + 1) / d)
+    }
+
     private fun fitStatusIcons(s: IslandSettings, e: StatusIcons.Edges): IslandSettings {
         StatusIcons.enabled = s.more.avoidIcons && !s.dotMode && !s.iphoneMode && !s.invertedIsland
         val sw = runCatching { wm.currentWindowMetrics.bounds.width() }.getOrDefault(0)

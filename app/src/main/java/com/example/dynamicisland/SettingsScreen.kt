@@ -226,7 +226,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
             SwitchRow("Bildirim simgelerine yer aç", "Durum çubuğunun solunda bildirim simgeleri adaya yaklaşınca adanın sol ucu simgelerin ötesine çekilir; sağ ucu yerinde kalır, ada kameranın üstünde kalır. Simgeler gidince eski haline döner. Erişilebilirlik izni gerekir (simgeler ekran görüntüsünden okunur, kaydedilmez). Nokta, iPhone ve ters ada modlarında çalışmaz",
                 draft.more.avoidIcons) { draft = draft.copy(more = draft.more.copy(avoidIcons = it)) }
-            SwitchRow("Ters ada", "Ada ekranın üstünde değil en altında durur. Olaylar ve bildirimler düz görünür; adaya basınca panel aşağı değil yukarı doğru açılır. Dikey konum ayarı alttan ölçülür", draft.invertedIsland) { draft = draft.copy(invertedIsland = it) }
+            SwitchRow("Ters ada", "Ada ekranın üstünde değil en altında durur. Olaylar ve bildirimler düz görünür; adaya basınca panel aşağı değil yukarı doğru açılır. Dikey konum ayarı alttan ölçülür", draft.invertedIsland) { draft = draft.copy(invertedIsland = it, more = if (it) draft.more.copy(notchMode = false) else draft.more) }
             if (draft.invertedIsland) {
                 SwitchRow("Ters adaya özel konum ve boyut", "Açıkken ters ada, üstteki Kapalı ada ve Konum ayarlarını değil aşağıdaki kendi ayarlarını kullanır (ekranın altında farklı bir boyut / yer isteyebilirsin)", draft.invCustom) { draft = draft.copy(invCustom = it) }
                 if (draft.invCustom) {
@@ -291,7 +291,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 "Nokta modu",
                 "Ortadaki nokta kameranın üstünde durur. Yeni olay ortadaki noktada, öncekiler yan noktalarda görünür; dokununca ada gibi genişler",
                 draft.dotMode,
-            ) { draft = draft.copy(dotMode = it, iphoneMode = if (it) false else draft.iphoneMode) }
+            ) { draft = draft.copy(dotMode = it, iphoneMode = if (it) false else draft.iphoneMode, more = if (it) draft.more.copy(notchMode = false) else draft.more) }
             if (draft.dotMode) {
                 SegmentedTabs(listOf("3 nokta", "4 nokta", "5 nokta"), draft.dotCount - 3) { draft = draft.copy(dotCount = it + 3) }
                 SliderRow("Orta nokta (kamera)", draft.dotMidDp, 12f..48f, "${draft.dotMidDp.toInt()} dp") { draft = draft.copy(dotMidDp = it) }
@@ -314,12 +314,36 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }
             }
         }
+        sec("Çentik (notch) modu", "iPhone X – iPhone 14 gibi: ada yerine ekranın üstüne yapışık çentik") {
+            SwitchRow(
+                "Çentik modu",
+                "Ada, ekranın tepesine yapışık, kamerayı örten, alt köşeleri yuvarlak ve iki yanında içe kavisli kulakları olan bir çentik olur. Müzik, bildirim, zamanlayıcı, yan baloncuklar ve diğer tüm özellikler aynen çalışır; dokununca çentik aşağı doğru genişler. Nokta modu, iPhone modu ve ters ada ile birlikte olmaz (biri açılınca öteki kapanır)",
+                draft.more.notchMode,
+            ) { on ->
+                draft = draft.copy(
+                    more = draft.more.copy(notchMode = on),
+                    dotMode = if (on) false else draft.dotMode,
+                    iphoneMode = if (on) false else draft.iphoneMode,
+                    invertedIsland = if (on) false else draft.invertedIsland,
+                )
+            }
+            if (draft.more.notchMode) {
+                SliderRow("Genişlik", draft.more.notchWidthDp, 80f..320f, "${draft.more.notchWidthDp.toInt()} dp") {
+                    draft = draft.copy(more = draft.more.copy(notchWidthDp = it))
+                }
+                SliderRow("Ek derinlik", draft.more.notchDepthDp, -10f..30f, "${draft.more.notchDepthDp.toInt()} dp") {
+                    draft = draft.copy(more = draft.more.copy(notchDepthDp = it))
+                }
+                Text("Çentik her zaman kamera deliğini örter. Derinlik, deliğin altına ne kadar ineceğini ayarlar; yatay konum için Konum > Yatay kullanılır. Ekran yan çevrilince yatay ada düzeni kullanılır.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        }
         sec("iPhone modu", "iPhone 14 Pro gibi: hap şeklinde ada ve yanında ayrı siyah daire") {
             SwitchRow(
                 "iPhone modu",
                 "Ada hap şeklinde olur, yanında siyah bir daire durur. Nokta modu ile birlikte çalışmaz (biri açılınca öteki kapanır)",
                 draft.iphoneMode,
-            ) { draft = draft.copy(iphoneMode = it, dotMode = if (it) false else draft.dotMode) }
+            ) { draft = draft.copy(iphoneMode = it, dotMode = if (it) false else draft.dotMode, more = if (it) draft.more.copy(notchMode = false) else draft.more) }
             if (draft.iphoneMode) {
                 SwitchRow("Siyah daire", "Adanın yanındaki ayrı siyah daire (iPhone'daki kamera deliği gibi)", draft.iphoneCircle) { draft = draft.copy(iphoneCircle = it) }
                 if (draft.iphoneCircle) {
