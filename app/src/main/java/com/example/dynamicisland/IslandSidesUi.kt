@@ -109,9 +109,19 @@ fun slotSizeDp(cfg: IslandSettings, dir: Int, level: Int): Float =
 /** Dış noktanın çapı (dp). */
 fun dotOuterSizeDp(cfg: IslandSettings, dir: Int): Float = if (dir > 0) cfg.dotRight2Dp else cfg.dotLeft2Dp
 
+/** Uzun yan baloncuğun genişliğinin yüksekliğe oranı (hafif uzun kapsül). */
+const val SIDE_WIDE_RATIO = 1.9f
+
+/**
+ * Yuvanın genişliği (dp). Uzun yan baloncuk açıksa iç yuva (level 1) hafif uzun bir kapsüldür, diğerleri daire.
+ * Yüksekliği her zaman [slotSizeDp].
+ */
+fun sideWidthDp(cfg: IslandSettings, dir: Int, level: Int): Float =
+    if (level == 1 && cfg.sideWideOn()) sideSizeDp(cfg, dir) * SIDE_WIDE_RATIO else slotSizeDp(cfg, dir, level)
+
 /** Adanın bir yanındaki tüm noktaların kapladığı genişlik (iç nokta + varsa boşluk + dış nokta), dp. */
 fun dotExtentDp(cfg: IslandSettings, dir: Int): Float =
-    sideSizeDp(cfg, dir) + if (dotHasOuter(cfg, dir)) sideGapDp(cfg) + dotOuterSizeDp(cfg, dir) else 0f
+    sideWidthDp(cfg, dir, 1) + if (dotHasOuter(cfg, dir)) sideGapDp(cfg) + dotOuterSizeDp(cfg, dir) else 0f
 
 /** Ada ile yan baloncuk arasındaki boşluk (dp). Üç nokta modunda ayardan gelir. */
 fun sideGapDp(cfg: IslandSettings): Float = if (cfg.dotMode) cfg.dotGapDp else if (cfg.iphoneCircleOn()) cfg.iphoneGapDp else SIDE_GAP_DP
@@ -324,6 +334,8 @@ private fun SideSlot(
     val privacy = !cfg.dotMode && !cfg.iphoneCircleOn() &&
         (shown as? IslandContent.Status)?.let { it.kind == StatusKind.Camera || it.kind == StatusKind.Mic } == true
     val scaleK = if (privacy) 0.68f else 1f
+    // Uzun yan baloncuk (Ayarlar > Yan baloncuklar): gizlilik noktası ve birleşik nokta modu hariç
+    val wide = !privacy && !inside && level == 1 && cfg.sideWideOn()
     val privacyNow by rememberUpdatedState(privacy)
 
     Box(Modifier.fillMaxSize()) {
@@ -336,32 +348,40 @@ private fun SideSlot(
             val ch = geo.ch.toPx()
             val rm = min(36.dp.toPx(), ch / 2f)                      // ortadaki adanın uç yarıçapı
             val rs = slotSizeDp(cfg, dir, level).dp.toPx() / 2f * scaleK   // bu baloncuğun yarıçapı (nokta modunda ayrı ayarlı)
+            // Uzun baloncuk: yarı genişlik (konum bununla hesaplanır); gizlilik noktası her zaman küçük daire
+            val hw = if (wide) sideWidthDp(cfg, dir, level).dp.toPx() / 2f else rs
             val gap = sideGapDp(cfg).dp.toPx()
             val skip = if (level == 2) sideSizeDp(cfg, dir).dp.toPx() + gap else 0f   // dış nokta: iç noktanın yerini atlar
             val cx = size.width / 2f
             val cy = if (cfg.invertedIsland) size.height - ch / 2f else ch / 2f
             val pillHalf = lerp(geo.cw, geo.ew, progress.w.value).toPx() / 2f
             val a = Offset(cx + dir * (pillHalf - rm), cy)           // adanın bu yandaki ucu (yuvarlak kısım)
-            val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value, rs, gap, skip), cy)     // baloncuk
+            val b = Offset(cx + sideCenterX(dir, geo, progress, sep.value, hw, gap, skip), cy)     // baloncuk
             val col = color.value.let { it.copy(alpha = it.alpha * k) }
-            drawCircle(col, rs, b)
+            // Uzun baloncukta köprü, kapsülün adaya bakan yuvarlak ucundan çıkar
+            val near = Offset(b.x - dir * (hw - rs), cy)
+            if (wide) drawRoundRect(col, Offset(b.x - hw, cy - rs), Size(hw * 2f, rs * 2f), CornerRadius(rs, rs))
+            else drawCircle(col, rs, b)
             // Neck: daireler birbirinden uzaklaştıkça incelir, belli bir noktada kopar
-            metaballPath(a, rm, b, rs, rm + rs + gap * 0.55f)?.let { drawPath(it, col) }
+            metaballPath(a, rm, near, rs, rm + rs + gap * 0.55f)?.let { drawPath(it, col) }
             if (cfg.borderEnabled) {
                 val bw = cfg.borderWidthDp.dp.toPx()
-                drawCircle(Color(cfg.borderColorArgb).copy(alpha = k), rs - bw / 2f, b, style = Stroke(bw))
+                val bc = Color(cfg.borderColorArgb).copy(alpha = k)
+                if (wide) drawRoundRect(bc, Offset(b.x - hw + bw / 2f, cy - rs + bw / 2f), Size(hw * 2f - bw, rs * 2f - bw), CornerRadius(rs - bw / 2f, rs - bw / 2f), style = Stroke(bw))
+                else drawCircle(bc, rs - bw / 2f, b, style = Stroke(bw))
             }
         }
         // İçerik: baloncuk ayrıldıkça görünür (albüm kapağı / kırmızı nokta / telefon simgesi)
         val sizeDp = (slotSizeDp(cfg, dir, level) * scaleK).dp
+        val widthDp = if (wide) sideWidthDp(cfg, dir, level).dp else sizeDp
         Box(
             Modifier.align(cfg.vAlign())
                 .offset { IntOffset(0, (((geo.ch.toPx() - sizeDp.toPx()) / 2f) * (if (cfg.invertedIsland) -1f else 1f)).roundToInt()) }
-                .requiredSize(sizeDp)
+                .requiredSize(widthDp, sizeDp)
                 .graphicsLayer {
                     val s = sep.value
                     val g = sideGapDp(cfg).dp.toPx()
-                    translationX = sideCenterX(dir, geo, progress, s, sizeDp.toPx() / 2f, g, if (level == 2) sideSizeDp(cfg, dir).dp.toPx() + g else 0f)
+                    translationX = sideCenterX(dir, geo, progress, s, widthDp.toPx() / 2f, g, if (level == 2) sideSizeDp(cfg, dir).dp.toPx() + g else 0f)
                     // Dokunulan baloncuğun yerinde, ada genişlemeye başlayana kadar yeni (genişleyen) adanın dairesi durur: altındaki simge görünmesin
                     val hide = tappedOpen && !animExpanded
                     alpha = if (hide) 0f else ((s - 0.45f) / 0.45f).coerceIn(0f, 1f) * (if (present && !inside) 1f else if (gone[0] && !inside) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f))
@@ -370,12 +390,62 @@ private fun SideSlot(
                 .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); if (!privacyNow) onPress() } }
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (present && !privacy) onTap() },
             contentAlignment = Alignment.Center,
-        ) { SideGlyph(shown, sizeDp) }
+        ) { SideGlyph(shown, sizeDp, cfg, wide) }
+    }
+}
+
+/** Yan baloncuktaki kısa kalan süre: 1sa, 22dk, 45sn. */
+private fun shortLeft(ms: Long): String {
+    val t = ((ms + 999) / 1000).coerceAtLeast(0)
+    return when {
+        t >= 3600 -> "${t / 3600}sa"
+        t >= 60 -> "${(t + 59) / 60}dk"
+        else -> "${t}sn"
+    }
+}
+
+/**
+ * Uzun yan baloncuğun içi: zamanlayıcıda halka + kalan süre, müzikte kapak + ekolayzır (seçili görünümde).
+ * Diğer olaylar ortada her zamanki simgeyle görünür.
+ */
+@Composable
+private fun SideWideGlyph(c: IslandContent, ch: Dp, cfg: IslandSettings) {
+    when {
+        c is IslandContent.Media -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            val side = ch * 0.62f
+            val art = c.art
+            if (art != null) {
+                Image(
+                    bitmap = art, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium,
+                    modifier = Modifier.size(side).clip(if (cfg.artCircleCompact()) CircleShape else RoundedCornerShape(side * 0.28f)),
+                )
+            } else {
+                Text("♪", color = Pal.c("side_note"), fontSize = 15.sp)
+            }
+            val eq = if (cfg.eqDynamicColor && c.artColor != 0) brightTone(Color(c.artColor)) else Color(cfg.eqColorArgb)
+            MusicMeter(eq, cfg.eqStyleNow(), height = (ch * 0.30f).coerceAtLeast(9.dp), barWidth = 2.dp, animate = c.playing)
+        }
+        c is IslandContent.Status && c.kind == StatusKind.Timer && c.phase != 3 -> Row(
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            val left = rememberRemaining(c)
+            val watch = c.extra == 2
+            Canvas(Modifier.size(ch * 0.46f)) {
+                if (watch) drawTimerRing(1f, X_ORANGE)
+                else drawTimerRing(if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, X_ORANGE)
+            }
+            Text(
+                if (c.phase == 2) "0sn" else shortLeft(left), color = X_ORANGE, fontWeight = FontWeight.SemiBold,
+                fontSize = (ch.value * 0.32f).coerceIn(10f, 14f).sp, maxLines = 1, softWrap = false,
+            )
+        }
+        else -> SideGlyph(c, ch)
     }
 }
 
 @Composable
-internal fun SideGlyph(c: IslandContent, ch: Dp) {
+internal fun SideGlyph(c: IslandContent, ch: Dp, cfg: IslandSettings? = null, wide: Boolean = false) {
+    if (wide && cfg != null) { SideWideGlyph(c, ch, cfg); return }
     when (c) {
         is IslandContent.Media -> {
             val side = ch * 0.64f
@@ -383,7 +453,7 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
             if (art != null) {
                 Image(
                     bitmap = art, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium,
-                    modifier = Modifier.size(side).clip(RoundedCornerShape(side * 0.28f)),
+                    modifier = Modifier.size(side).clip(if (cfg?.artCircleCompact() == true) CircleShape else RoundedCornerShape(side * 0.28f)),
                 )
             } else {
                 Text("♪", color = Pal.c("side_note"), fontSize = 16.sp)
@@ -438,6 +508,13 @@ internal fun SideGlyph(c: IslandContent, ch: Dp) {
             StatusKind.Camera -> Box(Modifier.size(ch * 0.34f).background(Pal.c("status_camera"), RoundedCornerShape(50)))
             StatusKind.Mic -> Box(Modifier.size(ch * 0.34f).background(Pal.c("status_mic"), RoundedCornerShape(50)))
             StatusKind.VoiceRec -> Box(Modifier.size(ch * 0.30f).background(Color(0xFFFF375F), RoundedCornerShape(50)))
+            // Zamanlayıcı: emoji yerine azalan halka + ibre (kapalı adadakiyle aynı)
+            StatusKind.Timer -> if (c.phase == 3) Text("⏱", fontSize = 13.sp) else {
+                val left = rememberRemaining(c)
+                Canvas(Modifier.size(ch * 0.46f)) {
+                    drawTimerRing(if (c.extra == 2) 1f else if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, X_ORANGE)
+                }
+            }
             else -> Text(
                 when (c.kind) {
                     StatusKind.Ringer -> if (c.silent) "🔕" else "🔔"

@@ -122,9 +122,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         density = resources.displayMetrics.density
         // Üç nokta modunda kapalı ada, ortadaki noktanın çapında daire olur (kaydedilen ayarlar değişmez, yalnızca bu kopya)
-        settings = SettingsRepository(applicationContext).flow
-            .map { it.effective() }
-            .stateIn(scope, SharingStarted.Eagerly, IslandSettings())
+        // Bildirim simgelerine yer aç: durum çubuğu simgeleri değişince kapalı ada sağa uzar (yalnızca bu kopya)
+        settings = combine(SettingsRepository(applicationContext).flow, StatusIcons.edges) { raw, edges ->
+            fitStatusIcons(raw.effective(), edges)
+        }.stateIn(scope, SharingStarted.Eagerly, IslandSettings())
         // Çeviri paneli: panelden kapatma isteği + panelde seçilen dilleri ayarlara kaydetme
         TranslateSession.closeRequest = ::closeTranslate
         TranslateSession.onLangsChanged = { src, tgt -> scope.launch { runCatching { saveTranslateLangs(src, tgt) } } }
@@ -2281,6 +2282,37 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     // ---------------------------------------------------------------- Pencere
+    /**
+     * "Bildirim simgelerine yer aç": durum çubuğunun solundaki simgeler kapalı adanın sol ucuna yaklaşınca
+     * adanın sol ucu simgelerin ötesine çekilir ve aynı miktarda sağa uzatılır (sağdaki simgelere kadar).
+     * Ada kamera deliğini her zaman örter: sol uç kameranın merkezinden ada yüksekliğinin yarısından fazla
+     * sağa geçmez. Kaydedilen ayarlar değişmez; yalnızca servisin kullandığı kopya.
+     */
+    private fun fitStatusIcons(s: IslandSettings, e: StatusIcons.Edges): IslandSettings {
+        StatusIcons.enabled = s.more.avoidIcons && !s.dotMode && !s.iphoneMode && !s.invertedIsland
+        if (!StatusIcons.enabled) return s
+        val sw = runCatching { wm.currentWindowMetrics.bounds.width() }.getOrDefault(0)
+        if (sw <= 0) return s
+        val d = density
+        val cam = sw / 2f + cutCenterXOffsetPx
+        StatusIcons.cameraX = cam.toInt()        // tarama kameranın solunu / sağını buna göre ayırır
+        if (e.left < 0) return s
+        val cx = cam + s.offsetXDp * d
+        val w = s.compactWidthDp * d
+        val l0 = cx - w / 2f
+        val r0 = cx + w / 2f
+        val margin = 6f * d
+        val want = e.left + margin
+        if (want <= l0) return s
+        val maxLeft = cam - s.compactHeightDp * d * 0.55f      // kamera deliği açıkta kalmasın
+        val newL = minOf(want, maxLeft)
+        if (newL <= l0) return s
+        val shrink = newL - l0
+        val rightLimit = if (e.right in 1 until sw) e.right - margin else sw - 4f * d
+        val newR = maxOf(r0, minOf(r0 + shrink, rightLimit))
+        return s.copy(compactWidthDp = (newR - newL) / d, offsetXDp = ((newL + newR) / 2f - cam) / d)
+    }
+
     private fun detectCutout() {
         val metrics = wm.currentWindowMetrics
         val display = getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)

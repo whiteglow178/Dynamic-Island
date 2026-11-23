@@ -824,12 +824,12 @@ private fun LandWideContent(
                     val art = c.art
                     Row(Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (art != null) {
-                            Image(art, null, Modifier.size(artSize).clip(RoundedCornerShape(7.dp)), contentScale = ContentScale.Crop)
+                            Image(art, null, Modifier.size(artSize).clip(if (s.artCircleCompact()) CircleShape else RoundedCornerShape(7.dp)), contentScale = ContentScale.Crop)
                             Spacer(Modifier.size(8.dp))
                         }
                         CompactLyrics(s, lyrics, frame, Modifier.weight(1f).height(h), artColor = c.artColor)
                         Spacer(Modifier.size(8.dp))
-                        if (c.playing) MusicMeter(eq, s.eqRing, rainbow = rb)
+                        if (c.playing) MusicMeter(eq, s.eqStyleNow(), rainbow = rb)
                         else Box(Modifier.size(6.dp).background(Pal.c("island_dot_idle"), CircleShape))
                     }
                 }

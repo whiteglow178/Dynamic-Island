@@ -122,6 +122,8 @@ class IslandAccessibilityService : AccessibilityService() {
             }
         }
         instance = this
+        iconHandler.removeCallbacks(iconPoll)
+        iconHandler.post(iconPoll)
         notifyChanged()
     }
 
@@ -137,6 +139,7 @@ class IslandAccessibilityService : AccessibilityService() {
         stopAssistantWatch()
         instance = null
         runCatching { recHandler.removeCallbacksAndMessages(null); recThread.quitSafely() }
+        runCatching { iconHandler.removeCallbacksAndMessages(null); iconThread.quitSafely() }
         super.onDestroy()
     }
 
@@ -269,6 +272,25 @@ class IslandAccessibilityService : AccessibilityService() {
     // olduğundan, ana thread'den w.root istemek sistem <-> uygulama arasında kilitlenip 5 sn ANR'ye yol açıyordu.
     private val recThread = android.os.HandlerThread("rec-scan").apply { start() }
     private val recHandler = Handler(recThread.looper)
+
+    // Durum çubuğu simgeleri (Bildirim simgelerine yer aç): ayrı thread'de, saniyede bir; ayar kapalıyken seyrek
+    private val iconThread = android.os.HandlerThread("status-icons").apply { start() }
+    private val iconHandler = Handler(iconThread.looper)
+    private val iconPoll = object : Runnable {
+        override fun run() {
+            val on = StatusIcons.enabled &&
+                getSystemService(android.os.PowerManager::class.java)?.isInteractive == true
+            if (on || StatusIcons.edges.value != StatusIcons.Edges()) runCatching { StatusIcons.scan(this@IslandAccessibilityService) }
+            iconHandler.postDelayed(this, if (on) 1000L else 3000L)
+        }
+    }
+
+    /** Bildirim gelince / pencereler değişince simgeleri hemen yeniden tara (bekleyen turu öne çeker). */
+    private fun rescanIconsSoon() {
+        if (!StatusIcons.enabled) return
+        iconHandler.removeCallbacks(iconPoll)
+        iconHandler.postDelayed(iconPoll, 250L)
+    }
     private val recPkgCache = java.util.concurrent.ConcurrentHashMap<Int, String>()
     @Volatile private var recA11yOn = false
     @Volatile private var recA11yDigit = 0
@@ -407,6 +429,7 @@ class IslandAccessibilityService : AccessibilityService() {
             if (e.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
                 if (recA11yOn || recA11yDigit != 0) scheduleRecCheck() else startRecBurst()
             }
+            if (e.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED || e.eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) rescanIconsSoon()
             when (e.eventType) {
                 AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> {
                     if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) return

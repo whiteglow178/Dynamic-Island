@@ -176,7 +176,7 @@ private fun clockText(ms: Long): String {
  * Zamanlayıcıda kalan süre; kronometrede (extra 2) geçen süre. Çalışıyorsa saniyede birkaç kez yenilenir.
  */
 @Composable
-private fun rememberRemaining(c: IslandContent.Status): Long {
+internal fun rememberRemaining(c: IslandContent.Status): Long {
     val watch = c.extra == 2
     var now by remember(c.endsAt, c.startedAt, c.phase) { mutableLongStateOf(System.currentTimeMillis()) }
     val ticking = c.phase == 0 && (if (watch) c.startedAt > 0L else c.endsAt > 0L)
@@ -202,16 +202,25 @@ private fun watchText(ms: Long): String {
 }
 
 /**
- * Azalan zamanlayıcı halkası (kapalı ada): soluk tam halka + kalan süre oranında turuncu yay.
- * Süre azaldıkça yay saat yönünün tersine kısalır (ekran görüntüsündeki gibi).
+ * Azalan zamanlayıcı halkası (kapalı ada / yan baloncuk): ince soluk iz + kalan süre oranında turuncu yay ve
+ * merkezden yayın başına uzanan ibre. Süre azaldıkça yay saat yönünde kısalır, ibre de onunla birlikte döner
+ * (iOS'taki zamanlayıcı simgesi gibi). [frac] 1 = tam, 0 = süre doldu.
  */
-private fun DrawScope.drawTimerRing(frac: Float, color: Color) {
-    val sw = size.width * 0.16f
+internal fun DrawScope.drawTimerRing(frac: Float, color: Color) {
+    val sw = size.minDimension * 0.12f
     val r = size.minDimension / 2f - sw / 2f
-    val tl = Offset(size.width / 2f - r, size.height / 2f - r)
-    drawCircle(color.copy(alpha = 0.28f), r, style = Stroke(sw))
+    val c = Offset(size.width / 2f, size.height / 2f)
+    val tl = Offset(c.x - r, c.y - r)
     val f = frac.coerceIn(0f, 1f)
-    if (f > 0f) drawArc(color, -90f, 360f * f, false, tl, Size(r * 2f, r * 2f), style = Stroke(sw, cap = StrokeCap.Round))
+    drawCircle(color.copy(alpha = 0.22f), r, c, style = Stroke(sw))
+    // Geçen kısım tepeden (saat 12) başlayıp saat yönünde ilerler; kalan yay ondan sonra gelir
+    val start = -90f + 360f * (1f - f)
+    if (f > 0f) drawArc(color, start, 360f * f, false, tl, Size(r * 2f, r * 2f), style = Stroke(sw, cap = StrokeCap.Round))
+    val a = Math.toRadians(start.toDouble())
+    val hand = r * 0.78f
+    val tip = Offset(c.x + hand * kotlin.math.cos(a).toFloat(), c.y + hand * kotlin.math.sin(a).toFloat())
+    drawLine(color, c, tip, strokeWidth = sw * 0.95f, cap = StrokeCap.Round)
+    drawCircle(color, sw * 0.75f, c)
 }
 
 // ================================================================ Zamanlayıcı / alarm

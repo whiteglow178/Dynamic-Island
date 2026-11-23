@@ -224,6 +224,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Konum", "Kamera deliğine göre ince ayar") {
             SliderRow("Yatay", draft.offsetXDp, -60f..60f, "${draft.offsetXDp.toInt()} dp") { draft = draft.copy(offsetXDp = it) }
             SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
+            SwitchRow("Bildirim simgelerine yer aç", "Durum çubuğunun solunda bildirim simgeleri adaya yaklaşınca adanın sol ucu geri çekilir, ada kameranın üstünde kalarak sağa doğru uzar; simgeler gidince eski haline döner. Erişilebilirlik izni gerekir. Nokta, iPhone ve ters ada modlarında çalışmaz",
+                draft.more.avoidIcons) { draft = draft.copy(more = draft.more.copy(avoidIcons = it)) }
             SwitchRow("Ters ada", "Ada ekranın üstünde değil en altında durur. Olaylar ve bildirimler düz görünür; adaya basınca panel aşağı değil yukarı doğru açılır. Dikey konum ayarı alttan ölçülür", draft.invertedIsland) { draft = draft.copy(invertedIsland = it) }
             if (draft.invertedIsland) {
                 SwitchRow("Ters adaya özel konum ve boyut", "Açıkken ters ada, üstteki Kapalı ada ve Konum ayarlarını değil aşağıdaki kendi ayarlarını kullanır (ekranın altında farklı bir boyut / yer isteyebilirsin)", draft.invCustom) { draft = draft.copy(invCustom = it) }
@@ -415,6 +417,9 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SectionDivider()
             SwitchRow("Dokununca olay ortaya geçsin", "Kapalıyken baloncuğa dokununca o uygulamanın paneli genişler ama olay ortaya geçmez; panel kapanınca eski düzen döner. Açıkken olay kalıcı olarak ortaya geçer",
                 draft.sideTapPromote) { draft = draft.copy(sideTapPromote = it) }
+            SectionDivider()
+            SwitchRow("Uzun yan baloncuk", "Baloncuk tam daire değil, biraz uzun bir kapsül olur. Zamanlayıcıda halkanın yanında kalan süre (22dk), müzikte kapağın yanında ekolayzır görünür. Nokta ve iPhone modlarında kullanılmaz",
+                draft.more.sideWide) { draft = draft.copy(more = draft.more.copy(sideWide = it)) }
         }
 
         sec("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)", PreviewKind.ScreenRec) {
@@ -474,14 +479,37 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             key(version) { ColorPicker(draft.accentArgb) { draft = draft.copy(accentArgb = it) } }
         }
         sec("Ekolayzır rengi", "Müzik çalarken adadaki ses çubukları") {
-            SwitchRow("Halka görünümü", "Çubuklar yerine renkli, dalgalanan hareketli bir halka; kapatırsan klasik ekolayzır",
-                draft.eqRing) { draft = draft.copy(eqRing = it) }
+            SubHeader("Görünüm")
+            SegmentedTabs(listOf("Çubuklar", "Halka", "Yörünge"), draft.eqStyleNow()) {
+                draft = draft.copy(eqRing = it == 1, more = draft.more.copy(eqOrbit = it == 2))
+            }
+            Text(
+                when (draft.eqStyleNow()) {
+                    1 -> "Halka: renk geçişli, dalgalanarak şekil değiştiren hareketli bir halka."
+                    2 -> "Yörünge: ritimle atan parlak bir çekirdek ve etrafında iz bırakarak dönen iki küçük uydu."
+                    else -> "Çubuklar: klasik ekolayzır."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+            )
             SectionDivider()
             SwitchRow("Albüm kapağı rengi", "Ekolayzır, çalan şarkının kapağına göre renklenir",
                 draft.eqDynamicColor) { draft = draft.copy(eqDynamicColor = it) }
             SectionDivider()
             SubHeader(if (draft.eqDynamicColor) "Kapak yoksa kullanılacak renk" else "Ekolayzır rengi")
             key(version) { ColorPicker(draft.eqColorArgb) { draft = draft.copy(eqColorArgb = it) } }
+        }
+
+        sec("Albüm kapağı şekli", "Müzik çalarken adadaki kapak kare ya da daire") {
+            SwitchRow("Daire albüm kapağı", "Kapak köşeli kare yerine tam daire olur. Dokunma alanı da daireye göre ayarlanır; ada sakinleri dairenin üstünde yürür",
+                draft.more.artCircle != 0) { on -> draft = draft.copy(more = draft.more.copy(artCircle = if (on) 1 else 0)) }
+            if (draft.more.artCircle != 0) {
+                SubHeader("Nerede daire olsun")
+                SegmentedTabs(listOf("İkisinde de", "Küçük ada", "Geniş ada"), draft.more.artCircle - 1) {
+                    draft = draft.copy(more = draft.more.copy(artCircle = it + 1))
+                }
+                Text("Küçük ada: kapalı ada, hap müzik görünümü ve yan baloncuk. Geniş ada: dokununca açılan müzik paneli.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
         }
 
         sec("Albüm arka planı", "Müzik çalarken adanın içi kapak görseliyle dolar") {

@@ -23,6 +23,10 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.composed
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -107,16 +111,19 @@ fun Equalizer(color: Color, height: Dp = 14.dp, barWidth: Dp = 3.dp, animate: Bo
 
 // ---------------------------------------------------------------- Halka görünümü (ekolayzırın yerine)
 /**
- * Ekolayzır ya da halka: Ayarlar > Ekolayzır > "Halka görünümü" açıksa çubukların yerine [EqRing] çizilir.
- * Halka, çubuklarla aynı yükseklik + 6dp'lik kare bir alana sığar.
+ * Adadaki ses göstergesi: [style] 0 çubuklu ekolayzır, 1 halka ([EqRing]), 2 yörünge ([EqOrbit]).
+ * Ayarlar > Ekolayzır > "Görünüm". Halka ve yörünge, çubuklarla aynı yükseklik + 6dp'lik kare bir alana sığar.
  */
 @Composable
 fun MusicMeter(
-    color: Color, ring: Boolean, height: Dp = 14.dp, barWidth: Dp = 3.dp,
+    color: Color, style: Int, height: Dp = 14.dp, barWidth: Dp = 3.dp,
     animate: Boolean = true, rainbow: RainbowStyle? = null,
 ) {
-    if (ring) EqRing(color, height + 6.dp, animate, rainbow)
-    else Equalizer(color, height, barWidth, animate, rainbow)
+    when (style) {
+        1 -> EqRing(color, height + 6.dp, animate, rainbow)
+        2 -> EqOrbit(color, height + 6.dp, animate, rainbow)
+        else -> Equalizer(color, height, barWidth, animate, rainbow)
+    }
 }
 
 /** Rengin tonunu [deg] derece kaydırır (halkanın ikinci rengi için). */
@@ -182,6 +189,102 @@ fun EqRing(color: Color, size: Dp, animate: Boolean = true, rainbow: RainbowStyl
             }
             // ana halka
             drawPath(main, sweep, style = Stroke(stroke, join = StrokeJoin.Round))
+        }
+    }
+}
+
+/** Yörünge görünümündeki bir uydu: açı dizisindeki sırası, eğim (radyan), renk, boyut nabzı. */
+private class OrbitMoon(val idx: Int, val tilt: Float, val col: Color, val pulse: Float)
+
+/**
+ * "Yörünge": ritimle nabız gibi atan parlak bir çekirdek ve çevresinde eğik yörüngelerde dönen iki küçük uydu.
+ * Uydular arkalarında kuyruklu yıldız gibi sönen bir iz bırakır; çekirdeğin arkasından geçerken solar.
+ * Renkler kapaktan (ya da seçilen renkten) türetilir. Müzik durunca uydular yavaşça durur, çekirdek sakinleşir.
+ * Gerçek sesi dinlemez; animasyon değerleri yalnızca çizim sırasında okunur.
+ */
+@Composable
+fun EqOrbit(color: Color, size: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqOrbit")
+    val beat = t.animateFloat(0f, 1f, infiniteRepeatable(tween(460, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "orbitBeat")
+    val beat2 = t.animateFloat(0f, 1f, infiniteRepeatable(tween(690, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "orbitBeat2")
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(600), label = "orbitAmp")
+    // Müzik durunca uydular olduğu yerde durur: açı, oynarken biriken zamandan hesaplanır
+    val angle = remember { floatArrayOf(0f, 0.5f) }   // her uydunun açısı (tur, 0..1)
+    val last = remember { longArrayOf(0L) }          // son karenin zamanı (ms)
+    val tick = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "orbitTick")
+    val moonA = remember(color) { shiftHue(color, 55f) }
+    val moonB = remember(color) { shiftHue(color, -40f) }
+    Canvas(Modifier.size(size).rainbowFill(rainbow, 0.dp)) {
+        tick.value     // her karede yeniden çiz
+        val now = SystemClock.uptimeMillis()
+        val dt = if (last[0] == 0L) 0f else ((now - last[0]) / 1000f).coerceIn(0f, 0.1f)
+        last[0] = now
+        val a = amp.value
+        // Her uydu kendi hızıyla ilerler (tam hızda ilki ~1,8 sn'de bir tur); müzik durunca yavaşlayıp durur
+        angle[0] = (angle[0] + dt * 0.55f * a) % 1f
+        angle[1] = (angle[1] + dt * 0.55f * 1.35f * a) % 1f
+        val tau = (2 * Math.PI).toFloat()
+        val d = this.size.minDimension
+        val c = center
+        val b = beat.value * a
+        val b2 = beat2.value * a
+        val coreR = d * (0.14f + 0.05f * b)
+        val rx = d * 0.40f
+        val ry = d * 0.15f
+
+        fun pos(theta: Float, tilt: Float): Pair<Offset, Float> {
+            val lx = rx * kotlin.math.cos(theta)
+            val ly = ry * kotlin.math.sin(theta)
+            val ct = kotlin.math.cos(tilt); val st = kotlin.math.sin(tilt)
+            return Offset(c.x + lx * ct - ly * st, c.y + lx * st + ly * ct) to kotlin.math.sin(theta)  // ikinci değer: >0 önde
+        }
+        val moons = listOf(
+            OrbitMoon(0, 0.52f, moonA, b),
+            OrbitMoon(1, -0.52f, moonB, b2),
+        )
+        fun drawMoon(m: OrbitMoon, front: Boolean) {
+            val theta = tau * angle[m.idx]
+            val r = d * (0.065f + 0.02f * m.pulse)
+            // kuyruk: geride kalan noktalar küçülerek ve solarak
+            val steps = 9
+            for (k in steps downTo 0) {
+                val th = theta - k * 0.16f * (0.35f + 0.65f * a)
+                val (p, depth) = pos(th, m.tilt)
+                if ((depth >= 0f) != front) continue
+                val fade = 1f - k / (steps + 1f)
+                val back = if (depth < 0f) 0.45f else 1f
+                val alpha = (if (k == 0) 1f else 0.55f * fade * fade * a) * back
+                drawCircle(m.col.copy(alpha = alpha.coerceIn(0f, 1f)), r * (0.45f + 0.55f * fade), p)
+            }
+        }
+        // arkadaki yollar -> çekirdek -> öndeki yollar
+        moons.forEach { drawMoon(it, front = false) }
+        drawCircle(color.copy(alpha = 0.16f + 0.14f * b), coreR * 2.3f, c)          // geniş parıltı
+        drawCircle(color.copy(alpha = 0.35f), coreR * 1.45f, c)
+        drawCircle(Brush.radialGradient(listOf(Color.White, color), c, coreR), coreR, c)
+        moons.forEach { drawMoon(it, front = true) }
+    }
+}
+
+// ---------------------------------------------------------------- Albüm kapağına dokunma alanı
+/**
+ * Kapağa dokununca müzik uygulamasını açar. [circle] true ise (daire albüm kapağı) yalnızca dairenin içine
+ * yapılan dokunuşlar sayılır: köşelerdeki boşluğa dokunmak kapağı açmaz, dokunuş adaya geçer.
+ * [enabled] false ise hiçbir şey yapmaz (Ayarlar > kapağa dokununca aç kapalı).
+ */
+fun Modifier.artTap(enabled: Boolean, circle: Boolean, onClick: () -> Unit): Modifier = if (!enabled) this else composed {
+    val cb by rememberUpdatedState(onClick)
+    pointerInput(circle) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            if (circle) {
+                val r = kotlin.math.min(size.width, size.height) / 2f
+                val dx = down.position.x - size.width / 2f
+                val dy = down.position.y - size.height / 2f
+                if (dx * dx + dy * dy > r * r) return@awaitEachGesture
+            }
+            val up = waitForUpOrCancellation()
+            if (up != null) { up.consume(); cb() }
         }
     }
 }
@@ -274,8 +377,8 @@ fun MusicPanel(
         ) {
             Column(Modifier.weight(0.56f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box((if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier).fxTarget("art")) {
-                        FlipAlbumArt(customArt ?: m.art, 50.dp, artFlip, artSpin, 11.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
+                    Box(Modifier.artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }.fxTarget("art")) {
+                        FlipAlbumArt(customArt ?: m.art, 50.dp, artFlip, artSpin, if (cfg.artCircleExpanded()) 50.dp / 2 else 11.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
                     }
                     Column(
                         Modifier.weight(1f)
@@ -311,8 +414,8 @@ fun MusicPanel(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box((if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier).fxTarget("art")) {
-                FlipAlbumArt(customArt ?: m.art, 60.dp, artFlip, artSpin, 12.dp, customArt == null && artVideo.isEmpty(), video = artVideo)   // sol köşe
+            Box(Modifier.artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }.fxTarget("art")) {
+                FlipAlbumArt(customArt ?: m.art, 60.dp, artFlip, artSpin, if (cfg.artCircleExpanded()) 60.dp / 2 else 12.dp, customArt == null && artVideo.isEmpty(), video = artVideo)   // sol köşe
             }
             // Kapak yüksekliğinde alan: şarkı adı ortada, sanatçı adı kapağın alt kenarıyla hizalı
             Box(
@@ -332,7 +435,7 @@ fun MusicPanel(
                 )
             }
             // Kırılabilir öğe: adayı kırma / yağmur / asit efektlerinde ekolayzır da düşer
-            Box(Modifier.fxTarget("eq")) { MusicMeter(accent, cfg.eqRing, height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb) }
+            Box(Modifier.fxTarget("eq")) { MusicMeter(accent, cfg.eqStyleNow(), height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb) }
         }
 
         if (cfg.lyricsEnabled && cfg.lyricsInPanel) Column(Modifier.fxTarget("lyrics")) { PanelLyrics(cfg, lyrics, frame, artColor = m.artColor) }
@@ -377,8 +480,8 @@ fun MusicMidPanel(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Box(if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier) {
-                FlipAlbumArt(customArt ?: m.art, 44.dp, artFlip, artSpin, 10.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
+            Box(Modifier.artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }) {
+                FlipAlbumArt(customArt ?: m.art, 44.dp, artFlip, artSpin, if (cfg.artCircleExpanded()) 44.dp / 2 else 10.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
             }
             Column(
                 Modifier.weight(1f)
@@ -391,7 +494,7 @@ fun MusicMidPanel(
                 Text(m.artist, color = Pal.c("music_artist"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().rainbowFill(rb))
             }
-            MusicMeter(accent, cfg.eqRing, height = 16.dp, barWidth = 3.dp, animate = m.playing, rainbow = rb)
+            MusicMeter(accent, cfg.eqStyleNow(), height = 16.dp, barWidth = 3.dp, animate = m.playing, rainbow = rb)
         }
         MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -771,8 +874,8 @@ fun MusicPillPanel(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box((if (cfg.openExpArt) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier).fxTarget("art")) {
-            FlipAlbumArt(customArt ?: m.art, 64.dp, artFlip, artSpin, 14.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
+        Box(Modifier.artTap(cfg.openExpArt, cfg.artCircleCompact()) { onOpenMusic() }.fxTarget("art")) {
+            FlipAlbumArt(customArt ?: m.art, 64.dp, artFlip, artSpin, if (cfg.artCircleCompact()) 64.dp / 2 else 14.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
             Box(

@@ -502,7 +502,7 @@ fun IslandRoot(
             val fromX = if (s.fromSide == 0) 0.dp else run {
                 val fd = if (s.fromSide > 0) 1 else -1                  // yön
                 val lvl = abs(s.fromSide)                                // 1 = iç yuva, 2 = dış yuva
-                val r = slotSizeDp(cfg, fd, lvl) / 2f
+                val r = sideWidthDp(cfg, fd, lvl) / 2f                  // uzun yan baloncukta yarı genişlik
                 val skip = if (lvl == 2) sideSizeDp(cfg, fd) + sideGapDp(cfg) else 0f
                 (fd * (prevCw.value / 2f + skip + sideGapDp(cfg) + r)).dp
             }
@@ -1331,7 +1331,7 @@ fun IslandPill(
                 val artShown = shownArt != null || artVideo.isNotEmpty()
                 if (artShown) {
                     FlipAlbumArt(
-                        shownArt, artSize, artFlip, artSpin, 7.dp, customArt == null && artVideo.isEmpty(),
+                        shownArt, artSize, artFlip, artSpin, if (cfg.artCircleCompact()) artSize / 2 else 7.dp, customArt == null && artVideo.isEmpty(),
                         Modifier.align(Alignment.CenterStart).padding(start = 8.dp).then(fade),
                         video = artVideo,
                     )
@@ -1348,7 +1348,7 @@ fun IslandPill(
                     )
                 }
                 Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
-                    if (content.playing) MusicMeter(eqColor, cfg.eqRing, rainbow = rb)
+                    if (content.playing) MusicMeter(eqColor, cfg.eqStyleNow(), rainbow = rb)
                     else Box(Modifier.size(6.dp).background(Pal.c("island_dot_idle"), CircleShape))
                 }
 
