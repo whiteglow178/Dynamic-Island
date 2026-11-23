@@ -829,7 +829,7 @@ private fun LandWideContent(
                         }
                         CompactLyrics(s, lyrics, frame, Modifier.weight(1f).height(h), artColor = c.artColor)
                         Spacer(Modifier.size(8.dp))
-                        if (c.playing) Equalizer(eq, rainbow = rb)
+                        if (c.playing) MusicMeter(eq, s.eqRing, rainbow = rb)
                         else Box(Modifier.size(6.dp).background(Pal.c("island_dot_idle"), CircleShape))
                     }
                 }

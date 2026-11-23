@@ -474,6 +474,9 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             key(version) { ColorPicker(draft.accentArgb) { draft = draft.copy(accentArgb = it) } }
         }
         sec("Ekolayzır rengi", "Müzik çalarken adadaki ses çubukları") {
+            SwitchRow("Halka görünümü", "Çubuklar yerine renkli, dalgalanan hareketli bir halka; kapatırsan klasik ekolayzır",
+                draft.eqRing) { draft = draft.copy(eqRing = it) }
+            SectionDivider()
             SwitchRow("Albüm kapağı rengi", "Ekolayzır, çalan şarkının kapağına göre renklenir",
                 draft.eqDynamicColor) { draft = draft.copy(eqDynamicColor = it) }
             SectionDivider()

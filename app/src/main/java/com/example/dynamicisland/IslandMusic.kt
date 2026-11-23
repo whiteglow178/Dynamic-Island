@@ -105,6 +105,87 @@ fun Equalizer(color: Color, height: Dp = 14.dp, barWidth: Dp = 3.dp, animate: Bo
     }
 }
 
+// ---------------------------------------------------------------- Halka görünümü (ekolayzırın yerine)
+/**
+ * Ekolayzır ya da halka: Ayarlar > Ekolayzır > "Halka görünümü" açıksa çubukların yerine [EqRing] çizilir.
+ * Halka, çubuklarla aynı yükseklik + 6dp'lik kare bir alana sığar.
+ */
+@Composable
+fun MusicMeter(
+    color: Color, ring: Boolean, height: Dp = 14.dp, barWidth: Dp = 3.dp,
+    animate: Boolean = true, rainbow: RainbowStyle? = null,
+) {
+    if (ring) EqRing(color, height + 6.dp, animate, rainbow)
+    else Equalizer(color, height, barWidth, animate, rainbow)
+}
+
+/** Rengin tonunu [deg] derece kaydırır (halkanın ikinci rengi için). */
+private fun shiftHue(c: Color, deg: Float): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(c.toArgb(), hsv)
+    hsv[0] = (hsv[0] + deg + 360f) % 360f
+    return Color(android.graphics.Color.HSVToColor(hsv)).copy(alpha = c.alpha)
+}
+
+/**
+ * Renkli, hareketli halka: üç dalganın toplamıyla yumuşakça şekil değiştiren, renk geçişli bir çember.
+ * Arkasında hafif bir parıltı ve ters yönde dönen ince ikinci bir iz var. Müzik durunca dalgalar söner,
+ * düz bir çembere döner. Gerçek sesi dinlemez; çubuklu ekolayzır gibi ritmik bir animasyondur.
+ * Animasyon değerleri yalnızca çizim sırasında okunur: her karede yeniden oluşturma (recomposition) yok.
+ */
+@Composable
+fun EqRing(color: Color, size: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqRing")
+    val phase = t.animateFloat(0f, 1f, infiniteRepeatable(tween(4800, easing = LinearEasing)), label = "ringPhase")
+    val beatA = t.animateFloat(0.3f, 1f, infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "ringBeatA")
+    val beatB = t.animateFloat(0.2f, 1f, infiniteRepeatable(tween(610, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "ringBeatB")
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(450), label = "ringAmp")
+    val second = remember(color) { shiftHue(color, 55f) }
+    val third = remember(color) { shiftHue(color, -35f) }
+    val main = remember { Path() }
+    val trace = remember { Path() }
+    Canvas(Modifier.size(size).rainbowFill(rainbow, 0.dp)) {
+        val tau = (2 * Math.PI).toFloat()
+        val p = phase.value
+        val a = amp.value
+        val bA = beatA.value
+        val bB = beatB.value
+        val d = this.size.minDimension
+        val base = d * 0.33f
+        val wob = d * 0.075f * a
+        val stroke = d * 0.085f
+        fun build(path: Path, off: Float, k: Float) {
+            path.reset()
+            val n = 64
+            for (i in 0..n) {
+                val ang = tau * i / n
+                val r = base + wob * k * (
+                    0.55f * bA * kotlin.math.sin(3 * ang + tau * p + off) +
+                    0.35f * bB * kotlin.math.sin(5 * ang - 2 * tau * p + off * 1.7f) +
+                    0.20f * kotlin.math.sin(2 * ang + 3 * tau * p)
+                )
+                val x = center.x + r * kotlin.math.cos(ang)
+                val y = center.y + r * kotlin.math.sin(ang)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+        }
+        build(main, 0f, 1f)
+        build(trace, tau / 4f, 1.35f)
+        val sweep = Brush.sweepGradient(listOf(color, second, third, color), center)
+        withTransform({ rotate(p * 360f, center) }) {
+            // yumuşak parıltı
+            drawPath(main, color.copy(alpha = 0.22f * (0.6f + 0.4f * a)), style = Stroke(stroke * 2.8f, join = StrokeJoin.Round))
+            // ters yönde dönen ince iz
+            withTransform({ rotate(-p * 720f, center) }) {
+                drawPath(trace, sweep, alpha = 0.5f * a, style = Stroke(stroke * 0.45f, join = StrokeJoin.Round))
+            }
+            // ana halka
+            drawPath(main, sweep, style = Stroke(stroke, join = StrokeJoin.Round))
+        }
+    }
+}
+
 // ---------------------------------------------------------------- Beğeni (yalnızca bu uygulamada saklanır)
 object FavoriteStore {
     private const val FILE = "island_favs"
@@ -251,7 +332,7 @@ fun MusicPanel(
                 )
             }
             // Kırılabilir öğe: adayı kırma / yağmur / asit efektlerinde ekolayzır da düşer
-            Box(Modifier.fxTarget("eq")) { Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb) }
+            Box(Modifier.fxTarget("eq")) { MusicMeter(accent, cfg.eqRing, height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb) }
         }
 
         if (cfg.lyricsEnabled && cfg.lyricsInPanel) Column(Modifier.fxTarget("lyrics")) { PanelLyrics(cfg, lyrics, frame, artColor = m.artColor) }
@@ -310,7 +391,7 @@ fun MusicMidPanel(
                 Text(m.artist, color = Pal.c("music_artist"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().rainbowFill(rb))
             }
-            Equalizer(accent, height = 16.dp, barWidth = 3.dp, animate = m.playing, rainbow = rb)
+            MusicMeter(accent, cfg.eqRing, height = 16.dp, barWidth = 3.dp, animate = m.playing, rainbow = rb)
         }
         MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

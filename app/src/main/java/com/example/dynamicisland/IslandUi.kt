@@ -1348,7 +1348,7 @@ fun IslandPill(
                     )
                 }
                 Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
-                    if (content.playing) Equalizer(eqColor, rainbow = rb)
+                    if (content.playing) MusicMeter(eqColor, cfg.eqRing, rainbow = rb)
                     else Box(Modifier.size(6.dp).background(Pal.c("island_dot_idle"), CircleShape))
                 }
 
