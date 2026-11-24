@@ -170,7 +170,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             ) { c, r, k, st, lk -> booleanArrayOf(c, r || k, st, lk) }
             combine(settings, triggers, NotifPrivacy.scheduled) { s, t, sc ->
                 val m = s.more
-                m.notifPrivate || (m.notifTwist && t[0]) || (m.notifPrivRec && t[1]) || (m.privStill && t[2]) ||
+                m.notifPrivate || ((m.notifTwist || m.privPanic) && t[0]) || (m.notifPrivRec && t[1]) || (m.privStill && t[2]) ||
                     (m.privLocked && t[3]) || (m.privSched && sc)
             }.distinctUntilChanged().collect { NotifPrivacy.active.value = it; if (!it) NotifPrivacy.peek.value = false }
         }
@@ -181,7 +181,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 NotifPrivacy.Rule(
                     apps = list(m.notifPrivApps).toSet(), music = m.musicPrivate, blur = m.notifBlurPeek,
                     words = if (m.privWordsOn) list(m.privWords) else emptyList(),
-                    people = list(m.privPeople), otp = m.privOtp,
+                    people = list(m.privPeople), otp = m.privOtp, decoy = m.privDecoy, reveal = m.privReveal,
                 )
             }.distinctUntilChanged().collect { NotifPrivacy.rule.value = it }
         }
@@ -191,6 +191,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         scope.launch { NotifPrivacy.peek.collect { runCatching { onPeek(it) } } }
+        scope.launch {
+            settings.map { it.more.privPanic }.distinctUntilChanged().collect { on ->
+                runCatching { if (on) shakeWatch.start() else shakeWatch.stop() }
+            }
+        }
+        // Ekran görüntüsünde görünmeyen ada: bildirim (ya da kod) adadayken pencereler FLAG_SECURE olur
+        scope.launch {
+            combine(settings, ui) { s, u -> s.more.privSecure && privSensitive(u) }.distinctUntilChanged().collect { on ->
+                runCatching { applySecure(on) }
+            }
+        }
+        // Banner yalnızca bildirim gösterir: ayar açıksa hep kayıt dışı
+        scope.launch { settings.map { it.more.privSecure }.distinctUntilChanged().collect { runCatching { notifBanner.secure = it } } }
         scope.launch {
             settings.map { it.more.privStill }.distinctUntilChanged().collect { on ->
                 runCatching { if (on) stillWatch.start() else stillWatch.stop() }
@@ -369,6 +382,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 playSfx(SoundEvent.Notif)
                 val icon = iconFor(e.pkg)
                 val st = settings.value
+                privBuzz(e.title, e.key, st)
                 // Bildirimde renkli ışık: uygulama simgesinin rengi (ayar kapalıysa 0 = ışık yok)
                 val accent = if (st.notifBottomFx && icon != null) accentFor(e.pkg, icon) else 0
                 // Bildirim çevirisi: yabancı dildeyse cihazda çevrilir (en çok ~1,5 sn beklenir; olmazsa orijinali gösterilir)
@@ -1019,6 +1033,51 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
     private val castWatch by lazy { CastWatch(this) }
     private val stillWatch by lazy { StillWatch(this) }
+    private val shakeWatch by lazy { ShakeWatch(this) { runCatching { onPanic() } } }
+
+    /** Panik sallaması: ada küçülür, bildirim kapanır, banner gizlenir, müzik durur ve gizleme açılır. */
+    private fun onPanic() {
+        NotifPrivacy.peek.value = false
+        NotifPrivacy.curtain.value = true
+        runCatching { notifBanner.hide() }
+        val cur = ui.value
+        if (cur.content is IslandContent.Notif) { notif.clear(); notif.finish() }
+        else if (cur.expanded) { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+        if (mediaState.value?.playing == true) onCommand(MediaCommand.PlayPause)
+        twistBuzz(true); scope.launch { delay(120); twistBuzz(true) }
+    }
+
+    // Titreşim imzası: aynı bildirim güncellenince (ör. "yazıyor") tekrar titremesin
+    private val buzzSeen = HashMap<String, Long>()
+    private fun privBuzz(title: String, key: String, st: IslandSettings) {
+        val m = st.more
+        val lists = listOf(m.privBuzz1, m.privBuzz2, m.privBuzz3, m.privBuzz4)
+        if (lists.all { it.isBlank() }) return
+        val i = BuzzSign.match(title, lists)
+        if (i < 0) return
+        val now = android.os.SystemClock.uptimeMillis()
+        val k = key.ifEmpty { title }
+        if (now - (buzzSeen[k] ?: 0L) < 4_000L) return
+        buzzSeen[k] = now
+        if (buzzSeen.size > 64) buzzSeen.entries.removeAll { now - it.value > 60_000L }
+        BuzzSign.play(this, i)
+    }
+
+    /** Adada (ortada, yanda ya da yığında) bildirim / doğrulama kodu var mı. */
+    private fun privSensitive(u: IslandUiState): Boolean {
+        fun sens(c: IslandContent) = c is IslandContent.Notif || (c is IslandContent.Live && c.kind == LiveKind.Code)
+        return sens(u.content) || u.side.any { sens(it) } || u.stack.any { sens(it) }
+    }
+    private var secureOn = false
+    /** Ada pencerelerini ekran görüntüsü / kayıt dışı bırakır (FLAG_SECURE). Banner da aynı şekilde. */
+    private fun applySecure(on: Boolean) {
+        secureOn = on
+        val f = WindowManager.LayoutParams.FLAG_SECURE
+        for (d in listOf(dialog, blurDialog)) {
+            val w = d?.window ?: continue
+            if (on) w.addFlags(f) else w.clearFlags(f)
+        }
+    }
     private val lockWatch by lazy { LockWatch(this) }
     // Ekran kaydı takibi (gizlilik için; ada ekran kaydı ayarından bağımsız)
     private var privRecKey = ""
@@ -2680,6 +2739,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         d.show()
         d.window?.decorView?.let { stripInsets(it) }   // show'dan SONRA: kalan dolguları sıfırla
         dialog = d
+        if (secureOn) applySecure(true)     // pencere yeniden kurulduysa kayıt dışı bayrağı korunur
         applyMainHidden()
         applyRefreshRate()
     }
@@ -3202,6 +3262,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { twist.stop() }
         runCatching { castWatch.stop() }
         runCatching { stillWatch.stop() }
+        runCatching { shakeWatch.stop() }
         runCatching { lockWatch.stop() }
         NotifPrivacy.active.value = false; NotifPrivacy.peek.value = false
         IslandAccessibilityService.onChanged = null

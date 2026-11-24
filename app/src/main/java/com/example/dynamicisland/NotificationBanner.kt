@@ -19,6 +19,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -129,6 +131,16 @@ class NotifBannerOverlay(
     private var view: ComposeView? = null
     private var host: WindowManager? = null
     private var lp: WindowManager.LayoutParams? = null
+    /** Gizlilik: banner ekran görüntüsü / ekran kaydında görünmesin (FLAG_SECURE). */
+    var secure: Boolean = false
+        set(v) {
+            if (field == v) return
+            field = v
+            val p = lp ?: return
+            val vw = view ?: return
+            p.flags = if (v) p.flags or WindowManager.LayoutParams.FLAG_SECURE else p.flags and WindowManager.LayoutParams.FLAG_SECURE.inv()
+            runCatching { host?.updateViewLayout(vw, p) }
+        }
     private val current = mutableStateOf<IslandContent.Notif?>(null)
     private val shown = mutableStateOf(false)
     private val mode = mutableStateOf(0)      // 0 = yalnızca banner, 1 = Cevapla / Kopyala / İlet menüsü, 2 = cevap yazma
@@ -331,6 +343,7 @@ class NotifBannerOverlay(
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = xPx; y = topPx
+            if (secure) flags = flags or WindowManager.LayoutParams.FLAG_SECURE
             fitInsetsTypes = 0
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
@@ -437,16 +450,25 @@ internal fun NotifBannerRoot(
                 .clip(RoundedCornerShape(radius.dp))
                 .drawBehind { drawBannerGlass(radius.dp.toPx()) }
                 .pointerInput(Unit) {
+                    // Gizli içerik + özel açma hareketi (sağa-sola çiz / iki parmak): NotifPrivacy.kt
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val mode = NotifPrivacy.rule.value.reveal
+                        if (maskedNow && mode != 0) privRevealGesture(down, mode, 28.dp.toPx(), Long.MAX_VALUE)
+                    }
+                }
+                .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { off -> onTapNow(off.x < ICON_ZONE_DP.dp.toPx()) },
                         onPress = {
                             // Gizli bildirim: basılı tutma bitince içerik yeniden gizlenir
-                            if (maskedNow) { tryAwaitRelease(); NotifPrivacy.peek.value = false }
+                            if (maskedNow && NotifPrivacy.rule.value.reveal == 0) { tryAwaitRelease(); NotifPrivacy.peek.value = false }
                         },
                         onLongPress = {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                             // Gizliyken basılı tutma menüyü değil içeriği açar
-                            if (maskedNow) NotifPrivacy.peek.value = true else onLongNow()
+                            if (maskedNow) { if (NotifPrivacy.rule.value.reveal == 0) NotifPrivacy.peek.value = true }
+                            else onLongNow()
                         },
                     )
                 }

@@ -39,6 +39,8 @@ object NotifPrivacy {
         val words: List<String> = emptyList(),// hassas kelimeler (boş = kapalı)
         val people: List<String> = emptyList(),// gizlenecek kişiler (gönderen adının bir parçası)
         val otp: Boolean = false,             // doğrulama kodları ●●●● olarak görünsün
+        val decoy: Boolean = false,           // yem metin: gizliyken sıradan, dikkat çekmeyen sahte bir bildirim görünür
+        val reveal: Int = 0,                  // içeriği açma hareketi: 0 basılı tut, 1 sağa-sola çiz, 2 iki parmakla basılı tut
     ) {
         fun covers(pkg: String) = apps.isEmpty() || pkg in apps
         private val wordRx: Regex? by lazy {
@@ -91,7 +93,7 @@ object NotifPrivacy {
         if (peeking) return n
         val r = rule.value
         return when {
-            hidesNotif(n, active.value, r) -> maskNotif(n, r.blur, label)
+            hidesNotif(n, active.value, r) -> maskNotif(n, r, label)
             r.otp && looksOtp(n) -> maskOtp(n)
             else -> n
         }
@@ -103,8 +105,9 @@ object NotifPrivacy {
      * - Bulanık: metin aynı uzunlukta anlamsız harflere çevrilir ve bulanık çizilir (gerçek yazı ekrana hiç gitmez);
      *   sohbet bildiriminde gönderenin adı görünür, diğerlerinde başlık uygulamanın adıdır.
      */
-    fun maskNotif(n: IslandContent.Notif, blur: Boolean = false, label: (String) -> String): IslandContent.Notif =
-        if (blur) n.copy(
+    fun maskNotif(n: IslandContent.Notif, r: Rule, label: (String) -> String): IslandContent.Notif =
+        if (r.decoy) decoyOf(n)
+        else if (r.blur) n.copy(
             title = if (n.messaging && n.title.isNotBlank()) n.title else label(n.pkg),
             text = scramble(n.text.ifBlank { "Yeni bildirim" }), translatedFrom = "", chips = emptyList(),
             blurText = true, privMasked = true,
@@ -112,6 +115,48 @@ object NotifPrivacy {
             title = label(n.pkg), text = "Yeni bildirim", avatar = null, messaging = false,
             translatedFrom = "", chips = emptyList(), privMasked = true,
         )
+
+    // ---- Yem metin
+    /**
+     * Gizliyken gösterilen sıradan bildirimler. Uygulama simgesi de gizlenir (yerine başlığın ilk harfi çıkar), böylece
+     * ekrana bakan biri gizli bir şey olduğunu anlamaz. Aynı bildirim hep aynı yem metni alır (yanıp sönmesin).
+     */
+    private val DECOYS = listOf(
+        "Mağaza" to "Giyim ürünlerinde %10 indirim",
+        "Uygulama mağazası" to "5 güncelleme mevcut",
+        "Kampanya" to "Bu fırsatları kaçırma",
+        "Hava durumu" to "Sıcaklık 20 derece, parçalı bulutlu",
+        "Hava durumu" to "Bugün 18°C, akşam hafif yağmur bekleniyor",
+        "Sistem" to "Yedekleme tamamlandı",
+        "Sistem güncellemesi" to "Yeni sürüm indirmeye hazır",
+        "Galeri" to "Yeni anılarınız hazır",
+        "Pil" to "Pil sağlığı iyi durumda",
+        "Takvim" to "Yarın için 1 etkinlik",
+        "Market" to "Sepetindeki ürünlerde indirim var",
+        "Kargo" to "Siparişin hazırlanıyor",
+        "Ayakkabı" to "Sezon sonu indirimi başladı",
+        "Elektronik" to "Kulaklıklarda %15 indirim",
+        "Kampanya" to "Hafta sonuna özel ücretsiz kargo",
+        "Haberler" to "Günün öne çıkan haberleri",
+        "Spor" to "Haftanın maç programı yayınlandı",
+        "Müzik" to "Senin için yeni çalma listesi",
+        "Adım sayar" to "Bugün 4.200 adım attın",
+        "Depolama" to "Gereksiz dosyalar temizlendi",
+        "Güvenlik" to "Tarama tamamlandı, tehdit bulunamadı",
+        "Kafe" to "Kahvende ikincisi %50 indirimli",
+        "Mağaza" to "Favori ürünün tekrar stokta",
+        "Uygulamalar" to "3 uygulama güncellendi",
+        "Hava durumu" to "Yarın güneşli, en yüksek 24°C",
+        "Kampanya" to "Sana özel kuponun seni bekliyor",
+    )
+    fun decoyOf(n: IslandContent.Notif): IslandContent.Notif {
+        val seed = (n.key.ifEmpty { n.pkg + n.title }).hashCode() and 0x7fffffff
+        val (t, x) = DECOYS[seed % DECOYS.size]
+        return n.copy(
+            title = t, text = x, icon = null, avatar = null, messaging = false, accent = 0,
+            translatedFrom = "", chips = emptyList(), blurText = false, privMasked = true,
+        )
+    }
 
     // ---- Doğrulama kodu
     private val otpWord = Regex("(?iu)(kod|code|şifre|sifre|parola|otp|doğrulama|dogrulama|verification|onay|pin)")
@@ -152,7 +197,7 @@ object NotifPrivacy {
 
     private fun maskContent(c: IslandContent, act: Boolean, r: Rule, label: (String) -> String): IslandContent = when (c) {
         is IslandContent.Notif -> when {
-            hidesNotif(c, act, r) -> maskNotif(c, r.blur, label)
+            hidesNotif(c, act, r) -> maskNotif(c, r, label)
             r.otp && looksOtp(c) -> maskOtp(c)
             else -> c
         }
@@ -401,4 +446,159 @@ class TwistDetector(private val ctx: Context, private val onTwist: () -> Unit) :
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+}
+
+// ---------------------------------------------------------------- Gizli açma hareketi
+/**
+ * Gizli içeriği açan özel hareket (basılı tutma dışındaki seçenekler). Hareket tamamlanınca [NotifPrivacy.peek] açılır,
+ * parmak(lar) kalkınca kapanır. Dönüş: 0 = hareket olmadı, kısa dokunuştu; 1 = içerik açıldı (ya da hareket bozuldu),
+ * dokunma sayılmaz; 2 = uzun basılı tutuldu (hareket yok).
+ *
+ * - [mode] 1: parmağı kaldırmadan önce sağa, sonra sola çiz.
+ * - [mode] 2: iki parmakla basılı tut.
+ * Olaylar Initial aşamasında tüketilir: alttaki dokunma algılayıcıları içerik açılınca dokunma saymaz.
+ */
+suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.privRevealGesture(
+    down: androidx.compose.ui.input.pointer.PointerInputChange, mode: Int, stepPx: Float, longMs: Long,
+): Int {
+    val pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial
+    var phase = 0                 // sağ-sol: 0 = sağa bekleniyor, 1 = sola bekleniyor
+    var maxX = down.position.x
+    var moved = false
+    var revealed = false
+    try {
+        while (true) {
+            val ev = awaitPointerEvent(pass)
+            val main = ev.changes.firstOrNull { it.id == down.id }
+            val pressed = ev.changes.count { it.pressed }
+            if (revealed) {
+                ev.changes.forEach { it.consume() }
+                if (pressed == 0) return 1
+                continue
+            }
+            if (main == null || !main.pressed) {
+                return when {
+                    moved -> 1
+                    main != null && main.uptimeMillis - down.uptimeMillis >= longMs -> 2
+                    else -> 0
+                }
+            }
+            val dx = main.position.x - down.position.x
+            val dy = main.position.y - down.position.y
+            if (kotlin.math.abs(dx) > stepPx * 0.5f || kotlin.math.abs(dy) > stepPx * 0.5f) moved = true
+            when (mode) {
+                1 -> {
+                    if (phase == 0 && dx > stepPx) { phase = 1; maxX = main.position.x }
+                    if (phase == 1) {
+                        if (main.position.x > maxX) maxX = main.position.x
+                        if (maxX - main.position.x > stepPx) revealed = true
+                    }
+                    if (moved && kotlin.math.abs(dx) > kotlin.math.abs(dy)) main.consume()
+                }
+                2 -> if (pressed >= 2) revealed = true
+            }
+            if (revealed) { NotifPrivacy.peek.value = true; ev.changes.forEach { it.consume() } }
+        }
+    } finally {
+        if (revealed) NotifPrivacy.peek.value = false
+    }
+}
+
+// ---------------------------------------------------------------- Panik sallaması
+/**
+ * Telefon kısa sürede iki kez sertçe sallanınca [onPanic] çağrılır. İvmeölçer yalnızca ekran açıkken dinlenir.
+ * Eşik yüksek tutulur (~2.4 g): yürümek, cebe koymak, masaya bırakmak tetiklemez.
+ */
+class ShakeWatch(private val ctx: Context, private val onPanic: () -> Unit) : SensorEventListener {
+    private val sm = ctx.getSystemService(SensorManager::class.java)
+    private val acc: Sensor? = sm?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private var enabled = false
+    private var listening = false
+    private var firstAt = 0L
+    private var lastPeak = 0L
+    private var lastFire = 0L
+
+    private val screen = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            when (i?.action) {
+                Intent.ACTION_SCREEN_OFF -> { NotifPrivacy.curtain.value = false; listen(false) }
+                Intent.ACTION_SCREEN_ON -> listen(enabled)
+            }
+        }
+    }
+
+    fun start() {
+        if (enabled || acc == null) return
+        enabled = true
+        runCatching {
+            ctx.registerReceiver(screen, IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON)
+            })
+        }
+        listen(ctx.getSystemService(android.os.PowerManager::class.java)?.isInteractive != false)
+    }
+
+    fun stop() {
+        if (!enabled) return
+        enabled = false
+        listen(false)
+        runCatching { ctx.unregisterReceiver(screen) }
+    }
+
+    private fun listen(on: Boolean) {
+        if (on == listening) return
+        listening = on
+        firstAt = 0L
+        if (on) sm?.registerListener(this, acc, SensorManager.SENSOR_DELAY_GAME) else sm?.unregisterListener(this)
+    }
+
+    override fun onSensorChanged(e: SensorEvent) {
+        val x = e.values[0]; val y = e.values[1]; val z = e.values[2]
+        val g = kotlin.math.sqrt(x * x + y * y + z * z) / SensorManager.GRAVITY_EARTH
+        if (g < 2.4f) return
+        val now = SystemClock.uptimeMillis()
+        if (now - lastFire < 2_000L) return
+        if (now - lastPeak < 180L) return          // aynı sarsıntının devamı
+        lastPeak = now
+        if (firstAt == 0L || now - firstAt > 1_000L) { firstAt = now; return }
+        firstAt = 0L
+        lastFire = now
+        onPanic()
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+}
+
+// ---------------------------------------------------------------- Titreşim imzası
+/** Kişiye özel titreşim desenleri: ekrana bakmadan kimden mesaj geldiğini anlamak için. */
+object BuzzSign {
+    val NAMES = listOf("İki kısa", "Uzun", "Kısa · uzun · kısa", "Kalp atışı")
+    private val PATTERNS = listOf(
+        longArrayOf(0, 60, 120, 60),
+        longArrayOf(0, 450),
+        longArrayOf(0, 60, 120, 300, 120, 60),
+        longArrayOf(0, 40, 90, 110, 450, 40, 90, 110),
+    )
+
+    /** Gönderen adı listelerden birine uyuyorsa desenin sırası (0..3), uymuyorsa -1. */
+    fun match(title: String, lists: List<String>): Int {
+        if (title.isBlank()) return -1
+        val t = title.lowercase(java.util.Locale("tr", "TR"))
+        lists.forEachIndexed { i, csv ->
+            csv.split(',').map { it.trim().lowercase(java.util.Locale("tr", "TR")) }.filter { it.isNotEmpty() }
+                .forEach { if (it in t) return i }
+        }
+        return -1
+    }
+
+    fun play(ctx: Context, i: Int) {
+        val p = PATTERNS.getOrNull(i) ?: return
+        runCatching {
+            @Suppress("DEPRECATION")
+            val v: android.os.Vibrator? = if (android.os.Build.VERSION.SDK_INT >= 31)
+                ctx.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+            else ctx.getSystemService(android.os.Vibrator::class.java)
+            v?.vibrate(android.os.VibrationEffect.createWaveform(p, -1))
+        }
+    }
 }

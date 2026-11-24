@@ -675,6 +675,14 @@ data class MoreSettings(
     val privToMin: Int = 1080,              // bitiş 18:00
     val privLocked: Boolean = false,        // kilit ekranında gizle
     val privOtp: Boolean = false,           // doğrulama kodları ●●●● olarak görünsün
+    val privSecure: Boolean = false,        // bildirim varken ada ekran görüntüsü / kayıtlarda görünmesin (FLAG_SECURE)
+    val privReveal: Int = 0,                // gizli içeriği açma: 0 basılı tut, 1 sağa-sola çiz, 2 iki parmakla basılı tut
+    val privDecoy: Boolean = false,         // yem metin: gizliyken sıradan sahte bildirim görünsün
+    val privBuzz1: String = "",             // titreşim imzası: desen 1..4'e atanan kişiler (virgüllü)
+    val privBuzz2: String = "",
+    val privBuzz3: String = "",
+    val privBuzz4: String = "",
+    val privPanic: Boolean = false,         // panik sallaması
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -824,6 +832,10 @@ class SettingsRepository(context: Context) {
         val X_PPEOPLE = stringPreferencesKey("x_ppeople"); val X_PSTILL = booleanPreferencesKey("x_pstill")
         val X_PSCHED = booleanPreferencesKey("x_psched"); val X_PFROM = intPreferencesKey("x_pfrom"); val X_PTO = intPreferencesKey("x_pto")
         val X_PLOCK = booleanPreferencesKey("x_plock"); val X_POTP = booleanPreferencesKey("x_potp")
+        val X_PSECURE = booleanPreferencesKey("x_psecure"); val X_PREVEAL = intPreferencesKey("x_preveal")
+        val X_PDECOY = booleanPreferencesKey("x_pdecoy"); val X_PPANIC = booleanPreferencesKey("x_ppanic")
+        val X_PBUZZ1 = stringPreferencesKey("x_pbuzz1"); val X_PBUZZ2 = stringPreferencesKey("x_pbuzz2")
+        val X_PBUZZ3 = stringPreferencesKey("x_pbuzz3"); val X_PBUZZ4 = stringPreferencesKey("x_pbuzz4")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1166,6 +1178,14 @@ class SettingsRepository(context: Context) {
                 privToMin = p[K.X_PTO] ?: d.more.privToMin,
                 privLocked = p[K.X_PLOCK] ?: d.more.privLocked,
                 privOtp = p[K.X_POTP] ?: d.more.privOtp,
+                privSecure = p[K.X_PSECURE] ?: d.more.privSecure,
+                privReveal = p[K.X_PREVEAL] ?: d.more.privReveal,
+                privDecoy = p[K.X_PDECOY] ?: d.more.privDecoy,
+                privPanic = p[K.X_PPANIC] ?: d.more.privPanic,
+                privBuzz1 = p[K.X_PBUZZ1] ?: d.more.privBuzz1,
+                privBuzz2 = p[K.X_PBUZZ2] ?: d.more.privBuzz2,
+                privBuzz3 = p[K.X_PBUZZ3] ?: d.more.privBuzz3,
+                privBuzz4 = p[K.X_PBUZZ4] ?: d.more.privBuzz4,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1313,6 +1333,8 @@ class SettingsRepository(context: Context) {
             it[K.X_PWORDSON] = m.privWordsOn; it[K.X_PWORDS] = m.privWords; it[K.X_PPEOPLE] = m.privPeople
             it[K.X_PSTILL] = m.privStill; it[K.X_PSCHED] = m.privSched; it[K.X_PFROM] = m.privFromMin; it[K.X_PTO] = m.privToMin
             it[K.X_PLOCK] = m.privLocked; it[K.X_POTP] = m.privOtp
+            it[K.X_PSECURE] = m.privSecure; it[K.X_PREVEAL] = m.privReveal; it[K.X_PDECOY] = m.privDecoy; it[K.X_PPANIC] = m.privPanic
+            it[K.X_PBUZZ1] = m.privBuzz1; it[K.X_PBUZZ2] = m.privBuzz2; it[K.X_PBUZZ3] = m.privBuzz3; it[K.X_PBUZZ4] = m.privBuzz4
         }
     }
 

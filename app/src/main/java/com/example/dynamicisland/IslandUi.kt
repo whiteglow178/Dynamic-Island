@@ -966,6 +966,16 @@ fun IslandPill(
                     if (isMediaNow) warm = true
                     val holdMode = holdModeNow && progress.mean < 0.5f
                     if (holdMode) { holding = true; IslandActions.onHoldPress(true) }
+                    // Gizli içerik + özel açma hareketi (sağa-sola çiz / iki parmak): NotifPrivacy.kt
+                    val revealMode = cfgNow.more.privReveal
+                    if (privMaskedNow && revealMode != 0) {
+                        if (holdMode) { holding = false; IslandActions.onHoldPress(false) }
+                        when (privRevealGesture(down, revealMode, 28.dp.toPx(), cfgNow.longPressMs.toLong())) {
+                            0 -> if (!holdMode) tapNow()
+                            2 -> if (holdMode) IslandActions.onHoldExpand() else longPressNow()
+                        }
+                        return@awaitEachGesture
+                    }
                     val slop = 40.dp.toPx()
                     val swipeMin = 18.dp.toPx()
                     var outcome = 0      // 0 = basılı tutma, 1 = dokunma, 2 = iptal, 3 = dikey kaydırma

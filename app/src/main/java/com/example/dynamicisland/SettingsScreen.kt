@@ -376,8 +376,12 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 draft.more.notifPrivate) { draft = draft.copy(more = draft.more.copy(notifPrivate = it)) }
             SwitchRow("Bilekle gizle", "Telefonu bilekten hızlıca çevirip geri getirince (kapı kolu çevirir gibi) adadaki bildirimler anında gizlenir, telefon titreşir. Aynı hareketle yeniden görünür. Ekran kapanınca gizleme kendiliğinden kalkar. Jiroskop gerekir.",
                 draft.more.notifTwist) { draft = draft.copy(more = draft.more.copy(notifTwist = it)) }
+            SwitchRow("Panik sallaması", "Telefonu kısa sürede iki kez sertçe sallayınca: ada küçülür, açık bildirim ve banner kapanır, müzik durur, bildirimler gizlenir. Gizleme ekranı kapatıp açınca kalkar (bilekle gizle açıksa bilek hareketiyle de).",
+                draft.more.privPanic) { draft = draft.copy(more = draft.more.copy(privPanic = it)) }
             SwitchRow("Ekran kaydında gizle", "Ekran kaydı sürerken ya da ekran başka bir ekrana yansıtılırken bildirimler kendiliğinden gizlenir; kayıt bitince yeniden görünür. Başka uygulamaların ekran paylaşımı (görüntülü görüşmede ekran paylaşma gibi) her telefonda algılanamayabilir.",
                 draft.more.notifPrivRec) { draft = draft.copy(more = draft.more.copy(notifPrivRec = it)) }
+            SwitchRow("Ekran görüntüsünde gösterme", "Adada bildirim ya da doğrulama kodu varken ekran görüntüsü alınırsa veya ekran kaydedilirse ada kayda girmez (o bölge boş ya da siyah çıkar). Ekranda normal görünür. Banner da kayda girmez. Müzik ve diğer durumlarda ada kayıtlarda normal görünür.",
+                draft.more.privSecure) { draft = draft.copy(more = draft.more.copy(privSecure = it)) }
             SwitchRow("Telefon masadayken gizle", "Telefon masada yatarken 15 saniye hiç kıpırdamazsa bildirimler gizlenir; eline aldığın an yeniden görünür. Masadaki telefona başkası göz atamaz. Ekran açıkken ivmeölçeri kullanır.",
                 draft.more.privStill) { draft = draft.copy(more = draft.more.copy(privStill = it)) }
             SwitchRow("Kilit ekranında gizle", "Telefon kilitliyken adadaki bildirimler gizlenir, kilidi açınca normal görünür.",
@@ -393,6 +397,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     draft = draft.copy(more = draft.more.copy(privToMin = ((it / 15f).roundToInt() * 15).coerceIn(0, 1425)))
                 }
             }
+            SwitchRow("Yem metin", "Gizliyken \"Yeni bildirim\" yerine sıradan, dikkat çekmeyen sahte bir bildirim görünür (\"Giyim ürünlerinde %10 indirim\", \"5 güncelleme mevcut\", \"Sıcaklık 20 derece\" gibi). Uygulama simgesi de gizlenir. Açıksa bulanık önizlemenin yerine geçer.",
+                draft.more.privDecoy) { draft = draft.copy(more = draft.more.copy(privDecoy = it)) }
             SwitchRow("Bulanık önizleme", "Gizliyken \"Yeni bildirim\" yerine yazı bulanık görünür: mesajın uzunluğu belli olur ama okunmaz. Sohbet bildirimlerinde gönderenin adı görünür. Gerçek yazı ekrana hiç çizilmez.",
                 draft.more.notifBlurPeek) { draft = draft.copy(more = draft.more.copy(notifBlurPeek = it)) }
             SwitchRow("Müziği de gizle", "Gizleme devredeyken (gizli mod, bilek hareketi, ekran kaydı, masa, kilit ya da saat) adada şarkı adı, sanatçı, kapak ve şarkı sözleri gizlenir; yalnızca ekolayzır ve süre görünür.",
@@ -428,6 +434,37 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             )
             Text("Bildirimde görünen ad ya da grup adının bir parçası yeterli. Boş bırakırsan kapalıdır.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SubHeader("İçeriği açma hareketi")
+            RadioRow("Basılı tut", "Gizli bildirimin üstünde basılı tut; bırakınca yeniden gizlenir", draft.more.privReveal == 0) {
+                draft = draft.copy(more = draft.more.copy(privReveal = 0))
+            }
+            RadioRow("Sağa, sonra sola çiz", "Parmağını kaldırmadan önce sağa sonra sola kaydır; parmak ekrandayken içerik görünür. Yanındaki biri basılı tutmayı görse de taklit edemez", draft.more.privReveal == 1) {
+                draft = draft.copy(more = draft.more.copy(privReveal = 1))
+            }
+            RadioRow("İki parmakla basılı tut", "İki parmağını birden adaya koy; parmaklar ekrandayken içerik görünür", draft.more.privReveal == 2) {
+                draft = draft.copy(more = draft.more.copy(privReveal = 2))
+            }
+            SubHeader("Titreşim imzası")
+            Text("Kişilere özel titreşim: telefona bakmadan kimden mesaj geldiğini anlarsın. Her desene kişi adlarını virgülle yaz. İpucu: yalnızca imzayı hissetmek için o uygulamanın kendi titreşimini sistem ayarlarından kapatabilirsin.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            val buzzCtx = androidx.compose.ui.platform.LocalContext.current
+            val buzzVals = listOf(draft.more.privBuzz1, draft.more.privBuzz2, draft.more.privBuzz3, draft.more.privBuzz4)
+            BuzzSign.NAMES.forEachIndexed { i, name ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = buzzVals[i],
+                        onValueChange = { v ->
+                            if (v.length <= 300) draft = draft.copy(more = when (i) {
+                                0 -> draft.more.copy(privBuzz1 = v); 1 -> draft.more.copy(privBuzz2 = v)
+                                2 -> draft.more.copy(privBuzz3 = v); else -> draft.more.copy(privBuzz4 = v)
+                            })
+                        },
+                        label = { Text(name) }, placeholder = { Text("Ayşe, Annem") },
+                        singleLine = true, modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { BuzzSign.play(buzzCtx, i) }) { Text("Dene") }
+                }
+            }
             SubHeader("Bildirim türü")
             SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
                 draft.notifBanner) { draft = draft.copy(notifBanner = it, notifInline = if (it) false else draft.notifInline) }
