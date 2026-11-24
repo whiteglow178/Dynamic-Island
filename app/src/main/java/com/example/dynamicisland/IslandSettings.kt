@@ -660,6 +660,8 @@ data class MoreSettings(
     val notchDepthDp: Float = 0f,           // çentiğin kameranın altına ne kadar ineceği (ek derinlik, dp)
     val neonParts: Int = 0,                 // renkli çerçeve müzik panelinde de: bit bit NEON_PART_* (kapak, beğeni, oynat, önceki/sonraki, ilerleme, şarkı adı, sanatçı, ekolayzır)
     val neonTheme: Boolean = false,         // müzik panelinde tuşlar / yazılar / çubuk / ekolayzır renkli çerçevenin temasına boyansın
+    val notifPrivate: Boolean = false,      // gizli bildirim modu: adada yalnızca uygulama adı + "Yeni bildirim"; basılı tutunca içerik görünür
+    val notifTwist: Boolean = false,        // bilekle hızlı çevirince bildirimler gizlensin / yeniden görünsün
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -802,6 +804,7 @@ class SettingsRepository(context: Context) {
         val X_ORBIT = booleanPreferencesKey("x_orbit"); val X_EQX = intPreferencesKey("x_eqx"); val X_ARTC = intPreferencesKey("x_artc"); val X_SIDEW = booleanPreferencesKey("x_sidew"); val X_AVOID = booleanPreferencesKey("x_avoid")
         val X_NOTCH = booleanPreferencesKey("x_notch"); val X_NOTCHW = floatPreferencesKey("x_notchw"); val X_NOTCHD = floatPreferencesKey("x_notchd")
         val X_NEONPARTS = intPreferencesKey("x_neonparts"); val X_NEONTHEME = booleanPreferencesKey("x_neontheme")
+        val X_NOTIFPRIV = booleanPreferencesKey("x_notifpriv"); val X_NOTIFTWIST = booleanPreferencesKey("x_notiftwist")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1129,6 +1132,8 @@ class SettingsRepository(context: Context) {
                 notchDepthDp = (p[K.X_NOTCHD] ?: d.more.notchDepthDp).coerceIn(-10f, 30f),
                 neonParts = p[K.X_NEONPARTS] ?: d.more.neonParts,
                 neonTheme = p[K.X_NEONTHEME] ?: d.more.neonTheme,
+                notifPrivate = p[K.X_NOTIFPRIV] ?: d.more.notifPrivate,
+                notifTwist = p[K.X_NOTIFTWIST] ?: d.more.notifTwist,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1270,6 +1275,7 @@ class SettingsRepository(context: Context) {
             it[K.X_ORBIT] = m.eqOrbit; it[K.X_EQX] = m.eqStyleX; it[K.X_ARTC] = m.artCircle; it[K.X_SIDEW] = m.sideWide; it[K.X_AVOID] = m.avoidIcons
             it[K.X_NOTCH] = m.notchMode; it[K.X_NOTCHW] = m.notchWidthDp; it[K.X_NOTCHD] = m.notchDepthDp
             it[K.X_NEONPARTS] = m.neonParts; it[K.X_NEONTHEME] = m.neonTheme
+            it[K.X_NOTIFPRIV] = m.notifPrivate; it[K.X_NOTIFTWIST] = m.notifTwist
         }
     }
 

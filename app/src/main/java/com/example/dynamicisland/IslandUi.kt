@@ -991,10 +991,19 @@ fun IslandPill(
                     if (holdMode && outcome != 0) { holding = false; IslandActions.onHoldPress(false) }
                     when (outcome) {
                         0 -> {
-                            if (holdMode) { IslandActions.onHoldExpand(); holding = false } else longPressNow()
-                            do {
-                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
-                            } while (c != null && c.pressed)
+                            // Gizli bildirim: basılı tutunca içerik görünür, parmak kalkınca yeniden gizlenir (NotifPrivacy.kt)
+                            val peekMode = isNotifNow && NotifPrivacy.active.value
+                            if (peekMode) {
+                                if (holdMode) { holding = false; IslandActions.onHoldPress(false) }
+                                NotifPrivacy.peek.value = true
+                            } else if (holdMode) { IslandActions.onHoldExpand(); holding = false } else longPressNow()
+                            try {
+                                do {
+                                    val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                                } while (c != null && c.pressed)
+                            } finally {
+                                if (peekMode) NotifPrivacy.peek.value = false
+                            }
                         }
                         1 -> {
                             val c = cfgNow

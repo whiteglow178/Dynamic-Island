@@ -371,6 +371,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         page("Çeviri", subtitle = "Boştayken adaya dokununca açılan çeviri paneli") { TranslateSection(draft) { draft = it } }
 
         sec("Bildirimler", "Adada görünen bildirim için hareketler") {
+            SubHeader("Gizlilik")
+            SwitchRow("Gizli bildirim modu", "Adada bildirimin içeriği yerine yalnızca uygulamanın adı ve \"Yeni bildirim\" yazar; kişi fotoğrafı ve hızlı düğmeler de gizlenir. Bildirimin üstünde basılı tutunca içerik görünür, parmağını kaldırınca yeniden gizlenir. Dokununca uygulama her zamanki gibi açılır.",
+                draft.more.notifPrivate) { draft = draft.copy(more = draft.more.copy(notifPrivate = it)) }
+            SwitchRow("Bilekle gizle", "Telefonu bilekten hızlıca çevirip geri getirince (kapı kolu çevirir gibi) adadaki bildirimler anında gizlenir, telefon titreşir. Aynı hareketle yeniden görünür. Ekran kapanınca gizleme kendiliğinden kalkar. Jiroskop gerekir.",
+                draft.more.notifTwist) { draft = draft.copy(more = draft.more.copy(notifTwist = it)) }
             SubHeader("Bildirim türü")
             SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
                 draft.notifBanner) { draft = draft.copy(notifBanner = it, notifInline = if (it) false else draft.notifInline) }
