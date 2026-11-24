@@ -94,7 +94,7 @@ fun AboutContent() {
             "Bildirimleriniz, ekran içeriğiniz ve kişisel verileriniz sunucularımıza gönderilmez ve " +
                 "bizimle paylaşılmaz; ada ile ilgili işlemler telefonunuzda gerçekleşir. Şarkı sözleri, " +
                 "maç skorları ve güncelleme denetimi gibi bazı özellikler yalnızca gerekli arama bilgisini " +
-                "ilgili hizmete (ör. LRCLIB, TheSportsDB, iTunes, GitHub) gönderir.",
+                "ilgili hizmete (ör. LRCLIB, TheSportsDB, GitHub) gönderir.",
             color = cs.onSurface, fontSize = 14.sp, lineHeight = 20.sp,
         )
     }
