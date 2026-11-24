@@ -196,6 +196,24 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 runCatching { if (on) shakeWatch.start() else shakeWatch.stop() }
             }
         }
+        // Yeni uygulama uyarısı, pil uyarıları, okunmamış sayacı (SafetyTools.kt)
+        scope.launch {
+            settings.map { it.more.newAppAlert }.distinctUntilChanged().collect { on ->
+                runCatching { if (on) appWatch.start() else appWatch.stop() }
+            }
+        }
+        scope.launch {
+            settings.map { it.more.battFullAlert || it.more.battHotAlert }.distinctUntilChanged().collect { on ->
+                runCatching { if (on) batteryCare.start() else batteryCare.stop() }
+            }
+        }
+        scope.launch {
+            settings.map { it.more.unreadBadge }.distinctUntilChanged().collect { on ->
+                UnreadBadge.enabled = on
+                if (!on) UnreadBadge.count.value = 0
+                runCatching { IslandNotificationListener.refreshUnread() }
+            }
+        }
         // VPN göstergesi (NetTools.kt)
         scope.launch {
             settings.map { it.more.vpnIndicator }.distinctUntilChanged().collect { on ->
@@ -1045,6 +1063,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
     private val castWatch by lazy { CastWatch(this) }
     private val stillWatch by lazy { StillWatch(this) }
+    private val appWatch by lazy {
+        AppInstallWatch(this) { _, label ->
+            IslandBus.post(IslandEvent.Status(
+                IslandContent.Status(StatusKind.Network, title = "Yeni uygulama", value = label.take(14), extra = 6), 4_500L,
+            ))
+        }
+    }
+    private val batteryCare by lazy {
+        BatteryCare(this, { settings.value }) { c, ms -> IslandBus.post(IslandEvent.Status(c, ms)) }
+    }
     private var vpnArmedAt = 0L
     private var vpnLostJob: Job? = null
     private val vpnWatch by lazy {
@@ -3298,6 +3326,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { castWatch.stop() }
         runCatching { stillWatch.stop() }
         runCatching { vpnWatch.stop() }
+        runCatching { appWatch.stop() }
+        runCatching { batteryCare.stop() }
+        UnreadBadge.enabled = false
         NetSpeed.stop()
         runCatching { shakeWatch.stop() }
         runCatching { lockWatch.stop() }

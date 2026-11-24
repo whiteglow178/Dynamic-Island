@@ -689,6 +689,13 @@ data class MoreSettings(
     val focusBreakMin: Int = 5,             // kısa mola (dk)
     val focusLongMin: Int = 15,             // her 4 odaktan sonra uzun mola (dk)
     val focusHide: Boolean = false,         // odak sırasında bildirimler gizlensin
+    val newAppAlert: Boolean = false,       // yeni uygulama yüklenince ada uyarır
+    val privHistory: Boolean = false,       // kamera / mikrofon geçmişi (yalnızca bellekte)
+    val chargeWatts: Boolean = false,       // şarj süresi tahmininin yanında şarj hızı (watt)
+    val battFullAlert: Boolean = false,     // şarjda pil %100 olunca uyarı
+    val battHotAlert: Boolean = false,      // telefon çok sıcak olunca uyarı
+    val battHotC: Int = 42,                 // sıcaklık eşiği (°C)
+    val unreadBadge: Boolean = false,       // boştaki adada okunmamış bildirim sayacı
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -845,6 +852,10 @@ class SettingsRepository(context: Context) {
         val X_VPN = booleanPreferencesKey("x_vpn"); val X_NETSPD = intPreferencesKey("x_netspd")
         val X_FWORK = intPreferencesKey("x_fwork"); val X_FBREAK = intPreferencesKey("x_fbreak")
         val X_FLONG = intPreferencesKey("x_flong"); val X_FHIDE = booleanPreferencesKey("x_fhide")
+        val X_NEWAPP = booleanPreferencesKey("x_newapp"); val X_PHIST = booleanPreferencesKey("x_phist")
+        val X_CHGWATT = booleanPreferencesKey("x_chgwatts"); val X_BFULL = booleanPreferencesKey("x_bfull")
+        val X_BHOT = booleanPreferencesKey("x_bhot"); val X_BHOTC = intPreferencesKey("x_bhotc")
+        val X_UNREAD = booleanPreferencesKey("x_unread")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1201,6 +1212,13 @@ class SettingsRepository(context: Context) {
                 focusBreakMin = p[K.X_FBREAK] ?: d.more.focusBreakMin,
                 focusLongMin = p[K.X_FLONG] ?: d.more.focusLongMin,
                 focusHide = p[K.X_FHIDE] ?: d.more.focusHide,
+                newAppAlert = p[K.X_NEWAPP] ?: d.more.newAppAlert,
+                privHistory = p[K.X_PHIST] ?: d.more.privHistory,
+                chargeWatts = p[K.X_CHGWATT] ?: d.more.chargeWatts,
+                battFullAlert = p[K.X_BFULL] ?: d.more.battFullAlert,
+                battHotAlert = p[K.X_BHOT] ?: d.more.battHotAlert,
+                battHotC = (p[K.X_BHOTC] ?: d.more.battHotC).coerceIn(38, 50),
+                unreadBadge = p[K.X_UNREAD] ?: d.more.unreadBadge,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1352,6 +1370,8 @@ class SettingsRepository(context: Context) {
             it[K.X_PBUZZ1] = m.privBuzz1; it[K.X_PBUZZ2] = m.privBuzz2; it[K.X_PBUZZ3] = m.privBuzz3; it[K.X_PBUZZ4] = m.privBuzz4
             it[K.X_VPN] = m.vpnIndicator; it[K.X_NETSPD] = m.netSpeedMode
             it[K.X_FWORK] = m.focusWorkMin; it[K.X_FBREAK] = m.focusBreakMin; it[K.X_FLONG] = m.focusLongMin; it[K.X_FHIDE] = m.focusHide
+            it[K.X_NEWAPP] = m.newAppAlert; it[K.X_PHIST] = m.privHistory; it[K.X_CHGWATT] = m.chargeWatts
+            it[K.X_BFULL] = m.battFullAlert; it[K.X_BHOT] = m.battHotAlert; it[K.X_BHOTC] = m.battHotC; it[K.X_UNREAD] = m.unreadBadge
         }
     }
 

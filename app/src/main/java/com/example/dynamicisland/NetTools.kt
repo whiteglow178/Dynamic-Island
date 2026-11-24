@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.TrafficStats
 import android.os.SystemClock
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -178,7 +179,9 @@ internal fun IdleNetBadges(cfg: IslandSettings, modifier: androidx.compose.ui.Mo
     tick.let { }
     val showSpeed = mode == 2 || (mode == 1 && (active || now - lastActive[0] < 3_000L))
     val showVpn = cfg.more.vpnIndicator && vpnOn
-    if (!showSpeed && !showVpn) return
+    val unread by UnreadBadge.count.collectAsState()
+    val showBadge = cfg.more.unreadBadge && unread > 0
+    if (!showSpeed && !showVpn && !showBadge) return
     val txt = Pal.c("island_text")
     androidx.compose.foundation.layout.Box(modifier.padding(horizontal = 9.dp)) {
         androidx.compose.foundation.layout.Row(
@@ -199,7 +202,19 @@ internal fun IdleNetBadges(cfg: IslandSettings, modifier: androidx.compose.ui.Mo
                 )
             }
         }
-        if (showSpeed) {
+        if (showBadge) {
+            // Okunmamış bildirim sayacı: kırmızı daire, sağ köşede (yükleme hızının yerine geçer)
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.CenterEnd).size(14.dp)
+                    .background(Color(0xFFFF453A), androidx.compose.foundation.shape.CircleShape),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                androidx.compose.material3.Text(
+                    if (unread > 9) "9+" else unread.toString(), color = Color.White, fontSize = 8.sp, maxLines = 1, softWrap = false,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                )
+            }
+        } else if (showSpeed) {
             androidx.compose.material3.Text(
                 "↑" + NetSpeed.short(rate.second), color = txt.copy(alpha = 0.75f), fontSize = 9.5.sp, maxLines = 1, softWrap = false,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,

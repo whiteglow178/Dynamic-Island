@@ -285,6 +285,10 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     draft.privacyExpand,
                 ) { draft = draft.copy(privacyExpand = it) }
             }
+            SubHeader("Geçmiş")
+            SwitchRow("Kamera / mikrofon geçmişi", "Kamera ya da mikrofon ne zaman, ne kadar süre kullanıldı ve (tahminen) hangi uygulamayla: aşağıda listelenir. Göstergeden bağımsız çalışır. Yalnızca bellekte tutulur (en çok 40 kayıt): diske yazılmaz, hiçbir yere gönderilmez, uygulama kapanınca ya da telefon yeniden başlayınca silinir. Uygulama adını Android vermez; kullanım başladığında ön planda olan uygulama gösterilir",
+                draft.more.privHistory) { draft = draft.copy(more = draft.more.copy(privHistory = it)) }
+            if (draft.more.privHistory) PrivacyHistoryList()
         }
         sec("Nokta modu", "Ada yerine 3, 4 ya da 5 nokta; olaylar nokta (baloncuk) olarak görünür") {
             SwitchRow(
@@ -465,6 +469,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     TextButton(onClick = { BuzzSign.play(buzzCtx, i) }) { Text("Dene") }
                 }
             }
+            SubHeader("Uyarılar ve rozet")
+            SwitchRow("Yeni uygulama uyarısı", "Telefona yeni bir uygulama kurulunca ada \"Yeni uygulama · uygulama adı\" der. Bilmediğin bir kurulumu hemen fark edersin. Güncellemeler sayılmaz. Not: bir uygulamanın sonradan yetki istemesini Android bildirmez, yalnızca kurulum algılanır. İzin gerektirmez",
+                draft.more.newAppAlert) { draft = draft.copy(more = draft.more.copy(newAppAlert = it)) }
+            SwitchRow("Okunmamış bildirim sayacı", "Boştaki adanın sağ köşesinde, bekleyen (silinmemiş) bildirim sayısı küçük kırmızı rozetle görünür. \"Boştayken de göster\" açık olmalı. Rozet göründüğünde ağ hızının yükleme kısmı gizlenir. Devam eden (müzik, arama gibi) ve kaydırılamayan bildirimler sayılmaz",
+                draft.more.unreadBadge) { draft = draft.copy(more = draft.more.copy(unreadBadge = it)) }
             SubHeader("Bildirim türü")
             SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
                 draft.notifBanner) { draft = draft.copy(notifBanner = it, notifInline = if (it) false else draft.notifInline) }

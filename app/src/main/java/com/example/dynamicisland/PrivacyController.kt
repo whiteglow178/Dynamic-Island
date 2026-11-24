@@ -40,6 +40,7 @@ class PrivacyController(private val host: IslandHost) {
 
     /** Erişilebilirlik servisinden gelen ön plan değişimi: kamera uygulaması açıldıysa kamera kullanılıyor sayılır. */
     fun onForeground(pkg: String) {
+        PrivacyLog.fgPkg = pkg          // kamera / mikrofon geçmişi: kullanımı başlatan uygulama tahmini
         val front = pkg in cameraPkgs
         if (front == camAppFront) return
         camAppFront = front
@@ -89,6 +90,12 @@ class PrivacyController(private val host: IslandHost) {
 
     /** Kamera / mikrofon durumuna göre göstergeyi günceller: başlayınca kısa süre panel açılır, sonra nokta olarak kalır. */
     fun refresh() {
+        // Geçmiş: gösterge ayarından bağımsız, kendi ayarıyla (yalnızca bellekte)
+        PrivacyLog.update(
+            host.settings.more.privHistory,
+            camBusy.isNotEmpty() || torchBusy.isNotEmpty() || camAppFront,
+            micBusy,
+        )
         val on = host.settings.privacyIndicator
         val cam = on && (camBusy.isNotEmpty() || torchBusy.isNotEmpty() || camAppFront)
         val mic = on && micBusy

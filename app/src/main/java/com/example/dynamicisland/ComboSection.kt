@@ -32,6 +32,7 @@ fun ComboSections() {
                 calendarFx = v.calendarFx, chargeArcs = v.chargeArcs, lowBattSparks = v.lowBattSparks, notifShatter = v.notifShatter,
                 progressIsland = v.progressIsland, scoreIsland = v.scoreIsland,
                 chargeEta = v.chargeEta, flipSilence = v.flipSilence, charge80 = v.charge80, charge80Night = v.charge80Night,
+                chargeWatts = v.chargeWatts, battFullAlert = v.battFullAlert, battHotAlert = v.battHotAlert, battHotC = v.battHotC,
                 fxPets = v.fxPets, fxPetCount = v.fxPetCount,
                 petTouch = v.petTouch, petCompact = v.petCompact, petGrowth = v.petGrowth, petSocial = v.petSocial, petBall = v.petBall,
             ))
@@ -93,6 +94,17 @@ fun ComboSections() {
             cur.chargeArcs) { set(cur.copy(chargeArcs = it)) }
         SwitchRow("Şarj süresi tahmini", "Şarjdayken tam dolmaya kalan süre gösterilir: tahmin ilk hesaplanınca, şarjdayken kilit açılınca ve şarj halkasında. Tam dolunca ada \"Tam doldu\" der. Sistemin kendi tahmini varsa o kullanılır, yoksa şarj hızı ölçülür (ilk birkaç dakika tahmin olmayabilir)",
             cur.chargeEta) { set(cur.copy(chargeEta = it)) }
+        if (cur.chargeEta) {
+            SwitchRow("Şarj hızını göster (watt)", "Şarj süresinin yanına şarj hızı eklenir (ör. \"38 dk kaldı · 18 W\"). Sistemin anlık akım ölçümü × pil gerilimi hesaplanır; bazı telefonlar akımı vermez, o zaman yalnızca süre görünür. Değer şarj ilerledikçe değişir (kablo ve adaptöre göre)",
+                cur.chargeWatts) { set(cur.copy(chargeWatts = it)) }
+        }
+        SwitchRow("%100 uyarısı", "Şarjdayken pil %100'e ulaşınca ada kısa bir titreşimle \"Pil doldu · Şarjı çıkar\" der. Her şarjda bir kez uyarır. Açıkken \"Tam doldu\" hapı yerine bu gösterilir",
+            cur.battFullAlert) { set(cur.copy(battFullAlert = it)) }
+        SwitchRow("Çok sıcak uyarısı", "Pil sıcaklığı eşiği geçince ada çift titreşimle \"Çok sıcak · 43°C\" der (şarj, oyun, güneş altında). Sıcaklık eşiğin 3°C altına inene kadar tekrar uyarmaz. Ölçüm pilin sıcaklığıdır; ekran ya da işlemci sıcaklığı değildir",
+            cur.battHotAlert) { set(cur.copy(battHotAlert = it)) }
+        if (cur.battHotAlert) {
+            SliderRow("Sıcaklık eşiği", cur.battHotC.toFloat(), 38f..50f, "${cur.battHotC}°C") { set(cur.copy(battHotC = (it + 0.5f).toInt().coerceIn(38, 50))) }
+        }
         SwitchRow("%80 uyarısı", "Şarjdayken pil %80'e ulaşınca ada kısa bir titreşimle \"Şarjı çıkarabilirsin\" der. Pil ömrünü uzatmak için. Her şarjda bir kez uyarır; şarjdan çıkarıp yeniden takınca tekrar kurulur",
             cur.charge80) { set(cur.copy(charge80 = it)) }
         if (cur.charge80) {

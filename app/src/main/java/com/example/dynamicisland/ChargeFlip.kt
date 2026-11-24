@@ -47,6 +47,7 @@ class ChargeTimeEstimator(
     private var fullShown = false
     private var registered = false
     private var alerted80 = false          // bu şarjda %80 uyarısı verildi (ya da takıldığında zaten %80 üstündeydi)
+    private var voltageMv = 0              // son okunan pil gerilimi (şarj hızı hesabı için)
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
@@ -82,6 +83,7 @@ class ChargeTimeEstimator(
         if (lvl < 0) return
         val p = lvl * 100f / sc
         val nowPlugged = i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+        voltageMv = i.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0)
         if (!nowPlugged) {
             plugged = false; samples.clear(); announced = false; fullShown = false; alerted80 = false; pct = p
             return
@@ -107,7 +109,8 @@ class ChargeTimeEstimator(
         while (samples.size > 2 && now - samples.first().first > 20 * 60_000L) samples.removeFirst()
         if (!on()) return
         if (p >= 99.5f) {
-            if (!fullShown) { fullShown = true; show(pill("Tam doldu", 100)) }
+            // Ayrı "%100 uyarısı" açıksa (BatteryCare) aynı şeyi iki kez göstermeyelim
+            if (!fullShown) { fullShown = true; if (!settings.value.more.battFullAlert) show(pill("Tam doldu", 100)) }
             return
         }
         if (!announced) {
@@ -148,7 +151,10 @@ class ChargeTimeEstimator(
 
     private fun format(ms: Long): String {
         val min = ceil(ms / 60_000.0).toInt().coerceAtLeast(1)
-        return if (min < 60) "$min dk kaldı" else "${min / 60} sa ${min % 60} dk"
+        val t = if (min < 60) "$min dk kaldı" else "${min / 60} sa ${min % 60} dk"
+        // Şarj hızı (watt) ayarı açıksa ve ölçülebiliyorsa yanına eklenir
+        val w = if (settings.value.more.chargeWatts) chargeWatts(ctx, voltageMv) else null
+        return if (w != null) "$t · $w" else t
     }
 
     private fun pill(title: String, p: Int) = IslandContent.Status(

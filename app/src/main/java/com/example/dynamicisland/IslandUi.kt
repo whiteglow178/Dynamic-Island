@@ -1330,7 +1330,7 @@ fun IslandPill(
             }
         }
 
-        if (content is IslandContent.Idle && compactVisible && !cfg.dotMode && (cfg.more.netSpeedMode != 0 || cfg.more.vpnIndicator)) {
+        if (content is IslandContent.Idle && compactVisible && !cfg.dotMode && (cfg.more.netSpeedMode != 0 || cfg.more.vpnIndicator || cfg.more.unreadBadge)) {
             // Boştaki ada: VPN kalkanı + ağ hızı -> NetTools.kt
             IdleNetBadges(
                 cfg,

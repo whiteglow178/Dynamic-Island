@@ -80,7 +80,19 @@ private val GUIDE: List<InfoSection> = listOf(
         InfoItem("Ne gizlenir?", "Seçili uygulamaların (ya da hepsinin) bildirimleri; istersen müzik de. Gizlenen bildirim uygulama adı + \"Yeni bildirim\", bulanık yazı ya da yem metin olarak görünür."),
         InfoItem("Her zaman gizlenenler", "Doğrulama kodları, hassas kelime geçen bildirimler ve seçtiğin kişilerin mesajları gizleme kapalıyken de gizlenir."),
         InfoItem("Gizli içeriği görmek", "Seçtiğin hareketle (basılı tut, sağa-sola çiz ya da iki parmak) içerik görünür, parmak kalkınca yeniden gizlenir. Dokununca uygulama her zamanki gibi açılır, kod doğru kopyalanır."),
-        InfoItem("Kayıt tutulmaz", "Gizlilik özellikleri hiçbir şey kaydetmez ve göndermez; yalnızca ekranda gösterilen kopya değiştirilir."),
+        InfoItem("Kayıt tutulmaz", "Gizlilik özellikleri hiçbir şey kaydetmez ve göndermez; yalnızca ekranda gösterilen kopya değiştirilir. Tek istisna, açarsan \"Kamera / mikrofon geçmişi\": yalnızca bellekte tutulur, uygulama kapanınca silinir."),
+    )),
+    InfoSection("Başlarken", "Şarj ve pil uyarıları", "Ana Sayfa › Birleşik efektler › Şarj ve pil", listOf(
+        InfoItem("%100 uyarısı", "Şarj takılıyken pil %100 olunca ada \"Pil doldu · Şarjı çıkar\" der ve kısa titrer. Her şarjda bir kez gösterilir. Açıkken \"Tam doldu\" hapı yerine bu uyarı çıkar."),
+        InfoItem("Çok sıcak uyarısı", "Pil sıcaklığı seçtiğin eşiği (38-50 °C, varsayılan 42) geçince ada \"Çok sıcak\" der ve titrer. Sıcaklık eşiğin 3 °C altına inene kadar tekrar uyarmaz. İki uyarı birbirinden bağımsız açılıp kapanır."),
+        InfoItem("Şarj hızı (watt)", "\"Şarj süresi tahmini\" açıkken süre bilgisinin yanında anlık şarj gücü (örn. 18 W) yazar. Bazı telefonlar akım bilgisini vermez; o zaman watt görünmez."),
+        InfoItem("Şarj süresi ve %80 uyarısı", "Daha önce eklenmişti: şarj tamamlanma süresi tahmini ve %80 uyarısı aynı bölümde durur."),
+    )),
+    InfoSection("Başlarken", "Güvenlik ve rozet", "Ayarlar › Bildirimler / Kamera-mikrofon", listOf(
+        InfoItem("Yeni uygulama uyarısı", "Yeni bir uygulama kurulunca adada adı görünür; bilmediğin bir kurulumu fark edersin. Yalnızca kurulum algılanır, güncelleme ve sonradan istenen izinler algılanmaz."),
+        InfoItem("Kamera / mikrofon geçmişi", "Kamera ya da mikrofon ne zaman ve ne kadar süre kullanıldı listeler. Uygulama adı bir tahmindir (kullanım başladığında ön plandaki uygulama). Android bu bilgiyi vermez. Geçmiş temizlenebilir."),
+        InfoItem("Okunmamış bildirim sayacı", "Boştaki adanın sağında bekleyen bildirim sayısı kırmızı rozetle görünür (9'dan fazlası \"9+\"). Rozet varken ağ hızının yükleme kısmı gizlenir."),
+        InfoItem("Panoyu okuyan uygulamalar", "Android panoya erişimi bildirmediği için bu uyarı yapılamaz. Kısayol şeridi ise \"Ada çekmecesi\" olarak zaten vardır."),
     )),
 )
 

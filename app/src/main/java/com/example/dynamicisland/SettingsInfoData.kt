@@ -52,6 +52,8 @@ private fun part0(): List<InfoSection> = listOf(
     InfoSection("Yerleşim", "Kamera / mikrofon göstergesi", "Bir uygulama kamerayı ya da mikrofonu kullanırken ada haber verir", listOf(
         i("Gösterge", "Kamera ya da mikrofon açılınca ada kısa süre açılır, sonra yeşil (kamera) / turuncu (mikrofon) nokta olarak kalır. Nokta modunda ve normal adada çalışır. Hangi uygulamanın kullandığı Android tarafından verilmez"),
         i("Açılınca genişlesin", "Açıkken kamera / mikrofon başlayınca ada 4 saniye genişleyip sonra küçülür. Kapalıyken hiç genişlemez, doğrudan küçük gösterge olarak görünür"),
+        h("Geçmiş"),
+        i("Kamera / mikrofon geçmişi", "Kamera ya da mikrofon ne zaman, ne kadar süre kullanıldı ve (tahminen) hangi uygulamayla: aşağıda listelenir. Göstergeden bağımsız çalışır. Yalnızca bellekte tutulur (en çok 40 kayıt): diske yazılmaz, hiçbir yere gönderilmez, uygulama kapanınca ya da telefon yeniden başlayınca silinir. Uygulama adını Android vermez; kullanım başladığında ön planda olan uygulama gösterilir"),
     )),
     InfoSection("Yerleşim", "Nokta modu", "Ada yerine 3, 4 ya da 5 nokta; olaylar nokta (baloncuk) olarak görünür", listOf(
         i("Nokta modu", "Ortadaki nokta kameranın üstünde durur. Yeni olay ortadaki noktada, öncekiler yan noktalarda görünür; dokununca ada gibi genişler"),
@@ -126,6 +128,9 @@ private fun part0(): List<InfoSection> = listOf(
         i("Sağa, sonra sola çiz", "Parmağını kaldırmadan önce sağa sonra sola kaydır; parmak ekrandayken içerik görünür. Yanındaki biri basılı tutmayı görse de taklit edemez"),
         i("İki parmakla basılı tut", "İki parmağını birden adaya koy; parmaklar ekrandayken içerik görünür"),
         h("Titreşim imzası"),
+        h("Uyarılar ve rozet"),
+        i("Yeni uygulama uyarısı", "Telefona yeni bir uygulama kurulunca ada \"Yeni uygulama · uygulama adı\" der. Bilmediğin bir kurulumu hemen fark edersin. Güncellemeler sayılmaz. Not: bir uygulamanın sonradan yetki istemesini Android bildirmez, yalnızca kurulum algılanır. İzin gerektirmez"),
+        i("Okunmamış bildirim sayacı", "Boştaki adanın sağ köşesinde, bekleyen (silinmemiş) bildirim sayısı küçük kırmızı rozetle görünür. \"Boştayken de göster\" açık olmalı. Rozet göründüğünde ağ hızının yükleme kısmı gizlenir. Devam eden (müzik, arama gibi) ve kaydırılamayan bildirimler sayılmaz"),
         h("Bildirim türü"),
         i("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi"),
         i("Adayı genişletme (yazı adanın içinde)", "Bildirim gelince ada büyümez. Gönderen, bildirim yazısı ve uygulamanın simgesi küçük adanın içine sığdırılarak gösterilir. Süre: Genişletilmiş + Küçültülmüş kalma süresi toplamı. Nokta modunda etkisizdir. İstersen Ada genişliğini artırarak yazıya daha çok yer açabilirsin."),

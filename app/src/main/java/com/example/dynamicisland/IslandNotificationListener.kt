@@ -47,6 +47,9 @@ class IslandNotificationListener : NotificationListenerService() {
     companion object {
         @Volatile private var instance: IslandNotificationListener? = null
 
+        /** Ayar açılınca ya da kapanınca okunmamış sayacını hemen yeniler. */
+        fun refreshUnread() { instance?.refreshUnreadCount() }
+
         /** Şu anki Rahatsız Etmeyin süzgeci (NotificationManager.INTERRUPTION_FILTER_*). */
         fun currentZen(): Int = runCatching {
             instance?.currentInterruptionFilter?.takeIf { it != android.app.NotificationManager.INTERRUPTION_FILTER_UNKNOWN }
@@ -189,6 +192,7 @@ class IslandNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         instance = this
+        refreshUnreadCount()
         scope?.cancel()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { sc ->
             sc.launch { IslandBus.commands.collect(::handleCommand) }
@@ -488,6 +492,18 @@ class IslandNotificationListener : NotificationListenerService() {
     // ---------------------------------------------------------------- Bildirimler
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         runCatching { handleNotification(sbn) }
+        refreshUnreadCount()
+    }
+
+    /** Okunmamış sayacı için bekleyen bildirim sayısı: devam eden, silinemeyen ve grup özeti bildirimleri sayılmaz. */
+    private fun refreshUnreadCount(exclude: String? = null) {
+        if (!UnreadBadge.enabled) return
+        UnreadBadge.count.value = runCatching {
+            activeNotifications?.count {
+                it.key != exclude && !it.isOngoing && it.isClearable && it.packageName != packageName &&
+                    (it.notification.flags and Notification.FLAG_GROUP_SUMMARY) == 0
+            } ?: 0
+        }.getOrDefault(0)
     }
 
     // ---------------------------------------------------------------- Arama bildirimleri
@@ -622,6 +638,7 @@ class IslandNotificationListener : NotificationListenerService() {
     /** Kullanıcı bildirimi kaydırarak sildiyse (ya da tümünü temizlediyse) çöp kutusu ada animasyonu için haber verilir. */
     override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: NotificationListenerService.RankingMap, reason: Int) {
         super.onNotificationRemoved(sbn, rankingMap, reason)
+        refreshUnreadCount(sbn.key)
         runCatching { reminder.onRemoved(sbn.key) }
         runCatching {
             val n = sbn.notification
@@ -645,6 +662,7 @@ class IslandNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        refreshUnreadCount(sbn.key)
         if (liveKeys.remove(sbn.key)) IslandBus.post(IslandEvent.LiveGone(sbn.key))
         timerKeys.remove(sbn.key); watchKeys.remove(sbn.key)
         if (clockKeys.remove(sbn.key)) IslandBus.post(IslandEvent.ClockGone(sbn.key))
