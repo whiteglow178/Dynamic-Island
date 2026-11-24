@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
 private const val DEVELOPER_NAME = "WhiteGlow"
 private const val CONTACT_EMAIL = ""                      // örn. "destek@ornek.com" (boşsa satır gizlenir)
 private const val PRIVACY_URL = ""                        // gizlilik politikası bağlantısı (boşsa satır gizlenir)
-private const val SOURCE_URL = "https://github.com/whiteglow178/Dynamic-Island"
+private const val SOURCE_URL = ""                         // GitHub bağlantısı: Play sürümünde boş bırak, GitHub sürümünde doldur
 
 private fun Context.openLink(url: String) {
     runCatching {
@@ -99,17 +99,14 @@ fun AboutContent() {
         )
     }
 
-    SectionCard("Bağlantılar ve destek") {
-        if (CONTACT_EMAIL.isNotBlank()) LinkRow("Geri bildirim / destek", CONTACT_EMAIL) { ctx.sendMail(CONTACT_EMAIL) }
-        if (PRIVACY_URL.isNotBlank()) LinkRow("Gizlilik politikası", "Tarayıcıda aç") { ctx.openLink(PRIVACY_URL) }
-        LinkRow("Proje sayfası", "GitHub") { ctx.openLink(SOURCE_URL) }
+    if (CONTACT_EMAIL.isNotBlank() || PRIVACY_URL.isNotBlank() || SOURCE_URL.isNotBlank()) {
+        SectionCard("Bağlantılar ve destek") {
+            if (CONTACT_EMAIL.isNotBlank()) LinkRow("Geri bildirim / destek", CONTACT_EMAIL) { ctx.sendMail(CONTACT_EMAIL) }
+            if (PRIVACY_URL.isNotBlank()) LinkRow("Gizlilik politikası", "Tarayıcıda aç") { ctx.openLink(PRIVACY_URL) }
+            if (SOURCE_URL.isNotBlank()) LinkRow("Proje sayfası", "GitHub") { ctx.openLink(SOURCE_URL) }
+        }
     }
 
-    Text(
-        "Omni Island, Apple Inc. ile bağlantılı değildir. \"Dynamic Island\" Apple Inc.'in ticari markasıdır.",
-        color = cs.onSurfaceVariant.copy(alpha = 0.8f), fontSize = 11.sp, lineHeight = 15.sp,
-        modifier = Modifier.padding(horizontal = 16.dp),
-    )
     Text(
         "© ${java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)} $DEVELOPER_NAME. Tüm hakları saklıdır.",
         color = cs.onSurfaceVariant.copy(alpha = 0.8f), fontSize = 11.sp,
