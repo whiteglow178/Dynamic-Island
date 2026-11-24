@@ -103,6 +103,7 @@ sealed interface IslandContent {
         val accent: Int = 0,                             // uygulama simgesinin baskın rengi (ARGB); 0 = renkli ışık yok
         val translatedFrom: String = "",                 // bildirim çevirisi: kaynak dil kodu ("en"); boş = çevrilmedi
         val chips: List<NotifChip> = emptyList(),        // akıllı bildirim: ertele / kopyala / ara / harita / bağlantı (NotifSmart.kt)
+        val blurText: Boolean = false,                   // gizlilik: yazı anlamsız harflerle değiştirildi, bulanık çizilsin (NotifPrivacy.kt)
     ) : IslandContent
 
     /** Telefon araması: gelen (Cevapla / Reddet) ya da aktif (süre + Kapat). */

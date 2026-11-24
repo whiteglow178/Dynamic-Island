@@ -162,11 +162,27 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { detectCutout() }
         // Ada açıkken durum çubuğunun üstünü kapatır: simge taraması o sırada bekler (son değer korunur)
         scope.launch { ui.map { it.expanded }.distinctUntilChanged().collect { StatusIcons.paused = it } }
-        // Bildirim gizliliği: gizli mod ya da bilek hareketiyle inen perde
+        // Bildirim gizliliği: gizli mod, bilek hareketiyle inen perde ya da ekran kaydı / yansıtma
         scope.launch {
-            combine(settings, NotifPrivacy.curtain) { s, c -> s.more.notifPrivate || (s.more.notifTwist && c) }
-                .distinctUntilChanged().collect { NotifPrivacy.active.value = it; if (!it) NotifPrivacy.peek.value = false }
+            combine(settings, NotifPrivacy.curtain, NotifPrivacy.recording, NotifPrivacy.casting) { s, c, r, k ->
+                val m = s.more
+                m.notifPrivate || (m.notifTwist && c) || (m.notifPrivRec && (r || k))
+            }.distinctUntilChanged().collect { NotifPrivacy.active.value = it; if (!it) NotifPrivacy.peek.value = false }
         }
+        scope.launch {
+            settings.map {
+                NotifPrivacy.Rule(
+                    apps = it.more.notifPrivApps.split(',').map { p -> p.trim() }.filter { p -> p.isNotEmpty() }.toSet(),
+                    music = it.more.musicPrivate, blur = it.more.notifBlurPeek,
+                )
+            }.distinctUntilChanged().collect { NotifPrivacy.rule.value = it }
+        }
+        scope.launch {
+            settings.map { it.more.notifPrivRec }.distinctUntilChanged().collect { on ->
+                runCatching { if (on) castWatch.start() else castWatch.stop() }
+            }
+        }
+        scope.launch { NotifPrivacy.peek.collect { runCatching { onPeek(it) } } }
         scope.launch {
             settings.map { it.more.notifTwist }.distinctUntilChanged().collect { on ->
                 runCatching { if (on) twist.start() else twist.stop() }
@@ -315,8 +331,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             is IslandEvent.Call -> { call.onCall(e); onCallSfx() }
             is IslandEvent.CallEnded -> { call.onEnded(e.key); onCallSfx() }
-            is IslandEvent.ScreenRec -> rec.onScreenRec(e)
-            is IslandEvent.ScreenRecGone -> rec.onScreenRecGone(e)
+            is IslandEvent.ScreenRec -> { notePrivRec(e.phase, e.key, false); rec.onScreenRec(e) }
+            is IslandEvent.ScreenRecGone -> { notePrivRec(e.phase, e.key, true); rec.onScreenRecGone(e) }
             is IslandEvent.Status -> if (!assistantActive && !call.active && ui.value.content !is IslandContent.Translate) {
                 (e.content as? IslandContent.Status)?.let { onTimerStatus(it) }
                 showTemporarily(e.content, e.holdMs)
@@ -338,15 +354,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 )
                 // Adadan akan bildirim: kelimeler adadan dökülür (efekt penceresi)
                 if (st.more.notifFlow) {
-                    val shown = if (NotifPrivacy.active.value) NotifPrivacy.maskNotif(n, ::appLabel) else n
+                    val shown = if (NotifPrivacy.hides(n.pkg)) NotifPrivacy.maskNotif(n, NotifPrivacy.rule.value.blur, ::appLabel) else n
                     PlayFx.emit(PlayEvent.NotifText(shown.title, shown.text))
                 }
                 // Bildirim kuşları: bir kuş adanın yanına konar; adaya dokununca bu bildirim açılır
                 if (st.more.notifBirds) perchBird(n)
                 // iOS tarzı banner açıksa bildirim adada değil cam banner olarak gösterilir; pencere eklenemezse adaya düşer
-                // Gizlilik açıksa banner da gizli haliyle gösterilir (banner basılı tutmayla açılmaz; dokununca uygulama açılır)
-                val bannerN = if (NotifPrivacy.active.value) NotifPrivacy.maskNotif(n, ::appLabel) else n
-                if (!(st.notifBanner && notifBanner.show(bannerN, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
+                // Gizlilik açıksa banner kendi içinde gizli gösterir (NotificationBanner.kt); basılı tutunca içerik görünür
+                if (!(st.notifBanner && notifBanner.show(n, (st.notifExpandedSec * 1000f).toLong()))) notif.show(n)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
             is IslandEvent.SoundCapsuleListening -> soundCapsule.onListening()
@@ -965,13 +980,50 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     // ---------------------------------------------------------------- Bildirim gizliliği (NotifPrivacy.kt)
     // Ekrana giden kopya: gizlilik açıkken bildirimler maskelenir. Servisin mantığı her zaman gerçek [ui] ile çalışır.
     private val uiShown: StateFlow<IslandUiState> by lazy {
-        combine(ui, NotifPrivacy.active, NotifPrivacy.peek) { u, a, p -> if (a && !p) NotifPrivacy.mask(u, ::appLabel) else u }
-            .stateIn(scope, SharingStarted.Eagerly, ui.value)
+        combine(ui, NotifPrivacy.active, NotifPrivacy.peek, NotifPrivacy.rule) { u, a, p, r ->
+            if (a) NotifPrivacy.mask(u, r, p, ::appLabel) else u
+        }.stateIn(scope, SharingStarted.Eagerly, ui.value)
     }
-    private val labelCache = HashMap<String, String>()
-    private fun appLabel(pkg: String): String = labelCache.getOrPut(pkg) {
-        runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }
-            .getOrDefault("Bildirim")
+    // Gizli müzik: şarkı sözleri de ekrana gitmez
+    private val lyricsShown: StateFlow<LyricsState> by lazy {
+        combine(lyrics, NotifPrivacy.active, NotifPrivacy.rule) { l, a, r -> if (a && r.music) LyricsState.Idle else l }
+            .stateIn(scope, SharingStarted.Eagerly, lyrics.value)
+    }
+    private val castWatch by lazy { CastWatch(this) }
+    // Ekran kaydı takibi (gizlilik için; ada ekran kaydı ayarından bağımsız)
+    private var privRecKey = ""
+    private var privRecLive = false     // kayıt gerçekten başladı (geri sayım değil)
+    private var privRecJob: Job? = null
+    private fun notePrivRec(phase: RecPhase, key: String, gone: Boolean) {
+        privRecJob?.cancel()
+        when {
+            !gone && (phase == RecPhase.Countdown || phase == RecPhase.Recording) -> {
+                NotifPrivacy.recording.value = true; privRecKey = key
+                if (phase == RecPhase.Recording) privRecLive = true
+                // Geri sayım iptal edildiyse gizleme takılı kalmasın
+                if (phase == RecPhase.Countdown) privRecJob = scope.launch { delay(8_000); NotifPrivacy.recording.value = false }
+            }
+            !gone -> { NotifPrivacy.recording.value = false; privRecLive = false }   // işleniyor / kaydedildi: kayıt bitti
+            phase == RecPhase.Recording && key == privRecKey -> { NotifPrivacy.recording.value = false; privRecLive = false }
+            phase == RecPhase.Countdown && !privRecLive ->
+                privRecJob = scope.launch { delay(1_500); if (!privRecLive) NotifPrivacy.recording.value = false }
+        }
+    }
+    private fun appLabel(pkg: String): String = NotifPrivacy.label(this, pkg)
+    // Küçük adadaki bildirimde yalnızca simge görünür: basılı tutunca ada geçici olarak açılır, bırakınca geri küçülür
+    private var peekOpened = false
+    private fun onPeek(on: Boolean) {
+        val cur = ui.value
+        if (on) {
+            if (cur.content is IslandContent.Notif && !cur.expanded && cur.stack.isEmpty()) {
+                peekOpened = true
+                collapseJob?.cancel()
+                update { it.copy(expanded = true) }
+            }
+        } else if (peekOpened) {
+            peekOpened = false
+            if (cur.content is IslandContent.Notif && cur.expanded) update { it.copy(expanded = false) }
+        }
     }
     private val twist by lazy {
         TwistDetector(this) {
@@ -1577,7 +1629,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     // ---- Yatay mod: telefon yan çevrilince dikey ada + simgesi düz yan baloncuklar -> LandscapeIsland.kt
     private val landscape by lazy {
         LandscapeController(
-            this, this, this, wm, settings, uiShown, lyrics, scope,
+            this, this, this, wm, settings, uiShown, lyricsShown, scope,
             LandActions(
                 onTap = ::onLandTap, onLongPress = ::onLandLong, onSwipe = ::onPillSwipe,
                 onCommand = ::onCommand, onOutput = ::openOutputPanel, onLaunch = ::launchFavorite,
@@ -2537,7 +2589,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 Box(Modifier.fillMaxSize().clipToBounds()) {
                 PlayIslandHost(settings, uiShown) {
                 IslandRoot(
-                    state = uiShown, settingsFlow = settings, lyricsFlow = lyrics,
+                    state = uiShown, settingsFlow = settings, lyricsFlow = lyricsShown,
                     onTap = ::onPillTap, onCommand = ::onCommand, onOutput = ::openOutputPanel,
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
                     onOpenMusic = ::openMusicApp, onSwipe = ::onPillSwipe,
@@ -3027,7 +3079,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
-            setContent { OutsideLyricsRoot(ui, settings, lyrics, mediaState, outsideOrigin) }
+            setContent { OutsideLyricsRoot(uiShown, settings, lyricsShown, mediaState, outsideOrigin) }
         }
         fun params(type: Int) = WindowManager.LayoutParams(
             w, h, type,
@@ -3116,6 +3168,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     override fun onDestroy() {
         runCatching { twist.stop() }
+        runCatching { castWatch.stop() }
         NotifPrivacy.active.value = false; NotifPrivacy.peek.value = false
         IslandAccessibilityService.onChanged = null
         DrawerBridge.onKey = null

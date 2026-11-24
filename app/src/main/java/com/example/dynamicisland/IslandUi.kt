@@ -858,6 +858,7 @@ fun IslandPill(
     val cfgNow by rememberUpdatedState(cfg)
     val isMediaNow by rememberUpdatedState(content is IslandContent.Media)
     val isNotifNow by rememberUpdatedState(content is IslandContent.Notif)
+    val notifPkgNow by rememberUpdatedState((content as? IslandContent.Notif)?.pkg)
     val notifSideNow by rememberUpdatedState(onNotifSwipeSide)
     // Ada şekli: boştayken seçilen şekle (kalp / bulut / kedi / elmas) akarak dönüşür, bir şey gelince hapa döner
     val notch = cfg.more.notchMode && !assistant          // çentik modu: ada ekranın üstüne yapışık çentik şeklinde
@@ -992,7 +993,7 @@ fun IslandPill(
                     when (outcome) {
                         0 -> {
                             // Gizli bildirim: basılı tutunca içerik görünür, parmak kalkınca yeniden gizlenir (NotifPrivacy.kt)
-                            val peekMode = isNotifNow && NotifPrivacy.active.value
+                            val peekMode = notifPkgNow?.let { NotifPrivacy.hides(it) } == true
                             if (peekMode) {
                                 if (holdMode) { holding = false; IslandActions.onHoldPress(false) }
                                 NotifPrivacy.peek.value = true
@@ -1226,7 +1227,7 @@ fun IslandPill(
                         if (hasText) {
                             Text(content.text.replace('\n', ' '), color = Pal.c("island_text_dim"), fontSize = textSp.sp,
                                 lineHeight = (textSp + 1.5f).sp, maxLines = if (hasTitle) 1 else 2, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.rainbowFill(rb))
+                                modifier = Modifier.privacyBlur(content.blurText, 3.dp).rainbowFill(rb))
                         }
                     }
                 }
@@ -1499,7 +1500,7 @@ private fun NotifBody(c: IslandContent.Notif, accent: Color, rb: RainbowStyle?, 
             }
             if (c.text.isNotBlank()) {
                 Text(c.text, color = Pal.c("island_text_dim"), fontSize = 13.5.sp, lineHeight = 18.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.privacyBlur(c.blurText).rainbowFill(rb))
             }
         }
     }

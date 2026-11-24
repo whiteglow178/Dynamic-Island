@@ -41,6 +41,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -294,9 +295,15 @@ class NotifBannerOverlay(
             setViewTreeLifecycleOwner(lifecycleOwner)
             setViewTreeSavedStateRegistryOwner(registryOwner)
             setContent {
+                // Bildirim gizliliği: gizliyken uygulama adı + "Yeni bildirim"; basılı tutunca gerçek içerik
+                val privOn by NotifPrivacy.active.collectAsState()
+                val peekOn by NotifPrivacy.peek.collectAsState()
+                val privRule by NotifPrivacy.rule.collectAsState()
                 NotifBannerRoot(
                     style = if (settings().bannerSlideAnim) 1 else 0,
-                    n = current.value,
+                    n = current.value?.let {
+                        if (privOn && !peekOn && privRule.covers(it.pkg)) NotifPrivacy.maskNotif(it, privRule.blur) { p -> NotifPrivacy.label(ctx, p) } else it
+                    },
                     shown = shown.value,
                     widthDp = widthDp,
                     mode = mode.value,
@@ -397,6 +404,7 @@ internal fun NotifBannerRoot(
     val onTapNow by rememberUpdatedState(onTap)
     val onLongNow by rememberUpdatedState(onLong)
     val onSwipeNow by rememberUpdatedState(onSwipeUp)
+    val pkgNow by rememberUpdatedState(cur.pkg)
     val view = LocalView.current
 
     // Klasik stilde boyut ve konum (giriş ve çıkış aynı yoldan); kayma stilinde banner hep tam boydadır
@@ -428,9 +436,14 @@ internal fun NotifBannerRoot(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { off -> onTapNow(off.x < ICON_ZONE_DP.dp.toPx()) },
+                        onPress = {
+                            // Gizli bildirim: basılı tutma bitince içerik yeniden gizlenir
+                            if (NotifPrivacy.hides(pkgNow)) { tryAwaitRelease(); NotifPrivacy.peek.value = false }
+                        },
                         onLongPress = {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            onLongNow()
+                            // Gizliyken basılı tutma menüyü değil içeriği açar
+                            if (NotifPrivacy.hides(pkgNow)) NotifPrivacy.peek.value = true else onLongNow()
                         },
                     )
                 }
@@ -617,7 +630,7 @@ private fun BannerContent(n: IslandContent.Notif) {
             if (bodyText.isNotBlank()) {
                 Text(
                     bodyText, color = Pal.c("banner_body").copy(alpha = 0.85f), fontSize = 15.sp, lineHeight = 19.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.privacyBlur(n.blurText),
                 )
             }
         }

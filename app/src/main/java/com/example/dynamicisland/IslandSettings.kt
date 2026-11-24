@@ -662,6 +662,10 @@ data class MoreSettings(
     val neonTheme: Boolean = false,         // müzik panelinde tuşlar / yazılar / çubuk / ekolayzır renkli çerçevenin temasına boyansın
     val notifPrivate: Boolean = false,      // gizli bildirim modu: adada yalnızca uygulama adı + "Yeni bildirim"; basılı tutunca içerik görünür
     val notifTwist: Boolean = false,        // bilekle hızlı çevirince bildirimler gizlensin / yeniden görünsün
+    val notifPrivApps: String = "",         // gizlenecek uygulamalar (virgüllü paket adları); boş = bütün uygulamalar
+    val notifPrivRec: Boolean = false,      // ekran kaydı / yansıtma sırasında gizleme kendiliğinden açılsın
+    val musicPrivate: Boolean = false,      // gizleme devredeyken müzik de gizlensin (şarkı adı, sanatçı, kapak, sözler)
+    val notifBlurPeek: Boolean = false,     // "Yeni bildirim" yerine bulanık önizleme
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -805,6 +809,8 @@ class SettingsRepository(context: Context) {
         val X_NOTCH = booleanPreferencesKey("x_notch"); val X_NOTCHW = floatPreferencesKey("x_notchw"); val X_NOTCHD = floatPreferencesKey("x_notchd")
         val X_NEONPARTS = intPreferencesKey("x_neonparts"); val X_NEONTHEME = booleanPreferencesKey("x_neontheme")
         val X_NOTIFPRIV = booleanPreferencesKey("x_notifpriv"); val X_NOTIFTWIST = booleanPreferencesKey("x_notiftwist")
+        val X_PRIVAPPS = stringPreferencesKey("x_privapps"); val X_PRIVREC = booleanPreferencesKey("x_privrec")
+        val X_PRIVMUSIC = booleanPreferencesKey("x_privmusic"); val X_PRIVBLUR = booleanPreferencesKey("x_privblur")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1134,6 +1140,10 @@ class SettingsRepository(context: Context) {
                 neonTheme = p[K.X_NEONTHEME] ?: d.more.neonTheme,
                 notifPrivate = p[K.X_NOTIFPRIV] ?: d.more.notifPrivate,
                 notifTwist = p[K.X_NOTIFTWIST] ?: d.more.notifTwist,
+                notifPrivApps = p[K.X_PRIVAPPS] ?: d.more.notifPrivApps,
+                notifPrivRec = p[K.X_PRIVREC] ?: d.more.notifPrivRec,
+                musicPrivate = p[K.X_PRIVMUSIC] ?: d.more.musicPrivate,
+                notifBlurPeek = p[K.X_PRIVBLUR] ?: d.more.notifBlurPeek,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1276,6 +1286,8 @@ class SettingsRepository(context: Context) {
             it[K.X_NOTCH] = m.notchMode; it[K.X_NOTCHW] = m.notchWidthDp; it[K.X_NOTCHD] = m.notchDepthDp
             it[K.X_NEONPARTS] = m.neonParts; it[K.X_NEONTHEME] = m.neonTheme
             it[K.X_NOTIFPRIV] = m.notifPrivate; it[K.X_NOTIFTWIST] = m.notifTwist
+            it[K.X_PRIVAPPS] = m.notifPrivApps; it[K.X_PRIVREC] = m.notifPrivRec
+            it[K.X_PRIVMUSIC] = m.musicPrivate; it[K.X_PRIVBLUR] = m.notifBlurPeek
         }
     }
 
