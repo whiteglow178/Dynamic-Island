@@ -252,7 +252,7 @@ fun NotifToolsSections() {
             cur.notifSnooze) { set(cur.copy(notifSnooze = it)) }
         SwitchRow("Akıllı kopyala", "Bildirimdeki IBAN, kargo takip numarası, telefon, adres ve bağlantı bulunur: IBAN ve takip no tek dokunuşla kopyalanır, telefon arama ekranında hazır açılır (aramayı sen başlatırsın), adres haritada, bağlantı tarayıcıda açılır. Bağlantı çipinde alan adı yazar",
             cur.smartCopy) { set(cur.copy(smartCopy = it)) }
-        Text("Çipler bildirim adada genişlediğinde görünür (iOS tarzı banner ve \"ada genişlemesin\" modunda görünmez).", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
+        Text("Çipler bildirim adada genişlediğinde görünür (cam banner ve \"ada genişlemesin\" modunda görünmez).", color = dim, fontSize = 12.sp, lineHeight = 17.sp)
     }
 
     SectionCard("Bildirim testi", "Özellikleri denemek için örnek bildirim gönder. 3 sn sonra gelir; istersen bu arada ana ekrana dön") {

@@ -224,7 +224,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Konum", "Kamera deliğine göre ince ayar") {
             SliderRow("Yatay", draft.offsetXDp, -60f..60f, "${draft.offsetXDp.toInt()} dp") { draft = draft.copy(offsetXDp = it) }
             SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
-            SwitchRow("Bildirim simgelerine yer aç", "Durum çubuğunun solunda bildirim simgeleri adaya yaklaşınca adanın sol ucu simgelerin ötesine çekilir; sağ ucu yerinde kalır, ada kameranın üstünde kalır. Simgeler gidince eski haline döner. Erişilebilirlik izni gerekir (simgeler ekran görüntüsünden okunur, kaydedilmez). Nokta, iPhone ve ters ada modlarında çalışmaz",
+            SwitchRow("Bildirim simgelerine yer aç", "Durum çubuğunun solunda bildirim simgeleri adaya yaklaşınca adanın sol ucu simgelerin ötesine çekilir; sağ ucu yerinde kalır, ada kameranın üstünde kalır. Simgeler gidince eski haline döner. Erişilebilirlik izni gerekir (simgeler ekran görüntüsünden okunur, kaydedilmez). Nokta, hap + daire ve ters ada modlarında çalışmaz",
                 draft.more.avoidIcons) { draft = draft.copy(more = draft.more.copy(avoidIcons = it)) }
             SwitchRow("Ters ada", "Ada ekranın üstünde değil en altında durur. Olaylar ve bildirimler düz görünür; adaya basınca panel aşağı değil yukarı doğru açılır. Dikey konum ayarı alttan ölçülür", draft.invertedIsland) { draft = draft.copy(invertedIsland = it, more = if (it) draft.more.copy(notchMode = false) else draft.more) }
             if (draft.invertedIsland) {
@@ -244,7 +244,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Yatay mod", "Telefonu yan çevirince ada kamera kenarında dikey bir hap olur. Gelen bildirim, şarj, arama gibi olaylar adanın yanında, simgesi düz duran küçük baloncuk olarak animasyonla ayrılır. Bildirimde uygulamanın simgesi görünür", draft.landscapeMode) { draft = draft.copy(landscapeMode = it) }
             if (draft.landscapeMode) {
                 SwitchRow("Baloncuklar adanın altında", "Açıkken baloncuklar adanın altına, kapalıyken üstüne dizilir", draft.landscapeBubbleBelow) { draft = draft.copy(landscapeBubbleBelow = it) }
-                SwitchRow("Olaylar adada da görünsün", "Açıkken olay (bildirim, şarj, müzik...) adanın içinde de gösterilir. Adada zaten bir olay varsa gelen yeni olaylar baloncuk olur; aynı anda en çok 2 baloncuk çıkar. Kapalıyken olaylar yalnızca baloncukta görünür. Adanın içinde çizilen özellikler (adada bildirim yazısı, kapalı adada şarkı sözü, arama / müzik hapı, iPhone modu dairesi) açıksa bu ayar kendiliğinden açık sayılır", draft.landscapeEventsInIsland) { draft = draft.copy(landscapeEventsInIsland = it) }
+                SwitchRow("Olaylar adada da görünsün", "Açıkken olay (bildirim, şarj, müzik...) adanın içinde de gösterilir. Adada zaten bir olay varsa gelen yeni olaylar baloncuk olur; aynı anda en çok 2 baloncuk çıkar. Kapalıyken olaylar yalnızca baloncukta görünür. Adanın içinde çizilen özellikler (adada bildirim yazısı, kapalı adada şarkı sözü, arama / müzik hapı, hap + daire modu dairesi) açıksa bu ayar kendiliğinden açık sayılır", draft.landscapeEventsInIsland) { draft = draft.copy(landscapeEventsInIsland = it) }
             }
         }
         sec("Görünürlük", "Ada ne zaman görünsün") {
@@ -258,9 +258,9 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             }
             SwitchRow("Medya sesi göstergesi", "Ses tuşlarıyla (ya da kenar ses tuşlarıyla) medya sesini artırınca / azaltınca ada kısa süre hoparlör simgesi, seviye çubuğu ve yüzdeyle açılır", draft.volumeIndicator) { draft = draft.copy(volumeIndicator = it) }
-            SwitchRow("Zil sesi seviyesi göstergesi", "Zil sesini (ses tuşları ya da ayarlar) değiştirince ada iOS gibi yana genişler: solda zil simgesi ve \"Zil\", sağda ince seviye çubuğu. Telefon sesli moddayken çalışır",
+            SwitchRow("Zil sesi seviyesi göstergesi", "Zil sesini (ses tuşları ya da ayarlar) değiştirince ada yana genişler: solda zil simgesi ve \"Zil\", sağda ince seviye çubuğu. Telefon sesli moddayken çalışır",
                 draft.more.ringVolIndicator) { draft = draft.copy(more = draft.more.copy(ringVolIndicator = it)) }
-            SwitchRow("İnternet göstergesi", "İnternete bağlanınca ada iOS tarzı geniş hap olur: solda Wi-Fi / mobil veri simgesi, sağda \"Bağlandı\". Bağlantı kesilince \"Bağlantı kesildi\" yazar. Wi-Fi'den mobil veriye geçişte yanıp sönmez",
+            SwitchRow("İnternet göstergesi", "İnternete bağlanınca ada geniş hap olur: solda Wi-Fi / mobil veri simgesi, sağda \"Bağlandı\". Bağlantı kesilince \"Bağlantı kesildi\" yazar. Wi-Fi'den mobil veriye geçişte yanıp sönmez",
                 draft.more.netIndicator) { draft = draft.copy(more = draft.more.copy(netIndicator = it)) }
             SwitchRow("Uçak modu göstergesi", "Uçak modu açılınca / kapanınca ada turuncu uçak simgesi ve \"Açık\" / \"Kapalı\" yazısıyla haber verir",
                 draft.more.airplaneIndicator) { draft = draft.copy(more = draft.more.copy(airplaneIndicator = it)) }
@@ -318,10 +318,10 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SliderRow("Konum: dikey (aşağı +)", draft.dotOffsetYDp, -60f..80f, "${draft.dotOffsetYDp.toInt()} dp") { draft = draft.copy(dotOffsetYDp = it) }
             }
         }
-        sec("Çentik (notch) modu", "iPhone X – iPhone 14 gibi: ada yerine ekranın üstüne yapışık çentik") {
+        sec("Çentik (notch) modu", "Klasik çentik gibi: ada yerine ekranın üstüne yapışık çentik") {
             SwitchRow(
                 "Çentik modu",
-                "Ada, ekranın tepesine yapışık, kamerayı örten, alt köşeleri yuvarlak ve iki yanında içe kavisli kulakları olan bir çentik olur. Müzik, bildirim, zamanlayıcı, yan baloncuklar ve diğer tüm özellikler aynen çalışır; dokununca çentik aşağı doğru genişler. Nokta modu, iPhone modu ve ters ada ile birlikte olmaz (biri açılınca öteki kapanır)",
+                "Ada, ekranın tepesine yapışık, kamerayı örten, alt köşeleri yuvarlak ve iki yanında içe kavisli kulakları olan bir çentik olur. Müzik, bildirim, zamanlayıcı, yan baloncuklar ve diğer tüm özellikler aynen çalışır; dokununca çentik aşağı doğru genişler. Nokta modu, hap + daire modu ve ters ada ile birlikte olmaz (biri açılınca öteki kapanır)",
                 draft.more.notchMode,
             ) { on ->
                 draft = draft.copy(
@@ -342,14 +342,14 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             }
         }
-        sec("iPhone modu", "iPhone 14 Pro gibi: hap şeklinde ada ve yanında ayrı siyah daire") {
+        sec("Hap + daire modu", "Hap şeklinde ada ve yanında ayrı siyah daire") {
             SwitchRow(
-                "iPhone modu",
+                "Hap + daire modu",
                 "Ada hap şeklinde olur, yanında siyah bir daire durur. Nokta modu ile birlikte çalışmaz (biri açılınca öteki kapanır)",
                 draft.iphoneMode,
             ) { draft = draft.copy(iphoneMode = it, dotMode = if (it) false else draft.dotMode, more = if (it) draft.more.copy(notchMode = false) else draft.more) }
             if (draft.iphoneMode) {
-                SwitchRow("Siyah daire", "Adanın yanındaki ayrı siyah daire (iPhone'daki kamera deliği gibi)", draft.iphoneCircle) { draft = draft.copy(iphoneCircle = it) }
+                SwitchRow("Siyah daire", "Adanın yanındaki ayrı siyah daire (kamera deliği gibi)", draft.iphoneCircle) { draft = draft.copy(iphoneCircle = it) }
                 if (draft.iphoneCircle) {
                     SegmentedTabs(listOf("Daire solda", "Daire sağda"), draft.iphoneCircleSide) { draft = draft.copy(iphoneCircleSide = it) }
                     SwitchRow(
@@ -361,7 +361,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     SliderRow("Ada ile daire arası", draft.iphoneGapDp, 2f..30f, "${draft.iphoneGapDp.toInt()} dp") { draft = draft.copy(iphoneGapDp = it) }
                     SwitchRow(
                         "İkiliyi ortala",
-                        "Ada + daire birlikte kameranın ortasında durur (iPhone gibi). Kapalıysa ada kameranın üstünde kalır, daire yanına gelir",
+                        "Ada + daire birlikte kameranın ortasında durur. Kapalıysa ada kameranın üstünde kalır, daire yanına gelir",
                         draft.iphoneCenterGroup,
                     ) { draft = draft.copy(iphoneCenterGroup = it) }
                 }
@@ -475,7 +475,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Okunmamış bildirim sayacı", "Boştaki adanın sağ köşesinde, bekleyen (silinmemiş) bildirim sayısı küçük kırmızı rozetle görünür. \"Boştayken de göster\" açık olmalı. Rozet göründüğünde ağ hızının yükleme kısmı gizlenir. Devam eden (müzik, arama gibi) ve kaydırılamayan bildirimler sayılmaz",
                 draft.more.unreadBadge) { draft = draft.copy(more = draft.more.copy(unreadBadge = it)) }
             SubHeader("Bildirim türü")
-            SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
+            SwitchRow("Cam banner", "Bildirimler adada değil, ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
                 draft.notifBanner) { draft = draft.copy(notifBanner = it, notifInline = if (it) false else draft.notifInline) }
             SwitchRow("Adayı genişletme (yazı adanın içinde)", "Bildirim gelince ada büyümez. Gönderen, bildirim yazısı ve uygulamanın simgesi küçük adanın içine sığdırılarak gösterilir. Süre: Genişletilmiş + Küçültülmüş kalma süresi toplamı. Nokta modunda etkisizdir. İstersen Ada genişliğini artırarak yazıya daha çok yer açabilirsin.",
                 draft.notifInline) { draft = draft.copy(notifInline = it, notifBanner = if (it) false else draft.notifBanner) }
@@ -545,7 +545,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             SwitchRow("Dokununca olay ortaya geçsin", "Kapalıyken baloncuğa dokununca o uygulamanın paneli genişler ama olay ortaya geçmez; panel kapanınca eski düzen döner. Açıkken olay kalıcı olarak ortaya geçer",
                 draft.sideTapPromote) { draft = draft.copy(sideTapPromote = it) }
             SectionDivider()
-            SwitchRow("Uzun yan baloncuk", "Baloncuk tam daire değil, biraz uzun bir kapsül olur. Zamanlayıcıda halkanın yanında kalan süre (22dk), müzikte kapağın yanında ekolayzır görünür. Nokta ve iPhone modlarında kullanılmaz",
+            SwitchRow("Uzun yan baloncuk", "Baloncuk tam daire değil, biraz uzun bir kapsül olur. Zamanlayıcıda halkanın yanında kalan süre (22dk), müzikte kapağın yanında ekolayzır görünür. Nokta ve hap + daire modlarında kullanılmaz",
                 draft.more.sideWide) { draft = draft.copy(more = draft.more.copy(sideWide = it)) }
         }
 
@@ -659,7 +659,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Müzik efekti", "Müzik çalarken adanın alt kısmında hareketli renk") {
             SwitchRow("Alt kenarda renkli ışık", "Albüm kapağının rengine göre adanın altında yavaşça akan ışık; duraklatınca söner",
                 draft.musicBottomFx) { draft = draft.copy(musicBottomFx = it) }
-            SwitchRow("Bildirimde de renkli ışık", "Bildirim gelince adanın (ve iOS tarzı cam bannerın) alt kenarında, bildirimi gönderen uygulamanın simge renginde akan ışık",
+            SwitchRow("Bildirimde de renkli ışık", "Bildirim gelince adanın (ve cam bannerın) alt kenarında, bildirimi gönderen uygulamanın simge renginde akan ışık",
                 draft.notifBottomFx) { draft = draft.copy(notifBottomFx = it) }
         }
 
@@ -1079,7 +1079,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 draft.pillCallStyle) { draft = draft.copy(pillCallStyle = it) }
             SwitchRow("Müzik hapı", "KÜÇÜLTÜLMÜŞ adada: solda albüm kapağı, ortada şarkı adı, renkli dalga ve ilerleme çubuğu, sağda önceki / duraklat / sonraki düğmeleri. Genişletilmiş panel değişmez",
                 draft.pillMusicStyle) { draft = draft.copy(pillMusicStyle = it) }
-            SwitchRow("Orta boy müzik adası", "Müzik çalarken ada küçülmez; iOS'taki gibi ne çok küçük ne çok büyük, orta boyda açık kalır: üstte kapak, şarkı adı ve dalga, ortada ilerleme çubuğu, altta beğeni, geri, oynat / duraklat, ileri ve çıkış düğmeleri. Boş yerine dokununca tam boy panel açılır. Açıkken müzik hapı yerine bu görünüm kullanılır",
+            SwitchRow("Orta boy müzik adası", "Müzik çalarken ada küçülmez; ne çok küçük ne çok büyük, orta boyda açık kalır: üstte kapak, şarkı adı ve dalga, ortada ilerleme çubuğu, altta beğeni, geri, oynat / duraklat, ileri ve çıkış düğmeleri. Boş yerine dokununca tam boy panel açılır. Açıkken müzik hapı yerine bu görünüm kullanılır",
                 draft.more.musicMid) { draft = draft.copy(more = draft.more.copy(musicMid = it)) }
             if (draft.more.musicMid) {
                 SliderRow("Orta boy genişlik", draft.more.musicMidWDp, 260f..400f, "${draft.more.musicMidWDp.toInt()} dp") { draft = draft.copy(more = draft.more.copy(musicMidWDp = it)) }
@@ -1113,7 +1113,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Animasyon", "Açılma ve küçülme geçişi") {
             SwitchRow("Animasyonlar", "Kapatırsan ada anında açılır/kapanır", draft.animEnabled) { draft = draft.copy(animEnabled = it) }
             if (draft.animEnabled) {
-                SwitchRow("Müzik adası animasyonu", "Müzik çalarken ada genişlerken içerik bulanıktan netleşerek belirir; küçülürken bunun tersi olur (iOS tarzı)",
+                SwitchRow("Müzik adası animasyonu", "Müzik çalarken ada genişlerken içerik bulanıktan netleşerek belirir; küçülürken bunun tersi olur",
                     draft.musicBlurAnim) { draft = draft.copy(musicBlurAnim = it) }
                 SwitchRow("Albüm kapağı dönme animasyonu", "Ada açılırken kapak bir kez 360° döner, küçülürken ters yöne döner. Şarkı değişince kapak dönerek değişir (sonraki: bir yöne, önceki: ters yöne)",
                     draft.musicArtFlip) { draft = draft.copy(musicArtFlip = it) }
@@ -1273,7 +1273,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SwitchRow("Aya dokununca aç / kapat", "Genişlemiş kartta aya dokununca Rahatsız Etmeyin açılır ya da kapanır (bildirim erişimiyle çalışır)",
                     draft.more.focusToggle) { draft = draft.copy(more = draft.more.copy(focusToggle = it)) }
             }
-            Text("Rahatsız Etmeyin göstergesinin kendisi Ana Sayfa'daki iOS bölümünden açılır.",
+            Text("Rahatsız Etmeyin göstergesinin kendisi Ana Sayfa'daki Canlı etkinlikler bölümünden açılır.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
         sec("Kulaklık, ses kaydı, skor", "Kulaklık küçük adası, ses kaydı adası, takım logoları") {
@@ -1888,7 +1888,7 @@ private fun lyricsPages(draft: IslandSettings, version: Int, set: (IslandSetting
             if (!draft.musicFluidAnim) {
             SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa ada büyümez (Uzayan ada açıksa onun yerine o oynar)",
                 draft.musicExitSwallow) { set(draft.copy(musicExitSwallow = it)) }
-            SwitchRow("Uzayan ada (iOS tarzı)", "Ada yukarı doğru (ekran kenarına kadar) yumuşakça büyür, sonra normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır. Bu sırada cam / çerçeve efektleri düz renkle çizilir",
+            SwitchRow("Uzayan ada", "Ada yukarı doğru (ekran kenarına kadar) yumuşakça büyür, sonra normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır. Bu sırada cam / çerçeve efektleri düz renkle çizilir",
                 draft.musicExitStretch) { set(draft.copy(musicExitStretch = it, musicFluidAnim = if (it) false else draft.musicFluidAnim)) }
             SectionDivider()
             SubHeader("Panel animasyonu")

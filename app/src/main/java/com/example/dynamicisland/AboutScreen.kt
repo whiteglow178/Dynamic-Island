@@ -57,7 +57,7 @@ fun AboutContent() {
 
     SectionCard("Omni Island", "Standartların çok ötesinde") {
         Text(
-            "Omni Island, Android telefonunuzun üst kısmına iPhone'daki Dynamic Island'dan esinlenen, " +
+            "Omni Island, Android telefonunuzun üst kısmına " +
                 "canlı ve akıcı bir \"ada\" ekler. Müzik, arama, şarj, bildirim, navigasyon ve daha fazlası " +
                 "ada üzerinde şık animasyonlarla görünür; adayı kendi tarzınıza göre tasarlayabilirsiniz.",
             color = cs.onSurface, fontSize = 14.sp, lineHeight = 20.sp,

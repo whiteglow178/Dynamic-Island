@@ -23,7 +23,7 @@ private fun part0(): List<InfoSection> = listOf(
     InfoSection("Yerleşim", "Konum", "Kamera deliğine göre ince ayar", listOf(
         i("Yatay"),
         i("Dikey"),
-        i("Bildirim simgelerine yer aç", "Durum çubuğunun solunda bildirim simgeleri adaya yaklaşınca adanın sol ucu simgelerin ötesine çekilir; sağ ucu yerinde kalır, ada kameranın üstünde kalır. Simgeler gidince eski haline döner. Erişilebilirlik izni gerekir (simgeler ekran görüntüsünden okunur, kaydedilmez). Nokta, iPhone ve ters ada modlarında çalışmaz"),
+        i("Bildirim simgelerine yer aç", "Durum çubuğunun solunda bildirim simgeleri adaya yaklaşınca adanın sol ucu simgelerin ötesine çekilir; sağ ucu yerinde kalır, ada kameranın üstünde kalır. Simgeler gidince eski haline döner. Erişilebilirlik izni gerekir (simgeler ekran görüntüsünden okunur, kaydedilmez). Nokta, hap + daire ve ters ada modlarında çalışmaz"),
         i("Ters ada", "Ada ekranın üstünde değil en altında durur. Olaylar ve bildirimler düz görünür; adaya basınca panel aşağı değil yukarı doğru açılır. Dikey konum ayarı alttan ölçülür"),
         i("Ters adaya özel konum ve boyut", "Açıkken ters ada, üstteki Kapalı ada ve Konum ayarlarını değil aşağıdaki kendi ayarlarını kullanır (ekranın altında farklı bir boyut / yer isteyebilirsin)"),
         h("Ters ada boyutu"),
@@ -33,7 +33,7 @@ private fun part0(): List<InfoSection> = listOf(
         i("Alttan uzaklık"),
         i("Yatay mod", "Telefonu yan çevirince ada kamera kenarında dikey bir hap olur. Gelen bildirim, şarj, arama gibi olaylar adanın yanında, simgesi düz duran küçük baloncuk olarak animasyonla ayrılır. Bildirimde uygulamanın simgesi görünür"),
         i("Baloncuklar adanın altında", "Açıkken baloncuklar adanın altına, kapalıyken üstüne dizilir"),
-        i("Olaylar adada da görünsün", "Açıkken olay (bildirim, şarj, müzik...) adanın içinde de gösterilir. Adada zaten bir olay varsa gelen yeni olaylar baloncuk olur; aynı anda en çok 2 baloncuk çıkar. Kapalıyken olaylar yalnızca baloncukta görünür. Adanın içinde çizilen özellikler (adada bildirim yazısı, kapalı adada şarkı sözü, arama / müzik hapı, iPhone modu dairesi) açıksa bu ayar kendiliğinden açık sayılır"),
+        i("Olaylar adada da görünsün", "Açıkken olay (bildirim, şarj, müzik...) adanın içinde de gösterilir. Adada zaten bir olay varsa gelen yeni olaylar baloncuk olur; aynı anda en çok 2 baloncuk çıkar. Kapalıyken olaylar yalnızca baloncukta görünür. Adanın içinde çizilen özellikler (adada bildirim yazısı, kapalı adada şarkı sözü, arama / müzik hapı, hap + daire modu dairesi) açıksa bu ayar kendiliğinden açık sayılır"),
     )),
     InfoSection("Yerleşim", "Görünürlük", "Ada ne zaman görünsün", listOf(
         i("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur"),
@@ -42,8 +42,8 @@ private fun part0(): List<InfoSection> = listOf(
         i("Zil hapı genişliği"),
         i("Zil hapı yüksekliği"),
         i("Medya sesi göstergesi", "Ses tuşlarıyla (ya da kenar ses tuşlarıyla) medya sesini artırınca / azaltınca ada kısa süre hoparlör simgesi, seviye çubuğu ve yüzdeyle açılır"),
-        i("Zil sesi seviyesi göstergesi", "Zil sesini (ses tuşları ya da ayarlar) değiştirince ada iOS gibi yana genişler: solda zil simgesi ve \"Zil\", sağda ince seviye çubuğu. Telefon sesli moddayken çalışır"),
-        i("İnternet göstergesi", "İnternete bağlanınca ada iOS tarzı geniş hap olur: solda Wi-Fi / mobil veri simgesi, sağda \"Bağlandı\". Bağlantı kesilince \"Bağlantı kesildi\" yazar. Wi-Fi'den mobil veriye geçişte yanıp sönmez"),
+        i("Zil sesi seviyesi göstergesi", "Zil sesini (ses tuşları ya da ayarlar) değiştirince ada yana genişler: solda zil simgesi ve \"Zil\", sağda ince seviye çubuğu. Telefon sesli moddayken çalışır"),
+        i("İnternet göstergesi", "İnternete bağlanınca ada geniş hap olur: solda Wi-Fi / mobil veri simgesi, sağda \"Bağlandı\". Bağlantı kesilince \"Bağlantı kesildi\" yazar. Wi-Fi'den mobil veriye geçişte yanıp sönmez"),
         i("Uçak modu göstergesi", "Uçak modu açılınca / kapanınca ada turuncu uçak simgesi ve \"Açık\" / \"Kapalı\" yazısıyla haber verir"),
         i("Düşük pil göstergesi", "Şarjda değilken pil %20'ye ve %10'a düşünce ada uyarır. Dokununca düşük güç modu açılır (izin yoksa pil tasarrufu ayarı açılır). Düşük güç modu açılınca sarıya döner"),
         i("Düşük pil uyarısı genişlesin", "Açıkken ada büyük bir karta açılır: solda \"%10 Pil\" ve \"Düşük Güç Modu için dokun\", sağda kırmızı kapsül içinde pil. Kapalıyken ada genişlemez; ince geniş hapta \"Düşük Pil\" ve kırmızı yüzde + pil görünür"),
@@ -68,18 +68,18 @@ private fun part0(): List<InfoSection> = listOf(
         i("Konum: yatay (sağ +)"),
         i("Konum: dikey (aşağı +)"),
     )),
-    InfoSection("Yerleşim", "Çentik (notch) modu", "iPhone X – iPhone 14 gibi: ada yerine ekranın üstüne yapışık çentik", listOf(
-        i("Çentik modu", "Ada, ekranın tepesine yapışık, kamerayı örten, alt köşeleri yuvarlak ve iki yanında içe kavisli kulakları olan bir çentik olur. Müzik, bildirim, zamanlayıcı, yan baloncuklar ve diğer tüm özellikler aynen çalışır; dokununca çentik aşağı doğru genişler. Nokta modu, iPhone modu ve ters ada ile birlikte olmaz (biri açılınca öteki kapanır)"),
+    InfoSection("Yerleşim", "Çentik (notch) modu", "Klasik çentik gibi: ada yerine ekranın üstüne yapışık çentik", listOf(
+        i("Çentik modu", "Ada, ekranın tepesine yapışık, kamerayı örten, alt köşeleri yuvarlak ve iki yanında içe kavisli kulakları olan bir çentik olur. Müzik, bildirim, zamanlayıcı, yan baloncuklar ve diğer tüm özellikler aynen çalışır; dokununca çentik aşağı doğru genişler. Nokta modu, hap + daire modu ve ters ada ile birlikte olmaz (biri açılınca öteki kapanır)"),
         i("Genişlik"),
         i("Ek derinlik"),
     )),
-    InfoSection("Yerleşim", "iPhone modu", "iPhone 14 Pro gibi: hap şeklinde ada ve yanında ayrı siyah daire", listOf(
-        i("iPhone modu", "Ada hap şeklinde olur, yanında siyah bir daire durur. Nokta modu ile birlikte çalışmaz (biri açılınca öteki kapanır)"),
-        i("Siyah daire", "Adanın yanındaki ayrı siyah daire (iPhone'daki kamera deliği gibi)"),
+    InfoSection("Yerleşim", "Hap + daire modu", "Hap şeklinde ada ve yanında ayrı siyah daire", listOf(
+        i("Hap + daire modu", "Ada hap şeklinde olur, yanında siyah bir daire durur. Nokta modu ile birlikte çalışmaz (biri açılınca öteki kapanır)"),
+        i("Siyah daire", "Adanın yanındaki ayrı siyah daire (kamera deliği gibi)"),
         i("Olaylar dairede görünsün", "İkinci bir olay başlayınca (müzik, ekran kaydı, arama, kamera / mikrofon...) öncekisi dairede görünür; dokununca ada gibi açılır. Kapalıysa daire süs olarak kalır"),
         i("Daire boyutu (en çok ada yüksekliği)"),
         i("Ada ile daire arası"),
-        i("İkiliyi ortala", "Ada + daire birlikte kameranın ortasında durur (iPhone gibi). Kapalıysa ada kameranın üstünde kalır, daire yanına gelir"),
+        i("İkiliyi ortala", "Ada + daire birlikte kameranın ortasında durur. Kapalıysa ada kameranın üstünde kalır, daire yanına gelir"),
         i("Ada genişliği"),
         i("Ada yüksekliği"),
         i("Konum: yatay (sağ +)"),
@@ -132,7 +132,7 @@ private fun part0(): List<InfoSection> = listOf(
         i("Yeni uygulama uyarısı", "Telefona yeni bir uygulama kurulunca ada \"Yeni uygulama · uygulama adı\" der. Bilmediğin bir kurulumu hemen fark edersin. Güncellemeler sayılmaz. Not: bir uygulamanın sonradan yetki istemesini Android bildirmez, yalnızca kurulum algılanır. İzin gerektirmez"),
         i("Okunmamış bildirim sayacı", "Boştaki adanın sağ köşesinde, bekleyen (silinmemiş) bildirim sayısı küçük kırmızı rozetle görünür. \"Boştayken de göster\" açık olmalı. Rozet göründüğünde ağ hızının yükleme kısmı gizlenir. Devam eden (müzik, arama gibi) ve kaydırılamayan bildirimler sayılmaz"),
         h("Bildirim türü"),
-        i("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi"),
+        i("Cam banner", "Bildirimler adada değil, ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi"),
         i("Adayı genişletme (yazı adanın içinde)", "Bildirim gelince ada büyümez. Gönderen, bildirim yazısı ve uygulamanın simgesi küçük adanın içine sığdırılarak gösterilir. Süre: Genişletilmiş + Küçültülmüş kalma süresi toplamı. Nokta modunda etkisizdir. İstersen Ada genişliğini artırarak yazıya daha çok yer açabilirsin."),
         h("Cam banner: animasyon"),
         i("Klasik", "Saatin altındaki küçük haptan büyüyerek açılır, kapanırken aynı yoldan o hapa küçülür"),
@@ -160,7 +160,7 @@ private fun part0(): List<InfoSection> = listOf(
     InfoSection("Yerleşim", "Yan baloncuklar", "Adanın yanında ayrılan baloncuklar (müzik, ekran kaydı, arama)", listOf(
         i("Olayları alt alta aç", "Birden fazla olay varken adaya dokununca (ya da aşağı kaydırınca) hepsi genişleyip alt alta kartlar halinde sıralanır. Karta dokununca ya da yukarı kaydırınca kapanır"),
         i("Dokununca olay ortaya geçsin", "Kapalıyken baloncuğa dokununca o uygulamanın paneli genişler ama olay ortaya geçmez; panel kapanınca eski düzen döner. Açıkken olay kalıcı olarak ortaya geçer"),
-        i("Uzun yan baloncuk", "Baloncuk tam daire değil, biraz uzun bir kapsül olur. Zamanlayıcıda halkanın yanında kalan süre (22dk), müzikte kapağın yanında ekolayzır görünür. Nokta ve iPhone modlarında kullanılmaz"),
+        i("Uzun yan baloncuk", "Baloncuk tam daire değil, biraz uzun bir kapsül olur. Zamanlayıcıda halkanın yanında kalan süre (22dk), müzikte kapağın yanında ekolayzır görünür. Nokta ve hap + daire modlarında kullanılmaz"),
     )),
 )
 
@@ -257,7 +257,7 @@ private fun part1(): List<InfoSection> = listOf(
     )),
     InfoSection("Görünüm", "Müzik efekti", "Müzik çalarken adanın alt kısmında hareketli renk", listOf(
         i("Alt kenarda renkli ışık", "Albüm kapağının rengine göre adanın altında yavaşça akan ışık; duraklatınca söner"),
-        i("Bildirimde de renkli ışık", "Bildirim gelince adanın (ve iOS tarzı cam bannerın) alt kenarında, bildirimi gönderen uygulamanın simge renginde akan ışık"),
+        i("Bildirimde de renkli ışık", "Bildirim gelince adanın (ve cam bannerın) alt kenarında, bildirimi gönderen uygulamanın simge renginde akan ışık"),
     )),
 )
 
@@ -420,7 +420,7 @@ private fun part5(): List<InfoSection> = listOf(
     InfoSection("Hareket", "Hap tasarımları", "Arama ve müzik adası için alternatif görünüm", listOf(
         i("Arama hapı", "KÜÇÜLTÜLMÜŞ adada: solda yeşil, sağda kırmızı yuvarlak düğme; ortada süre / isim ve hareketli ses dalgası. Genişletilmiş görünüm değişmez. Aktif aramada yeşil düğme hoparlörü açıp kapatır"),
         i("Müzik hapı", "KÜÇÜLTÜLMÜŞ adada: solda albüm kapağı, ortada şarkı adı, renkli dalga ve ilerleme çubuğu, sağda önceki / duraklat / sonraki düğmeleri. Genişletilmiş panel değişmez"),
-        i("Orta boy müzik adası", "Müzik çalarken ada küçülmez; iOS'taki gibi ne çok küçük ne çok büyük, orta boyda açık kalır: üstte kapak, şarkı adı ve dalga, ortada ilerleme çubuğu, altta beğeni, geri, oynat / duraklat, ileri ve çıkış düğmeleri. Boş yerine dokununca tam boy panel açılır. Açıkken müzik hapı yerine bu görünüm kullanılır"),
+        i("Orta boy müzik adası", "Müzik çalarken ada küçülmez; ne çok küçük ne çok büyük, orta boyda açık kalır: üstte kapak, şarkı adı ve dalga, ortada ilerleme çubuğu, altta beğeni, geri, oynat / duraklat, ileri ve çıkış düğmeleri. Boş yerine dokununca tam boy panel açılır. Açıkken müzik hapı yerine bu görünüm kullanılır"),
         i("Orta boy genişlik"),
         i("Orta boy yükseklik"),
         i("Adanın boyutuna uydur", "Açıkken ada büyümez: hap tasarımları (arama ve müzik) ayarladığın küçültülmüş ada boyutuna sığacak şekilde ölçeklenir. Kapalıyken ada hap boyutuna (müzikte ~344×100 dp) büyür. Kapalı ada küçükse (varsayılan 120×32) yazılar küçük kalır; okunaklı olması için adanın genişlik / yüksekliğini artır"),
@@ -435,7 +435,7 @@ private fun part5(): List<InfoSection> = listOf(
     )),
     InfoSection("Hareket", "Animasyon", "Açılma ve küçülme geçişi", listOf(
         i("Animasyonlar", "Kapatırsan ada anında açılır/kapanır"),
-        i("Müzik adası animasyonu", "Müzik çalarken ada genişlerken içerik bulanıktan netleşerek belirir; küçülürken bunun tersi olur (iOS tarzı)"),
+        i("Müzik adası animasyonu", "Müzik çalarken ada genişlerken içerik bulanıktan netleşerek belirir; küçülürken bunun tersi olur"),
         i("Albüm kapağı dönme animasyonu", "Ada açılırken kapak bir kez 360° döner, küçülürken ters yöne döner. Şarkı değişince kapak dönerek değişir (sonraki: bir yöne, önceki: ters yöne)"),
     )),
     InfoSection("Hareket", "Kilit ekranı noktası", "Telefon kilitliyken adanın yanında yanıp sönen renkli nokta", listOf(
@@ -569,7 +569,7 @@ private fun part7(): List<InfoSection> = listOf(
         i("Hız"),
         i("Akıcı yutma", "Uygulama penceresi bulanıklaşarak küçülür ve adanın altına girer, ada aşağı doğru şişip yutar ve yaylanarak eski haline döner. Müzik uygulamasını adadan açarken de tersi oynar: ada şişer, pencere altından bulanık çıkıp ekranı kaplar. Açıksa aşağıdaki yutma ve panel seçenekleri kullanılmaz"),
         i("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa ada büyümez (Uzayan ada açıksa onun yerine o oynar)"),
-        i("Uzayan ada (iOS tarzı)", "Ada yukarı doğru (ekran kenarına kadar) yumuşakça büyür, sonra normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır. Bu sırada cam / çerçeve efektleri düz renkle çizilir"),
+        i("Uzayan ada", "Ada yukarı doğru (ekran kenarına kadar) yumuşakça büyür, sonra normal boyutuna döner. Açıksa kısa büyüme efekti yerine bu oynar; hız yukarıdaki ayardan alınır. Bu sırada cam / çerçeve efektleri düz renkle çizilir"),
         h("Panel animasyonu"),
         i("Klasik panel", "Uzun panel küçülerek adaya girer"),
         i("Atom ada", "Uygulama kartı eğilip huni gibi adaya çekilir (OriginOS tarzı)"),

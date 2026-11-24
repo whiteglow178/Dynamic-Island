@@ -167,7 +167,7 @@ object ColorGroups {
             ),
         ),
         ColorGroup(
-            "Bildirim banner'ı (cam)", "iOS tarzı cam bildirim bannerı",
+            "Bildirim banner'ı (cam)", "Cam bildirim bannerı",
             listOf(
                 s("banner_bg", "Banner zemini", 0xA8F2F2F7, true),
                 s("banner_sheen", "Cam parlaması", 0xFFFFFFFF),

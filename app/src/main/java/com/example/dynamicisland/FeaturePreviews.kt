@@ -179,7 +179,7 @@ internal fun featureHint(f: Feat): String = when (f) {
     Feat.Ringer -> "Zil / Titreşim / Sessiz göstergesi"
     Feat.Volume -> "Medya sesi göstergesi"
     Feat.Translate -> "Çeviri paneli"
-    Feat.Banner -> "iOS tarzı cam banner"
+    Feat.Banner -> "Cam banner"
     Feat.Stack -> "Olaylar alt alta kartlar halinde"
     Feat.SideVolume -> "Kenar ses tuşları"
     Feat.SideMusic -> "Kenar müzik çubukları (örnek şarkı)"
