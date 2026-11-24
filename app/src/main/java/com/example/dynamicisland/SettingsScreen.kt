@@ -731,6 +731,30 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     SubHeader(when (draft.neonStyle) { 5 -> "Alt kenar rengi"; 7 -> "Sağ taraf rengi"; else -> "İkinci renk" })
                     key(version) { ColorPicker(draft.neonColor2Argb) { draft = draft.copy(neonColor2Argb = it) } }
                 }
+                SectionDivider()
+                SubHeader("Müzik panelinde de")
+                Text("Ada açıkken müzik panelinde seçtiğin öğelerin çevresinde de aynı çerçeve (ateş, neon, şimşek...) olsun",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                val parts = listOf(
+                    NEON_PART_ART to "Albüm kapağı",
+                    NEON_PART_LIKE to "Beğeni tuşu",
+                    NEON_PART_PLAY to "Oynat / duraklat tuşu",
+                    NEON_PART_SKIP to "Önceki ve sonraki şarkı tuşları",
+                    NEON_PART_PROGRESS to "İlerleme çubuğu",
+                    NEON_PART_TITLE to "Şarkı adı",
+                    NEON_PART_ARTIST to "Sanatçı adı",
+                    NEON_PART_EQ to "Ekolayzır",
+                )
+                for ((bit, title) in parts) {
+                    SwitchRow(title, null, (draft.more.neonParts and bit) != 0) { on ->
+                        val v = if (on) draft.more.neonParts or bit else draft.more.neonParts and bit.inv()
+                        draft = draft.copy(more = draft.more.copy(neonParts = v))
+                    }
+                }
+                SectionDivider()
+                SwitchRow("Tuşlar temaya boyansın",
+                    "Müzik paneli açıkken tuşlar, şarkı adı, sanatçı, ilerleme çubuğu ve ekolayzır çerçevenin renkleriyle boyanır: ateşte sarı-turuncu-kırmızı akar, neonda seçtiğin renk parlar. Gökkuşağı modu açıksa o öncelikli",
+                    draft.more.neonTheme) { draft = draft.copy(more = draft.more.copy(neonTheme = it)) }
             }
         }
         sec("Adanın üstünde", "Adaya oturan küçük karakter") {

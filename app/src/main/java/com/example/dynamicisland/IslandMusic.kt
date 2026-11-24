@@ -875,6 +875,23 @@ private fun FavButton(
     }
 }
 
+// ---------------------------------------------------------------- Renkli çerçeve müzik panelinde
+/** Bu öğe için renkli çerçeve açık mı (Ayarlar > Renkli çerçeve > Müzik panelinde de)? */
+private fun neonPartOn(cfg: IslandSettings, part: Int) = cfg.neonStyle != 0 && (cfg.more.neonParts and part) != 0
+
+/** Çerçeve açıksa öğenin içine biraz boşluk: çerçeve öğeye yapışmasın. Kapalıyken düzen değişmez. */
+private fun Modifier.framePad(cfg: IslandSettings, part: Int, pad: Dp): Modifier =
+    if (neonPartOn(cfg, part)) this.padding(pad) else this
+
+/**
+ * Şarkı adı / sanatçı: çerçeve kapalıyken satırı doldurur (eskisi gibi); açıkken yazı kadar genişler ve çerçeve
+ * yazının çevresine biraz boşlukla çizilir (yazı uzunsa satır genişliğinde kalır, kayar / kısalır).
+ */
+@Composable
+private fun Modifier.textFrame(cfg: IslandSettings, part: Int): Modifier =
+    if (!neonPartOn(cfg, part)) this.fillMaxWidth()
+    else this.wrapContentWidth(Alignment.Start).neonPart(cfg, part, 7.dp).padding(horizontal = 6.dp, vertical = 2.dp)
+
 // ---------------------------------------------------------------- Genişletilmiş müzik paneli
 @Composable
 fun MusicPanel(
@@ -891,7 +908,7 @@ fun MusicPanel(
     artSpin: () -> Float = { 0f },    // ada açılırken / küçülürken kapağın dönüş açısı (derece)
     artVideo: String = "",            // doluysa kapak yerine bu video çalar
 ) {
-    val rb = rememberRainbowStyle(cfg)
+    val rb = rememberMusicPanelStyle(cfg)     // gökkuşağı ya da renkli çerçevenin teması
     val noRipple = remember { MutableInteractionSource() }
 
     // "Sözler sağda": kontroller solda, şarkı sözleri sağda (ekran görüntüsündeki düzen)
@@ -902,7 +919,7 @@ fun MusicPanel(
         ) {
             Column(Modifier.weight(0.56f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }.fxTarget("art")) {
+                    Box(Modifier.neonPart(cfg, NEON_PART_ART, 11.dp, cfg.artCircleExpanded()).artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }.fxTarget("art")) {
                         FlipAlbumArt(customArt ?: m.art, 50.dp, artFlip, artSpin, if (cfg.artCircleExpanded()) 50.dp / 2 else 11.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
                     }
                     Column(
@@ -911,19 +928,19 @@ fun MusicPanel(
                             .fxTarget("title"),
                     ) {
                         MarqueeText(
-                            m.title.ifBlank { "Bilinmeyen parça" }, Modifier.fillMaxWidth().rainbowFill(rb),
+                            m.title.ifBlank { "Bilinmeyen parça" }, Modifier.textFrame(cfg, NEON_PART_TITLE).rainbowFill(rb),
                             color = Pal.c("music_title"), fontSize = 16.sp, fontWeight = FontWeight.Bold,
                         )
                         Text(m.artist, color = Pal.c("music_artist"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth().rainbowFill(rb))
+                            modifier = Modifier.textFrame(cfg, NEON_PART_ARTIST).rainbowFill(rb))
                     }
                 }
-                Box(Modifier.fxTarget("progress")) { MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) } }
+                Box(Modifier.neonPart(cfg, NEON_PART_PROGRESS, 10.dp).fxTarget("progress").framePad(cfg, NEON_PART_PROGRESS, 5.dp)) { MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) } }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    FavButton(m, cfg, 19.dp, rb = rb, hit = 36.dp)
-                    CtlButton(Ctl.Rew, 20.dp, rb = rb, fxId = "rew", hit = 38.dp) { onCommand(MediaCommand.Previous) }
-                    CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 24.dp, rb = rb, fxId = "play", hit = 40.dp) { onCommand(MediaCommand.PlayPause) }
-                    CtlButton(Ctl.Fwd, 20.dp, rb = rb, fxId = "fwd", hit = 38.dp) { onCommand(MediaCommand.Next) }
+                    FavButton(m, cfg, 19.dp, Modifier.neonPart(cfg, NEON_PART_LIKE, 0.dp, true), rb = rb, hit = 36.dp)
+                    CtlButton(Ctl.Rew, 20.dp, Modifier.neonPart(cfg, NEON_PART_SKIP, 0.dp, true), rb = rb, fxId = "rew", hit = 38.dp) { onCommand(MediaCommand.Previous) }
+                    CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 24.dp, Modifier.neonPart(cfg, NEON_PART_PLAY, 0.dp, true), rb = rb, fxId = "play", hit = 40.dp) { onCommand(MediaCommand.PlayPause) }
+                    CtlButton(Ctl.Fwd, 20.dp, Modifier.neonPart(cfg, NEON_PART_SKIP, 0.dp, true), rb = rb, fxId = "fwd", hit = 38.dp) { onCommand(MediaCommand.Next) }
                     CtlButton(Ctl.Cast, 20.dp, rb = rb, fxId = "cast", hit = 36.dp) { onOutput() }
                 }
             }
@@ -939,7 +956,7 @@ fun MusicPanel(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }.fxTarget("art")) {
+            Box(Modifier.neonPart(cfg, NEON_PART_ART, 12.dp, cfg.artCircleExpanded()).artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }.fxTarget("art")) {
                 FlipAlbumArt(customArt ?: m.art, 60.dp, artFlip, artSpin, if (cfg.artCircleExpanded()) 60.dp / 2 else 12.dp, customArt == null && artVideo.isEmpty(), video = artVideo)   // sol köşe
             }
             // Kapak yüksekliğinde alan: şarkı adı ortada, sanatçı adı kapağın alt kenarıyla hizalı
@@ -950,29 +967,29 @@ fun MusicPanel(
             ) {
                 MarqueeText(
                     m.title.ifBlank { "Bilinmeyen parça" },
-                    Modifier.align(Alignment.CenterStart).fillMaxWidth().rainbowFill(rb),
+                    Modifier.align(Alignment.CenterStart).textFrame(cfg, NEON_PART_TITLE).rainbowFill(rb),
                     color = Pal.c("music_title"), fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 )
                 Text(
                     m.artist, color = Pal.c("music_artist"), fontSize = 14.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().offset(y = 3.dp).rainbowFill(rb),
+                    modifier = Modifier.align(Alignment.BottomStart).textFrame(cfg, NEON_PART_ARTIST).offset(y = 3.dp).rainbowFill(rb),
                 )
             }
             // Kırılabilir öğe: adayı kırma / yağmur / asit efektlerinde ekolayzır da düşer
-            Box(Modifier.fxTarget("eq")) { MusicMeter(accent, cfg.eqStyleNow(), height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb) }
+            Box(Modifier.neonPart(cfg, NEON_PART_EQ, 8.dp).fxTarget("eq").framePad(cfg, NEON_PART_EQ, 5.dp)) { MusicMeter(accent, cfg.eqStyleNow(), height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb) }
         }
 
         if (cfg.lyricsEnabled && cfg.lyricsInPanel) Column(Modifier.fxTarget("lyrics")) { PanelLyrics(cfg, lyrics, frame, artColor = m.artColor) }
 
-        Box(Modifier.fxTarget("progress")) { MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) } }
+        Box(Modifier.neonPart(cfg, NEON_PART_PROGRESS, 10.dp).fxTarget("progress").framePad(cfg, NEON_PART_PROGRESS, 5.dp)) { MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) } }
 
         Row(Modifier.fillMaxWidth().offset(y = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            FavButton(m, cfg, 22.dp, Modifier.offset(x = (-8).dp), rb)
+            FavButton(m, cfg, 22.dp, Modifier.offset(x = (-8).dp).neonPart(cfg, NEON_PART_LIKE, 0.dp, true), rb)
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                CtlButton(Ctl.Rew, 24.dp, rb = rb, fxId = "rew") { onCommand(MediaCommand.Previous) }
-                CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp, rb = rb, fxId = "play") { onCommand(MediaCommand.PlayPause) }
-                CtlButton(Ctl.Fwd, 24.dp, rb = rb, fxId = "fwd") { onCommand(MediaCommand.Next) }
+                CtlButton(Ctl.Rew, 24.dp, Modifier.neonPart(cfg, NEON_PART_SKIP, 0.dp, true), rb = rb, fxId = "rew") { onCommand(MediaCommand.Previous) }
+                CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp, Modifier.neonPart(cfg, NEON_PART_PLAY, 0.dp, true), rb = rb, fxId = "play") { onCommand(MediaCommand.PlayPause) }
+                CtlButton(Ctl.Fwd, 24.dp, Modifier.neonPart(cfg, NEON_PART_SKIP, 0.dp, true), rb = rb, fxId = "fwd") { onCommand(MediaCommand.Next) }
             }
             CtlButton(Ctl.Cast, 25.dp, Modifier.offset(x = 5.dp), rb = rb, fxId = "cast") { onOutput() }
         }
@@ -998,14 +1015,14 @@ fun MusicMidPanel(
     artSpin: () -> Float = { 0f },
     artVideo: String = "",
 ) {
-    val rb = rememberRainbowStyle(cfg)
+    val rb = rememberMusicPanelStyle(cfg)     // gökkuşağı ya da renkli çerçevenin teması
     val noRipple = remember { MutableInteractionSource() }
     Column(
         Modifier.fillMaxSize().padding(start = 16.dp, end = 14.dp, top = 22.dp, bottom = 6.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Box(Modifier.artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }) {
+            Box(Modifier.neonPart(cfg, NEON_PART_ART, 10.dp, cfg.artCircleExpanded()).artTap(cfg.openExpArt, cfg.artCircleExpanded()) { onOpenMusic() }) {
                 FlipAlbumArt(customArt ?: m.art, 44.dp, artFlip, artSpin, if (cfg.artCircleExpanded()) 44.dp / 2 else 10.dp, customArt == null && artVideo.isEmpty(), video = artVideo)
             }
             Column(
@@ -1013,20 +1030,20 @@ fun MusicMidPanel(
                     .then(if (cfg.openExpTitle) Modifier.clickable(interactionSource = noRipple, indication = null) { onOpenMusic() } else Modifier),
             ) {
                 MarqueeText(
-                    m.title.ifBlank { "Bilinmeyen parça" }, Modifier.fillMaxWidth().rainbowFill(rb),
+                    m.title.ifBlank { "Bilinmeyen parça" }, Modifier.textFrame(cfg, NEON_PART_TITLE).rainbowFill(rb),
                     color = Pal.c("music_title"), fontSize = 15.sp, fontWeight = FontWeight.Bold,
                 )
                 Text(m.artist, color = Pal.c("music_artist"), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().rainbowFill(rb))
+                    modifier = Modifier.textFrame(cfg, NEON_PART_ARTIST).rainbowFill(rb))
             }
-            MusicMeter(accent, cfg.eqStyleNow(), height = 16.dp, barWidth = 3.dp, animate = m.playing, rainbow = rb)
+            Box(Modifier.neonPart(cfg, NEON_PART_EQ, 7.dp).framePad(cfg, NEON_PART_EQ, 4.dp)) { MusicMeter(accent, cfg.eqStyleNow(), height = 16.dp, barWidth = 3.dp, animate = m.playing, rainbow = rb) }
         }
-        MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) }
+        Box(Modifier.neonPart(cfg, NEON_PART_PROGRESS, 10.dp).framePad(cfg, NEON_PART_PROGRESS, 5.dp)) { MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) } }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            FavButton(m, cfg, 19.dp, rb = rb, hit = 38.dp, fxId = null)
-            CtlButton(Ctl.Rew, 22.dp, rb = rb, hit = 40.dp) { onCommand(MediaCommand.Previous) }
-            CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 26.dp, rb = rb, hit = 42.dp) { onCommand(MediaCommand.PlayPause) }
-            CtlButton(Ctl.Fwd, 22.dp, rb = rb, hit = 40.dp) { onCommand(MediaCommand.Next) }
+            FavButton(m, cfg, 19.dp, Modifier.neonPart(cfg, NEON_PART_LIKE, 0.dp, true), rb = rb, hit = 38.dp, fxId = null)
+            CtlButton(Ctl.Rew, 22.dp, Modifier.neonPart(cfg, NEON_PART_SKIP, 0.dp, true), rb = rb, hit = 40.dp) { onCommand(MediaCommand.Previous) }
+            CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 26.dp, Modifier.neonPart(cfg, NEON_PART_PLAY, 0.dp, true), rb = rb, hit = 42.dp) { onCommand(MediaCommand.PlayPause) }
+            CtlButton(Ctl.Fwd, 22.dp, Modifier.neonPart(cfg, NEON_PART_SKIP, 0.dp, true), rb = rb, hit = 40.dp) { onCommand(MediaCommand.Next) }
             CtlButton(Ctl.Cast, 21.dp, rb = rb, hit = 38.dp) { onOutput() }
         }
     }

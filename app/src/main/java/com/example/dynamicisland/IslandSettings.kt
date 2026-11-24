@@ -17,7 +17,16 @@ import kotlin.math.ceil
 
 const val GLOW_PAD_DP = 14f     // parıltı için pencere kenar boşluğu
 const val BOUNCE_PAD_DP = 16f
-const val NOTCH_EAR_DP = 7f      // çentiğin üst köşelerindeki içe kavisli kulakların genişliği
+const val NOTCH_EAR_DP = 7f
+// Renkli çerçevenin müzik panelinde de çizileceği öğeler (MoreSettings.neonParts bitleri)
+const val NEON_PART_ART = 1
+const val NEON_PART_LIKE = 2
+const val NEON_PART_PLAY = 4
+const val NEON_PART_SKIP = 8
+const val NEON_PART_PROGRESS = 16
+const val NEON_PART_TITLE = 32
+const val NEON_PART_ARTIST = 64
+const val NEON_PART_EQ = 128      // çentiğin üst köşelerindeki içe kavisli kulakların genişliği
 const val NEON_PAD_DP = 18f     // renkli çerçevenin (neon / ateş) dışa taşan ışığı için pay   // "Zıplamalı" animasyonun taşma payı
 const val FAV_COLUMNS = 4       // favori panelinde bir satırdaki uygulama sayısı
 const val FAV_ROW_DP = 78f      // favori panelinde bir satırın yüksekliği
@@ -649,6 +658,8 @@ data class MoreSettings(
     val notchMode: Boolean = false,         // çentik (notch) modu: ada ekranın üstüne yapışık, kulaklı çentik şeklinde
     val notchWidthDp: Float = 190f,         // çentiğin genişliği (dp)
     val notchDepthDp: Float = 0f,           // çentiğin kameranın altına ne kadar ineceği (ek derinlik, dp)
+    val neonParts: Int = 0,                 // renkli çerçeve müzik panelinde de: bit bit NEON_PART_* (kapak, beğeni, oynat, önceki/sonraki, ilerleme, şarkı adı, sanatçı, ekolayzır)
+    val neonTheme: Boolean = false,         // müzik panelinde tuşlar / yazılar / çubuk / ekolayzır renkli çerçevenin temasına boyansın
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -790,6 +801,7 @@ class SettingsRepository(context: Context) {
         val X_TFULL = booleanPreferencesKey("x_tfull"); val X_SYSW = floatPreferencesKey("x_sysw"); val X_CHGW = floatPreferencesKey("x_chgw")
         val X_ORBIT = booleanPreferencesKey("x_orbit"); val X_EQX = intPreferencesKey("x_eqx"); val X_ARTC = intPreferencesKey("x_artc"); val X_SIDEW = booleanPreferencesKey("x_sidew"); val X_AVOID = booleanPreferencesKey("x_avoid")
         val X_NOTCH = booleanPreferencesKey("x_notch"); val X_NOTCHW = floatPreferencesKey("x_notchw"); val X_NOTCHD = floatPreferencesKey("x_notchd")
+        val X_NEONPARTS = intPreferencesKey("x_neonparts"); val X_NEONTHEME = booleanPreferencesKey("x_neontheme")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1115,6 +1127,8 @@ class SettingsRepository(context: Context) {
                 notchMode = p[K.X_NOTCH] ?: d.more.notchMode,
                 notchWidthDp = (p[K.X_NOTCHW] ?: d.more.notchWidthDp).coerceIn(80f, 320f),
                 notchDepthDp = (p[K.X_NOTCHD] ?: d.more.notchDepthDp).coerceIn(-10f, 30f),
+                neonParts = p[K.X_NEONPARTS] ?: d.more.neonParts,
+                neonTheme = p[K.X_NEONTHEME] ?: d.more.neonTheme,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1255,6 +1269,7 @@ class SettingsRepository(context: Context) {
             it[K.X_TFULL] = m.timerFullWidth; it[K.X_SYSW] = m.sysPillPct; it[K.X_CHGW] = m.chargePillW
             it[K.X_ORBIT] = m.eqOrbit; it[K.X_EQX] = m.eqStyleX; it[K.X_ARTC] = m.artCircle; it[K.X_SIDEW] = m.sideWide; it[K.X_AVOID] = m.avoidIcons
             it[K.X_NOTCH] = m.notchMode; it[K.X_NOTCHW] = m.notchWidthDp; it[K.X_NOTCHD] = m.notchDepthDp
+            it[K.X_NEONPARTS] = m.neonParts; it[K.X_NEONTHEME] = m.neonTheme
         }
     }
 

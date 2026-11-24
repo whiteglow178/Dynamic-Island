@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -83,86 +84,139 @@ private fun cyclic(pal: List<Color>, t: Float): Color {
 private fun flowBrush(pal: List<Color>, phase: Float, center: Offset): Brush =
     Brush.sweepGradient(List(25) { i -> cyclic(pal, i / 24f - phase) }, center)
 
+/** Renkli çerçevenin bir çizimi için gereken her şey (stil, akış fazı, palet, renkler, kalınlık, ışık). */
+private class NeonSpec(
+    val style: Int, val phase: androidx.compose.runtime.State<Float>, val pal: List<Color>,
+    val c1: Color, val c2: Color, val wDp: Float, val glow: Float,
+)
+
+/** Renkli çerçevenin renk paleti (ateşte sarı-turuncu-kırmızı, renk geçişinde iki renk ve aradaki parlak geçiş...). */
+private fun neonPalette(style: Int, c1: Color, c2: Color): List<Color> {
+    // Renk geçişinde iki rengin arası beyaza yakın parlak bir geçişle bağlanır (pembe → beyaz → mint)
+    val mid = lerp(lerp(c1, c2, 0.5f), Color.White, 0.55f)
+    return when (style) {
+        1 -> listOf(c1, mid, c2, mid)
+        2 -> RainbowPalette
+        4 -> listOf(c1)
+        5, 7 -> listOf(c1, c2)
+        6 -> listOf(Color(0xFFB26BFF), Color(0xFF7B2CFF), Color(0xFFD9B8FF))
+        else -> listOf(Color(0xFFFF6A00), Color(0xFFFFC400), Color(0xFFFF2A00))
+    }
+}
+
+/**
+ * "Tuşlar temaya boyansın": müzik panelindeki tuş / yazı / çubuk / ekolayzır boyamasında kullanılan renk durakları
+ * (baştaki renk sonda tekrar edilir: akarken kesik olmasın). Renkli çerçeve kapalıysa null.
+ */
+internal fun neonThemeStops(cfg: IslandSettings): List<Color>? {
+    if (cfg.neonStyle == 0) return null
+    val c1 = Color(cfg.neonColor1Argb)
+    val c2 = Color(cfg.neonColor2Argb)
+    val base = when (cfg.neonStyle) {
+        3 -> listOf(Color(0xFFFFD34D), Color(0xFFFF8A00), Color(0xFFFF3B1F), Color(0xFFFF8A00))   // ateş
+        4 -> listOf(c1, lerp(c1, Color.White, 0.45f))                                                // neon: tek renk parıltısı
+        else -> neonPalette(cfg.neonStyle, c1, c2)
+    }
+    return base + base.first()
+}
+
+@Composable
+private fun rememberNeonSpec(cfg: IslandSettings): NeonSpec? {
+    val style = cfg.neonStyle
+    if (style == 0) return null
+    val tr = rememberInfiniteTransition(label = "neon")
+    val dur = (4200f / cfg.neonSpeed.coerceIn(0.2f, 4f)).roundToInt()
+    val phase = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(dur, easing = LinearEasing)), label = "neonPhase")
+    val c1 = Color(cfg.neonColor1Argb)
+    val c2 = Color(cfg.neonColor2Argb)
+    return NeonSpec(style, phase, neonPalette(style, c1, c2), c1, c2, cfg.neonWidthDp, cfg.neonGlow.coerceIn(0f, 1.5f))
+}
+
 /**
  * Adanın kenarına renkli çerçeve + dışa vuran ışık. islandSurface'tan ÖNCE (kırpmanın dışında) uygulanmalı.
  * Çizgi içeriğin üstüne, ışık içeriğin altına çizilir.
  */
 @Composable
 internal fun Modifier.islandNeon(cfg: IslandSettings, notch: Boolean = false): Modifier {
-    val style = cfg.neonStyle
-    if (style == 0) return this
-    val tr = rememberInfiniteTransition(label = "neon")
-    val dur = (4200f / cfg.neonSpeed.coerceIn(0.2f, 4f)).roundToInt()
-    val phase = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(dur, easing = LinearEasing)), label = "neonPhase")
-    val c1 = Color(cfg.neonColor1Argb)
-    val c2 = Color(cfg.neonColor2Argb)
-    // Renk geçişinde iki rengin arası beyaza yakın parlak bir geçişle bağlanır (videodaki pembe → beyaz → mint)
-    val mid = lerp(lerp(c1, c2, 0.5f), Color.White, 0.55f)
-    val pal = when (style) {
-        1 -> listOf(c1, mid, c2, mid)
-        2 -> RainbowPalette
-        4 -> listOf(c1)
-        6 -> listOf(Color(0xFFB26BFF), Color(0xFF7B2CFF), Color(0xFFD9B8FF))
-        else -> listOf(Color(0xFFFF6A00), Color(0xFFFFC400), Color(0xFFFF2A00))
-    }
-    val wDp = cfg.neonWidthDp
-    val glow = cfg.neonGlow.coerceIn(0f, 1.5f)
-    return this.drawWithContent {
-        val p = phase.value
-        val sw = wDp.dp.toPx()
-        val pad = NEON_PAD_DP.dp.toPx()
-        val pulse = if (style == 4) 0.6f + 0.4f * (0.5f + 0.5f * sin(p * 2f * PI.toFloat() * 2f)) else 1f
-        // Çentik modunda çerçeve / ışık / alevler notchAware içinde çizilir: üst kenar ekranın dışında kalır,
-        // yalnızca yanlar ve alt köşeler görünür; köşe yarıçapı çentiğinkiyle aynı olur. İçerik (drawContent) etkilenmez.
-        fun brushFor(): Brush = when (style) {
-            4 -> Brush.linearGradient(listOf(c1, c1))
-            5 -> Brush.verticalGradient(listOf(c1, c2), 0f, size.height)       // elektrik: üst kenar 1. renk, alt kenar 2. renk
-            7 -> Brush.horizontalGradient(listOf(c1, c2), 0f, size.width)      // ses dalgası: soldan sağa
-            else -> flowBrush(pal, p, center)
-        }
+    val n = rememberNeonSpec(cfg) ?: return this
+    return this.neonDraw(n, notch, 1f, 1f) { islandCornerPx(size.width, size.height, density, -1f) }
+}
 
-        if (style == 7) {
-            // Noktalı ses dalgası halkası: içerik üstte, halka adanın biraz dışında
-            drawContent()
-            notchAware(notch) { drawSpectrum(p, islandCornerPx(size.width, size.height, density, -1f), pad, c1, c2, glow) }
-            return@drawWithContent
-        }
-        notchAware(notch) {
-            val r = islandCornerPx(size.width, size.height, density, -1f)
-            if (style == 3) {
-                drawFire(p, r, pad * glow.coerceAtLeast(0.3f), FireOrange)
-            } else if (style == 6) {
-                drawFire(p, r, pad * 1.15f * glow.coerceAtLeast(0.3f), FirePurple)
-            } else if (glow > 0f) {
-                // Dışa vuran yumuşak ışık: kademeli, giderek sönen halkalar
-                val brush = brushFor()
-                val rings = 7
-                val step = pad * 0.85f / rings
-                for (i in 1..rings) {
-                    val inflate = (i - 0.5f) * step
-                    val fall = 1f - (i - 1f) / rings
-                    drawRoundRect(
-                        brush = brush, topLeft = Offset(-inflate, -inflate),
-                        size = Size(size.width + 2 * inflate, size.height + 2 * inflate),
-                        cornerRadius = CornerRadius(r + inflate),
-                        alpha = (glow * 0.5f * fall * fall * pulse).coerceIn(0f, 1f),
-                        style = Stroke(step),
-                    )
-                }
+/**
+ * Renkli çerçeve müzik panelindeki bir öğenin (kapak, tuş, ilerleme çubuğu, yazı, ekolayzır) çevresinde de:
+ * Ayarlar > Renkli çerçeve > "Müzik panelinde de" listesinde [part] seçiliyse aynı stil (ateş, neon, şimşek...)
+ * öğenin kenarına küçültülmüş olarak çizilir. [corner] köşe yarıçapı; [circle] ise tam daire.
+ */
+@Composable
+internal fun Modifier.neonPart(cfg: IslandSettings, part: Int, corner: Dp, circle: Boolean = false): Modifier {
+    if (cfg.neonStyle == 0 || (cfg.more.neonParts and part) == 0) return this
+    val n = rememberNeonSpec(cfg) ?: return this
+    return this.neonDraw(n, false, 0.42f, 0.65f) {
+        val half = min(size.width, size.height) / 2f
+        if (circle) half else min(corner.toPx(), half)
+    }
+}
+
+/** Ortak renkli çerçeve çizimi: ışık / alev içeriğin altına, çizgi / şimşek içeriğin üstüne. [radius] köşe yarıçapı (px). */
+private fun Modifier.neonDraw(
+    n: NeonSpec, notch: Boolean, padK: Float, widthK: Float, radius: DrawScope.() -> Float,
+): Modifier = this.drawWithContent {
+    val style = n.style
+    val c1 = n.c1; val c2 = n.c2; val pal = n.pal; val glow = n.glow
+    val p = n.phase.value
+    val sw = n.wDp.dp.toPx() * widthK
+    val pad = NEON_PAD_DP.dp.toPx() * padK
+    val pulse = if (style == 4) 0.6f + 0.4f * (0.5f + 0.5f * sin(p * 2f * PI.toFloat() * 2f)) else 1f
+    // Çentik modunda çerçeve / ışık / alevler notchAware içinde çizilir: üst kenar ekranın dışında kalır,
+    // yalnızca yanlar ve alt köşeler görünür; köşe yarıçapı çentiğinkiyle aynı olur. İçerik (drawContent) etkilenmez.
+    fun brushFor(): Brush = when (style) {
+        4 -> Brush.linearGradient(listOf(c1, c1))
+        5 -> Brush.verticalGradient(listOf(c1, c2), 0f, size.height)       // elektrik: üst kenar 1. renk, alt kenar 2. renk
+        7 -> Brush.horizontalGradient(listOf(c1, c2), 0f, size.width)      // ses dalgası: soldan sağa
+        else -> flowBrush(pal, p, center)
+    }
+
+    if (style == 7) {
+        // Noktalı ses dalgası halkası: içerik üstte, halka öğenin biraz dışında
+        drawContent()
+        notchAware(notch) { drawSpectrum(p, radius(), pad, c1, c2, glow) }
+        return@drawWithContent
+    }
+    notchAware(notch) {
+        val r = radius()
+        if (style == 3) {
+            drawFire(p, r, pad * glow.coerceAtLeast(0.3f), FireOrange)
+        } else if (style == 6) {
+            drawFire(p, r, pad * 1.15f * glow.coerceAtLeast(0.3f), FirePurple)
+        } else if (glow > 0f) {
+            // Dışa vuran yumuşak ışık: kademeli, giderek sönen halkalar
+            val brush = brushFor()
+            val rings = 7
+            val step = pad * 0.85f / rings
+            for (i in 1..rings) {
+                val inflate = (i - 0.5f) * step
+                val fall = 1f - (i - 1f) / rings
+                drawRoundRect(
+                    brush = brush, topLeft = Offset(-inflate, -inflate),
+                    size = Size(size.width + 2 * inflate, size.height + 2 * inflate),
+                    cornerRadius = CornerRadius(r + inflate),
+                    alpha = (glow * 0.5f * fall * fall * pulse).coerceIn(0f, 1f),
+                    style = Stroke(step),
+                )
             }
         }
-        drawContent()
-        notchAware(notch) {
-            val r = islandCornerPx(size.width, size.height, density, -1f)
-            if (style == 5) drawLightning(p, r, pad * glow.coerceAtLeast(0.3f), c1, c2)
-            val edge: Brush = if (style == 3 || style == 6) flowBrush(pal, p * 3f, center) else brushFor()
-            drawRoundRect(
-                brush = edge, topLeft = Offset(sw / 2f, sw / 2f),
-                size = Size(size.width - sw, size.height - sw),
-                cornerRadius = CornerRadius(max(r - sw / 2f, 0f)),
-                alpha = pulse, style = Stroke(sw),
-            )
-        }
+    }
+    drawContent()
+    notchAware(notch) {
+        val r = radius()
+        if (style == 5) drawLightning(p, r, pad * glow.coerceAtLeast(0.3f), c1, c2)
+        val edge: Brush = if (style == 3 || style == 6) flowBrush(pal, p * 3f, center) else brushFor()
+        drawRoundRect(
+            brush = edge, topLeft = Offset(sw / 2f, sw / 2f),
+            size = Size(size.width - sw, size.height - sw),
+            cornerRadius = CornerRadius(max(r - sw / 2f, 0f)),
+            alpha = pulse, style = Stroke(sw),
+        )
     }
 }
 

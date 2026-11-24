@@ -38,9 +38,12 @@ private val RAINBOW_STOPS: List<Color>
         return n
     }
 
-/** Bir gökkuşağı görünümü: akış fazı (0..1, yalnızca çizim fazında okunur) + saydamlık. */
+/**
+ * Bir gökkuşağı görünümü: akış fazı (0..1, yalnızca çizim fazında okunur) + saydamlık.
+ * [stops] doluysa gökkuşağı yerine bu renkler akar (müzik panelinde "tuşlar temaya boyansın": ateş, neon...).
+ */
 @Stable
-class RainbowStyle(val phase: State<Float>, val alpha: Float)
+class RainbowStyle(val phase: State<Float>, val alpha: Float, val stops: List<Color>? = null)
 
 /** Ortak faz saati: tüm örnekler aynı kare zamanından hesapladığı için senkron kalır. Kapalıyken hiçbir şey çalışmaz. */
 @Composable
@@ -64,6 +67,20 @@ fun rememberRainbowStyle(cfg: IslandSettings): RainbowStyle? {
     return if (cfg.rainbowEnabled) remember(phase, cfg.rainbowAlpha) { RainbowStyle(phase, cfg.rainbowAlpha) } else null
 }
 
+/**
+ * Genişletilmiş müzik panelinin boyaması: gökkuşağı modu açıksa gökkuşağı; değilse "Tuşlar temaya boyansın"
+ * açıksa renkli çerçevenin renkleri (ateşte sarı-turuncu-kırmızı akar). İkisi de kapalıysa null (normal renkler).
+ */
+@Composable
+fun rememberMusicPanelStyle(cfg: IslandSettings): RainbowStyle? {
+    val rb = rememberRainbowStyle(cfg)
+    val stops = if (rb == null && cfg.more.neonTheme) neonThemeStops(cfg) else null
+    val speed = cfg.neonSpeed.coerceIn(0.2f, 4f)
+    val phase = rememberRainbowPhase(stops != null, (4200f / speed).toLong().coerceAtLeast(600L))
+    if (rb != null) return rb
+    return if (stops != null) remember(phase, stops) { RainbowStyle(phase, 1f, stops) } else null
+}
+
 /** t (0..1, döngüsel) noktasındaki gökkuşağı rengi. */
 fun rainbowColorAt(t: Float, alpha: Float = 1f): Color {
     val n = RAINBOW_STOPS.size - 1
@@ -73,11 +90,11 @@ fun rainbowColorAt(t: Float, alpha: Float = 1f): Color {
 }
 
 /** Yatayda akan, kesintisiz tekrarlanan gökkuşağı fırçası. periodPx = bir tam gökkuşağının genişliği. */
-fun rainbowBrush(phase: Float, periodPx: Float, alpha: Float = 1f): Brush {
+fun rainbowBrush(phase: Float, periodPx: Float, alpha: Float = 1f, stops: List<Color>? = null): Brush {
     val p = periodPx.coerceAtLeast(1f)
     val shift = (((phase % 1f) + 1f) % 1f) * p
     return Brush.horizontalGradient(
-        colors = RAINBOW_STOPS.map { it.copy(alpha = alpha) },
+        colors = (stops ?: RAINBOW_STOPS).map { it.copy(alpha = alpha) },
         startX = shift, endX = shift + p, tileMode = TileMode.Repeated,
     )
 }
@@ -92,7 +109,7 @@ fun Modifier.rainbowFill(style: RainbowStyle?, minPeriod: Dp = 120.dp): Modifier
         .drawWithContent {
             drawContent()
             drawRect(
-                rainbowBrush(style.phase.value, maxOf(size.width, minPeriod.toPx()), style.alpha),
+                rainbowBrush(style.phase.value, maxOf(size.width, minPeriod.toPx()), style.alpha, style.stops),
                 blendMode = BlendMode.SrcIn,
             )
         }
