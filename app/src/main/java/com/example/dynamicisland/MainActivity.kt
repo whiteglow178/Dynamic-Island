@@ -510,7 +510,7 @@ private fun HomeScreen() {
                 Spacer(Modifier.height(8.dp))
             }
         } else {
-            val c = HOME_CATS[cat.coerceIn(0, HOME_CATS.lastIndex)]
+            val c = homeCatAt(cat)
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(
@@ -527,7 +527,11 @@ private fun HomeScreen() {
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    CompositionLocalProvider(LocalCardFilter provides c.titles.toSet()) { HomeAllSections() }
+                    if (cat == ABOUT_INDEX) {
+                        AboutContent()
+                    } else {
+                        CompositionLocalProvider(LocalCardFilter provides c.titles.toSet()) { HomeAllSections() }
+                    }
                     Spacer(Modifier.height(8.dp))
                 }
             }
@@ -575,6 +579,11 @@ private val HOME_CATS = listOf(
     ), "sessiz rahatsız etmeyin not favori"),
 )
 
+/** "Hakkında" kartı: HOME_CATS'in sonuna eklenen sanal kategori (arama/filtre dışında, içeriği AboutScreen.kt). */
+private val ABOUT_CAT = HomeCat("Hakkında", "ⓘ", "Sürüm, izinler, gizlilik, iletişim", emptyList())
+private val ABOUT_INDEX = HOME_CATS.size
+private fun homeCatAt(i: Int): HomeCat = if (i == ABOUT_INDEX) ABOUT_CAT else HOME_CATS[i.coerceIn(0, HOME_CATS.lastIndex)]
+
 /** Ana Sayfa'daki tüm kart grupları; hangilerinin çizileceğini LocalCardFilter belirler. */
 @Composable
 private fun HomeAllSections() {
@@ -589,10 +598,10 @@ private fun HomeAllSections() {
 private fun HomeCategoryGrid(onOpen: (Int) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        HOME_CATS.indices.chunked(2).forEach { row ->
+        (0..ABOUT_INDEX).toList().chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { i ->
-                    val c = HOME_CATS[i]
+                    val c = homeCatAt(i)
                     Column(
                         Modifier.weight(1f).height(118.dp).clip(RoundedCornerShape(18.dp)).background(cs.surface)
                             .clickable { onOpen(i) }.padding(14.dp),
