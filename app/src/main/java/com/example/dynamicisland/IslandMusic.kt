@@ -113,7 +113,8 @@ fun Equalizer(color: Color, height: Dp = 14.dp, barWidth: Dp = 3.dp, animate: Bo
 /**
  * Adadaki ses göstergesi: [style] 0 çubuklu ekolayzır, 1 halka ([EqRing]), 2 yörünge ([EqOrbit]),
  * 3 dalga ([EqWave]), 4 piksel ([EqDots]), 5 nabız ([EqPulse]), 6 güneş ([EqSun]), 7 kabarcık ([EqBubbles]),
- * 8 ayna ([EqMirror]), 9 yankı ([EqRipple]).
+ * 8 ayna ([EqMirror]), 9 yankı ([EqRipple]), 10 sarmal ([EqHelix]), 11 plak ([EqVinyl]), 12 lav ([EqLava]),
+ * 13 tepeler ([EqHills]), 14 kalp ([EqHeart]).
  * Ayarlar > Ekolayzır > "Görünüm". Halka ve yörünge, çubuklarla aynı yükseklik + 6dp'lik kare bir alana sığar.
  */
 @Composable
@@ -131,6 +132,11 @@ fun MusicMeter(
         7 -> EqBubbles(color, height, animate, rainbow)
         8 -> EqMirror(color, height, animate, rainbow)
         9 -> EqRipple(color, height + 6.dp, animate, rainbow)
+        10 -> EqHelix(color, height, animate, rainbow)
+        11 -> EqVinyl(color, height + 8.dp, animate, rainbow)
+        12 -> EqLava(color, height, animate, rainbow)
+        13 -> EqHills(color, height, animate, rainbow)
+        14 -> EqHeart(color, height + 6.dp, animate, rainbow)
         else -> Equalizer(color, height, barWidth, animate, rainbow)
     }
 }
@@ -536,6 +542,246 @@ fun EqRipple(color: Color, size: Dp, animate: Boolean = true, rainbow: RainbowSt
         }
         drawCircle(color.copy(alpha = 0.3f), core * 1.6f * (0.8f + 0.2f * beat.value * a), c)
         drawCircle(lerpColor(color, Color.White, 0.45f), core * (0.85f + 0.25f * beat.value * a), c)
+    }
+}
+
+/** Oynarken biriken zaman (sn): müzik durunca yavaşlayıp durur. Her karede çizim sırasında ilerletilir. */
+private class PlayClock {
+    var t = 0f
+    private var last = 0L
+    fun advance(speed: Float): Float {
+        val now = SystemClock.uptimeMillis()
+        val dt = if (last == 0L) 0f else ((now - last) / 1000f).coerceIn(0f, 0.1f)
+        last = now
+        t = (t + dt * speed) % 3600f
+        return t
+    }
+}
+
+/**
+ * "Sarmal": DNA gibi iç içe dönen iki şerit ve aralarındaki basamaklar. Öne gelen noktalar büyüyüp parlar,
+ * arkaya geçenler küçülüp solar; şerit ritimle açılıp kapanır. Müzik durunca dönüş yavaşlayıp durur.
+ */
+@Composable
+fun EqHelix(color: Color, height: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqHelix")
+    val tick = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "helixTick")
+    val beat = t.animateFloat(0.55f, 1f, infiniteRepeatable(tween(450, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "helixBeat")
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(600), label = "helixAmp")
+    val clock = remember { PlayClock() }
+    val c2 = remember(color) { shiftHue(color, 55f) }
+    Canvas(Modifier.size(height * 1.9f, height).rainbowFill(rainbow, 0.dp)) {
+        tick.value
+        val a = amp.value
+        val time = clock.advance(0.62f * a)
+        val tau = (2 * Math.PI).toFloat()
+        val w = this.size.width; val h = this.size.height
+        val cy = h / 2f
+        val dot = h * 0.075f
+        val maxA = h / 2f - dot * 2.2f
+        val spread = 0.35f + 0.65f * (if (a > 0f) beat.value * a + (1f - a) * 0.55f else 0.55f)
+        val n = 11
+        for (i in 0 until n) {
+            val u = i / (n - 1f)
+            val ph = tau * (u * 1.25f + time)
+            val sn = kotlin.math.sin(ph); val cs = kotlin.math.cos(ph)
+            val x = dot * 2f + u * (w - dot * 4f)
+            val ya = cy + maxA * spread * sn
+            val yb = cy - maxA * spread * sn
+            val mix = lerpColor(color, c2, u)
+            drawLine(mix.copy(alpha = 0.25f), Offset(x, ya), Offset(x, yb), dot * 0.7f)
+            // önce arkadaki, sonra öndeki nokta
+            val back = if (cs >= 0f) Pair(yb, c2) else Pair(ya, color)
+            val front = if (cs >= 0f) Pair(ya, color) else Pair(yb, c2)
+            val depth = kotlin.math.abs(cs)
+            drawCircle(back.second.copy(alpha = 0.45f + 0.2f * (1f - depth)), dot * (1.1f - 0.25f * depth), Offset(x, back.first))
+            drawCircle(front.second, dot * (1.1f + 0.45f * depth), Offset(x, front.first))
+        }
+    }
+}
+
+/**
+ * "Plak": dönen küçük bir vinil plak. Olukların üstünde ışık yansıması döner, ortadaki etiket kapak renginde ve
+ * üzerinde dönen bir işaret var. Müzik durunca plak yavaşlayıp durur.
+ */
+@Composable
+fun EqVinyl(color: Color, size: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqVinyl")
+    val tick = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "vinylTick")
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(900), label = "vinylAmp")
+    val clock = remember { PlayClock() }
+    val c2 = remember(color) { shiftHue(color, 55f) }
+    Canvas(Modifier.size(size).rainbowFill(rainbow, 0.dp)) {
+        tick.value
+        val turns = clock.advance(0.55f * amp.value)         // tam hızda ~1,8 sn'de bir tur
+        val deg = turns * 360f
+        val d = this.size.minDimension
+        val c = center
+        val r = d / 2f - d * 0.02f
+        drawCircle(Color(0xFF16161B), r, c)
+        val groove = Color(0xFF2E2E38)
+        for (k in listOf(0.92f, 0.80f, 0.68f, 0.56f)) drawCircle(groove, r * k, c, style = Stroke((d * 0.018f).coerceAtLeast(0.8f)))
+        // dönen ışık yansımaları (karşılıklı iki yay)
+        val hr = r * 0.86f
+        for (j in 0 until 2) {
+            drawArc(
+                Color.White.copy(alpha = 0.32f), deg + j * 180f, 35f, false,
+                Offset(c.x - hr, c.y - hr), Size(hr * 2f, hr * 2f), style = Stroke(d * 0.05f, cap = StrokeCap.Round),
+            )
+        }
+        val lr = r * 0.42f
+        drawCircle(color, lr, c)
+        val rad = Math.toRadians(deg.toDouble())
+        val mark = Offset(c.x + lr * 0.55f * kotlin.math.cos(rad).toFloat(), c.y + lr * 0.55f * kotlin.math.sin(rad).toFloat())
+        drawCircle(c2, d * 0.055f, mark)
+        drawCircle(Color(0xFF0A0A0A), d * 0.035f, c)
+    }
+}
+
+/**
+ * "Lav": lav lambası gibi yavaşça dolaşan, birbirine yaklaşınca sıvı köprülerle birleşip uzaklaşınca ayrılan dört
+ * renkli baloncuk. Ritimle hafifçe şişerler; müzik durunca hareket yavaşlar.
+ */
+@Composable
+fun EqLava(color: Color, height: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqLava")
+    val tick = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "lavaTick")
+    val beats = intArrayOf(460, 520, 580, 640).map { d ->
+        t.animateFloat(0.4f, 1f, infiniteRepeatable(tween(d, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "lava$d")
+    }
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(700), label = "lavaAmp")
+    val clock = remember { PlayClock() }
+    val c2 = remember(color) { shiftHue(color, 55f) }
+    Canvas(Modifier.size(height * 1.7f, height).rainbowFill(rainbow, 0.dp)) {
+        tick.value
+        val a = amp.value
+        val time = clock.advance(0.25f + 0.75f * a)
+        val w = this.size.width; val h = this.size.height
+        val pos = ArrayList<Offset>(4)
+        val rad = FloatArray(4)
+        for (i in 0 until 4) {
+            val bx = w * (0.22f + 0.56f * (0.5f + 0.5f * kotlin.math.sin(time * (0.9f + 0.3f * i) + i * 2.1f)))
+            val by = h * (0.5f + 0.26f * kotlin.math.sin(time * (1.3f + 0.4f * i) + i))
+            val br = h * (0.17f + 0.04f * kotlin.math.sin(time * 3f + i)) * (0.85f + 0.3f * (beats[i].value * a + (1f - a) * 0.5f))
+            pos.add(Offset(bx, by)); rad[i] = br
+        }
+        val brush = Brush.verticalGradient(listOf(c2, color), 0f, h)
+        // yakın baloncuklar arasında sıvı köprü
+        for (i in 0 until 4) for (j in i + 1 until 4) {
+            metaballPath(pos[i], rad[i], pos[j], rad[j], (rad[i] + rad[j]) * 1.6f)?.let { drawPath(it, brush) }
+        }
+        for (i in 0 until 4) {
+            drawCircle(brush, rad[i], pos[i])
+            drawCircle(Color.White.copy(alpha = 0.28f), rad[i] * 0.35f, Offset(pos[i].x - rad[i] * 0.3f, pos[i].y - rad[i] * 0.35f))
+        }
+    }
+}
+
+/**
+ * "Tepeler": üç katmanlı, dolgulu ve sürekli akan bir ses dağı silüeti. Katmanlar farklı hız ve yönde akar, tepeler
+ * ritimle yükselir; kenarlarda alçalır. Müzik durunca alçak, sakin tepeler kalır.
+ */
+@Composable
+fun EqHills(color: Color, height: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqHills")
+    val tick = t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "hillsTick")
+    val beats = intArrayOf(430, 520, 610).map { d ->
+        t.animateFloat(0.3f, 1f, infiniteRepeatable(tween(d, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "hill$d")
+    }
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(500), label = "hillsAmp")
+    val clock = remember { PlayClock() }
+    val c2 = remember(color) { shiftHue(color, 55f) }
+    val c3 = remember(color) { shiftHue(color, -45f) }
+    val path = remember { Path() }
+    Canvas(Modifier.size(height * 1.9f, height).rainbowFill(rainbow, 0.dp)) {
+        tick.value
+        val a = amp.value
+        val time = clock.advance(0.3f + 0.7f * a)
+        val tau = (2 * Math.PI).toFloat()
+        val w = this.size.width; val h = this.size.height
+        val base = h
+        val layers = listOf(Triple(c3, 0.45f, 0.7f), Triple(c2, 0.6f, -1.1f), Triple(color, 1f, 0.9f))
+        val offs = floatArrayOf(1.3f, 0.4f, 0f)
+        for ((li, l) in layers.withIndex()) {
+            val (col, al, sp) = l
+            path.reset()
+            path.moveTo(0f, base)
+            val n = 32
+            var lastX = 0f; var lastY = base
+            val tops = ArrayList<Offset>(n + 1)
+            for (i in 0..n) {
+                val u = i / n.toFloat()
+                val env = kotlin.math.sin(Math.PI.toFloat() * u).let { if (it <= 0f) 0f else Math.pow(it.toDouble(), 0.8).toFloat() }
+                val v = (0.5f + 0.5f * kotlin.math.sin(tau * (u * 1.6f + time * sp * 0.6f) + offs[li])) *
+                    (0.6f + 0.4f * kotlin.math.sin(tau * (u * 3.1f - time * sp * 0.4f) + offs[li] * 2f))
+                val lift = 0.7f + 0.3f * (beats[li].value * a + (1f - a) * 0.3f)
+                val hgt = h * (0.15f + 0.75f * v * env * (0.35f + 0.65f * a)) * lift
+                lastX = u * w; lastY = base - hgt
+                path.lineTo(lastX, lastY)
+                tops.add(Offset(lastX, lastY))
+            }
+            path.lineTo(w, base)
+            path.close()
+            drawPath(path, col.copy(alpha = al * 0.55f))
+            for (i in 1 until tops.size) drawLine(lerpColor(col, Color.White, 0.3f).copy(alpha = al), tops[i - 1], tops[i], (h * 0.06f).coerceAtLeast(1f), StrokeCap.Round)
+        }
+    }
+}
+
+/** Kalp şekli (parametrik), [s] boyutunda, [c] merkezli. */
+private fun heartPath(path: Path, c: Offset, s: Float) {
+    path.reset()
+    val n = 60
+    for (i in 0..n) {
+        val a = (2 * Math.PI * i / n)
+        val sn = kotlin.math.sin(a)
+        val x = (16 * sn * sn * sn).toFloat()
+        val y = (-(13 * kotlin.math.cos(a) - 5 * kotlin.math.cos(2 * a) - 2 * kotlin.math.cos(3 * a) - kotlin.math.cos(4 * a))).toFloat()
+        val px = c.x + x / 17f * s
+        val py = c.y + y / 17f * s + s * 0.1f
+        if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+    }
+    path.close()
+}
+
+/**
+ * "Kalp": gerçek kalp gibi "tık-tık... bekle" ritmiyle atan parlak bir kalp; her vuruşta çevresine küçük kıvılcımlar
+ * saçılır, arkasında yumuşak bir ışık var. Müzik durunca sakin ve hafif sönük durur.
+ */
+@Composable
+fun EqHeart(color: Color, size: Dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
+    val t = rememberInfiniteTransition(label = "eqHeart")
+    val phase = t.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "heartPhase")
+    val amp = animateFloatAsState(if (animate) 1f else 0f, tween(500), label = "heartAmp")
+    val c2 = remember(color) { shiftHue(color, 55f) }
+    val body = remember(color) { lerpColor(color, c2, 0.35f) }
+    val path = remember { Path() }
+    Canvas(Modifier.size(size).rainbowFill(rainbow, 0.dp)) {
+        val a = amp.value
+        val ph = phase.value
+        // iki vuruş: güçlü "tık" ve daha zayıf ikinci "tık", sonra bekleme
+        fun bump(x: Float, at: Float) = kotlin.math.exp(-((x - at) / 0.05f).let { it * it })
+        val beat = (bump(ph, 0.08f) + 0.7f * bump(ph, 0.27f)) * a
+        val d = this.size.minDimension
+        val c = center
+        val s = d * 0.34f * (1f + 0.18f * beat)
+        // arkadaki ışık
+        heartPath(path, c, s * 1.35f)
+        drawPath(path, color.copy(alpha = 0.18f + 0.3f * beat))
+        heartPath(path, c, s)
+        drawPath(path, body.copy(alpha = 0.7f + 0.3f * a))
+        drawCircle(Color.White.copy(alpha = 0.5f), s * 0.18f, Offset(c.x - s * 0.35f, c.y - s * 0.3f))
+        // vuruştan sonra dışa saçılan kıvılcımlar
+        if (a > 0f && ph < 0.5f) {
+            val rr = s * (1.2f + 1.0f * ph)
+            for (j in 0 until 6) {
+                val ang = 2 * Math.PI * j / 6 + 0.3
+                drawCircle(
+                    c2.copy(alpha = ((1f - ph * 2f) * 0.9f * a).coerceIn(0f, 1f)), d * 0.035f,
+                    Offset(c.x + rr * kotlin.math.cos(ang).toFloat(), c.y + rr * kotlin.math.sin(ang).toFloat() * 0.8f),
+                )
+            }
+        }
     }
 }
 

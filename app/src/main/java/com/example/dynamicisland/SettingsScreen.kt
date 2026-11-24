@@ -518,6 +518,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             RadioRow("Kabarcık", "Altta doğup yalpalayarak yükselen ve tepede sönen renkli kabarcıklar", eqNow == 7) { eqPick(7) }
             RadioRow("Ayna", "Ortadaki çizgiden yukarı ve aşağı simetrik açılan ince çubuklar", eqNow == 8) { eqPick(8) }
             RadioRow("Yankı", "Merkezden dışarı yayılıp sönen halkalar ve ritimle atan bir çekirdek", eqNow == 9) { eqPick(9) }
+            RadioRow("Sarmal", "DNA gibi iç içe dönen iki şerit; öne gelen noktalar parlar, şerit ritimle açılıp kapanır", eqNow == 10) { eqPick(10) }
+            RadioRow("Plak", "Dönen küçük bir vinil plak; oluklarda ışık yansıması, etiket kapak renginde", eqNow == 11) { eqPick(11) }
+            RadioRow("Lav", "Lav lambası gibi birleşip ayrılan, ritimle şişen renkli baloncuklar", eqNow == 12) { eqPick(12) }
+            RadioRow("Tepeler", "Üç katmanlı, dolgulu ve akan bir ses dağı; tepeler ritimle yükselir", eqNow == 13) { eqPick(13) }
+            RadioRow("Kalp", "Tık-tık ritmiyle atan parlak bir kalp; her vuruşta küçük kıvılcımlar", eqNow == 14) { eqPick(14) }
             SectionDivider()
             SwitchRow("Albüm kapağı rengi", "Ekolayzır, çalan şarkının kapağına göre renklenir",
                 draft.eqDynamicColor) { draft = draft.copy(eqDynamicColor = it) }

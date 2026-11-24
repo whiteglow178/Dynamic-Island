@@ -148,7 +148,7 @@ internal class SideHold { var c: IslandContent? = null }
  * İki daireyi sıvı gibi birleştiren köprü yolu (metaball). Daireler [maxDist]'ten uzaksa ya da biri
  * ötekinin içindeyse null döner: köprü kopmuş / henüz oluşmamış demektir.
  */
-private fun metaballPath(c1: Offset, r1: Float, c2: Offset, r2: Float, maxDist: Float): Path? {
+internal fun metaballPath(c1: Offset, r1: Float, c2: Offset, r2: Float, maxDist: Float): Path? {
     val dx = c2.x - c1.x
     val dy = c2.y - c1.y
     val d = sqrt(dx * dx + dy * dy)
