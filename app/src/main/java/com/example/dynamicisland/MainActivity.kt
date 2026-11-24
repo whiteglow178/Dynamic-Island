@@ -430,7 +430,7 @@ private fun AppRoot(titleVisible: Boolean = true, onTitlePos: (Offset) -> Unit =
                         .onGloballyPositioned { onTitlePos(it.positionInRoot()) }
                         .graphicsLayer { alpha = if (titleVisible) 1f else 0f },
                 )
-                Text("Kamera çevresinde canlı ada", color = cs.onSurfaceVariant, fontSize = 13.sp)
+                Text("Standartların çok ötesinde", color = cs.onSurfaceVariant, fontSize = 13.sp)
             }
             // Alttaki yüzen çubuğun altında kalmasın diye içeriğe alttan boşluk bırakılır
             Box(Modifier.weight(1f).padding(bottom = FloatingTabsHeight + 24.dp)) {
