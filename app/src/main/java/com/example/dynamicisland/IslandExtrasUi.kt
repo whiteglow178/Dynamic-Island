@@ -237,7 +237,7 @@ internal fun TimerCompact(c: IslandContent.Status, modifier: Modifier = Modifier
                 c.kind == StatusKind.Alarm -> drawAlarmClock(X_ORANGE, Color.Black, sc)
                 watch -> drawStopwatch(X_ORANGE, sc)
                 // Zamanlayıcı: kalan süre oranında azalan halka (toplam bilinmiyorsa tam halka)
-                else -> drawTimerRing(if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, X_ORANGE)
+                else -> drawTimerRing(if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, timerTint(c))
             }
         }
         Spacer(Modifier.weight(1f))
@@ -456,7 +456,18 @@ internal fun TimerSetPanel() {
                     }
                     .padding(horizontal = 16.dp, vertical = 9.dp),
             ) {
-                Text("Zamanlayıcıyı Başlat", color = X_ORANGE, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
+                Text("Başlat", color = X_ORANGE, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
+            }
+            Spacer(Modifier.width(8.dp))
+            // Odak zamanlayıcısı: çalışma / mola döngüsü (süreler ayarlardan) -> ClockController.startFocus
+            Box(
+                Modifier.clip(RoundedCornerShape(50)).background(FOCUS_GREEN.copy(alpha = 0.22f))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                        IslandActions.onFocusStart()
+                    }
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+            ) {
+                Text("Odak", color = FOCUS_GREEN, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
             }
             Spacer(Modifier.weight(1f))
             val h = mins / 60; val m = mins % 60
@@ -467,6 +478,10 @@ internal fun TimerSetPanel() {
 }
 
 private const val TIMER_TICK_DP = 7f
+/** Odak zamanlayıcısının mola rengi (halka yeşile döner). */
+internal val FOCUS_GREEN = Color(0xFF34C759)
+/** Zamanlayıcı halkasının rengi: odak molasında yeşil, diğerlerinde turuncu. */
+internal fun timerTint(c: IslandContent.Status): Color = if (c.title == "Mola") FOCUS_GREEN else X_ORANGE
 private const val TIMER_GLOW_MS = 650L
 private val X_GLOW = Color(0xFFFFE27A)
 

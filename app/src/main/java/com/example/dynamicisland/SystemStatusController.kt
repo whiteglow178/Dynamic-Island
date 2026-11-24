@@ -200,6 +200,8 @@ class SystemStatusController(private val host: IslandHost) {
         val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                // VPN ağları ayrı izlenir (VpnWatch): VPN açılınca "İnternet bağlandı" hapı çıkmasın
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return
                 val t = when {
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 0
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 1

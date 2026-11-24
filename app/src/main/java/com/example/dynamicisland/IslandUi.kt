@@ -1330,6 +1330,15 @@ fun IslandPill(
             }
         }
 
+        if (content is IslandContent.Idle && compactVisible && !cfg.dotMode && (cfg.more.netSpeedMode != 0 || cfg.more.vpnIndicator)) {
+            // Boştaki ada: VPN kalkanı + ağ hızı -> NetTools.kt
+            IdleNetBadges(
+                cfg,
+                Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
+                    .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
+            )
+        }
+
         // Yutma efekti sırasında kapalı adanın içeriği (kapak, equalizer, sözler) görünmez; efekt bitince yumuşakça gelir
         val swallowAlpha = animateFloatAsState(
             if (swallow) 0f else 1f,

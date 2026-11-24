@@ -140,6 +140,8 @@ internal fun DrawScope.drawHeadphoneGlyph(color: Color, wired: Boolean) {
 internal fun DrawScope.drawSysGlyph(c: IslandContent.Status, w: Color) {
     when (c.kind) {
         StatusKind.Network -> when (c.extra) {
+            4 -> drawShieldGlyph(w)                 // VPN açık (NetTools.kt)
+            5 -> drawShieldGlyph(w, broken = true)  // VPN koptu
             1 -> drawCellGlyph(w)
             3 -> drawWifiGlyph(w, slash = true)
             else -> drawWifiGlyph(w)
@@ -158,7 +160,7 @@ internal fun DrawScope.drawSysGlyph(c: IslandContent.Status, w: Color) {
 }
 
 internal fun sysColor(c: IslandContent.Status): Color = when (c.kind) {
-    StatusKind.Network -> when (c.extra) { 1 -> Pal.c("status_cell"); 3 -> Pal.c("status_offline"); else -> Pal.c("status_wifi") }
+    StatusKind.Network -> when (c.extra) { 4 -> VPN_GREEN; 5 -> VPN_RED; 1 -> Pal.c("status_cell"); 3 -> Pal.c("status_offline"); else -> Pal.c("status_wifi") }
     StatusKind.Airplane -> Pal.c("status_airplane")
     StatusKind.RingVolume -> Pal.c("status_text")
     StatusKind.LowBattery, StatusKind.LowBatteryCard -> if (c.extra == 1) Pal.c("status_power_save") else Pal.c("status_low_batt")

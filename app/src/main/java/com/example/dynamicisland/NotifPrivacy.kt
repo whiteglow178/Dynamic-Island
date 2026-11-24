@@ -75,6 +75,8 @@ object NotifPrivacy {
     val still = MutableStateFlow(false)
     val locked = MutableStateFlow(false)
     val scheduled = MutableStateFlow(false)
+    /** Odak zamanlayıcısı çalışma aşamasında (ClockController). */
+    val focusing = MutableStateFlow(false)
 
     /** Bu bildirim tamamen gizlenmeli mi (uygulama adı / bulanık). */
     fun hidesNotif(n: IslandContent.Notif, act: Boolean = active.value, r: Rule = rule.value): Boolean =

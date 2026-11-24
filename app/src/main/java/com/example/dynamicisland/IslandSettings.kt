@@ -683,6 +683,12 @@ data class MoreSettings(
     val privBuzz3: String = "",
     val privBuzz4: String = "",
     val privPanic: Boolean = false,         // panik sallaması
+    val vpnIndicator: Boolean = false,      // VPN göstergesi: bağlandı / koptu hapı, boştaki adada kalkan
+    val netSpeedMode: Int = 0,              // ağ hızı: 0 kapalı, 1 yalnızca aktarım varken, 2 her zaman (boştaki adada)
+    val focusWorkMin: Int = 25,             // odak zamanlayıcısı: çalışma süresi (dk)
+    val focusBreakMin: Int = 5,             // kısa mola (dk)
+    val focusLongMin: Int = 15,             // her 4 odaktan sonra uzun mola (dk)
+    val focusHide: Boolean = false,         // odak sırasında bildirimler gizlensin
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -836,6 +842,9 @@ class SettingsRepository(context: Context) {
         val X_PDECOY = booleanPreferencesKey("x_pdecoy"); val X_PPANIC = booleanPreferencesKey("x_ppanic")
         val X_PBUZZ1 = stringPreferencesKey("x_pbuzz1"); val X_PBUZZ2 = stringPreferencesKey("x_pbuzz2")
         val X_PBUZZ3 = stringPreferencesKey("x_pbuzz3"); val X_PBUZZ4 = stringPreferencesKey("x_pbuzz4")
+        val X_VPN = booleanPreferencesKey("x_vpn"); val X_NETSPD = intPreferencesKey("x_netspd")
+        val X_FWORK = intPreferencesKey("x_fwork"); val X_FBREAK = intPreferencesKey("x_fbreak")
+        val X_FLONG = intPreferencesKey("x_flong"); val X_FHIDE = booleanPreferencesKey("x_fhide")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1186,6 +1195,12 @@ class SettingsRepository(context: Context) {
                 privBuzz2 = p[K.X_PBUZZ2] ?: d.more.privBuzz2,
                 privBuzz3 = p[K.X_PBUZZ3] ?: d.more.privBuzz3,
                 privBuzz4 = p[K.X_PBUZZ4] ?: d.more.privBuzz4,
+                vpnIndicator = p[K.X_VPN] ?: d.more.vpnIndicator,
+                netSpeedMode = p[K.X_NETSPD] ?: d.more.netSpeedMode,
+                focusWorkMin = p[K.X_FWORK] ?: d.more.focusWorkMin,
+                focusBreakMin = p[K.X_FBREAK] ?: d.more.focusBreakMin,
+                focusLongMin = p[K.X_FLONG] ?: d.more.focusLongMin,
+                focusHide = p[K.X_FHIDE] ?: d.more.focusHide,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1335,6 +1350,8 @@ class SettingsRepository(context: Context) {
             it[K.X_PLOCK] = m.privLocked; it[K.X_POTP] = m.privOtp
             it[K.X_PSECURE] = m.privSecure; it[K.X_PREVEAL] = m.privReveal; it[K.X_PDECOY] = m.privDecoy; it[K.X_PPANIC] = m.privPanic
             it[K.X_PBUZZ1] = m.privBuzz1; it[K.X_PBUZZ2] = m.privBuzz2; it[K.X_PBUZZ3] = m.privBuzz3; it[K.X_PBUZZ4] = m.privBuzz4
+            it[K.X_VPN] = m.vpnIndicator; it[K.X_NETSPD] = m.netSpeedMode
+            it[K.X_FWORK] = m.focusWorkMin; it[K.X_FBREAK] = m.focusBreakMin; it[K.X_FLONG] = m.focusLongMin; it[K.X_FHIDE] = m.focusHide
         }
     }
 

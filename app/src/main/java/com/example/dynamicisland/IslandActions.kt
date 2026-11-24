@@ -20,6 +20,8 @@ object IslandActions {
     @Volatile var onTimerStart: (Long) -> Unit = {}
     /** Açık zamanlayıcıda süreye dokunma: zamanlayıcı kurma paneli açılır. */
     @Volatile var onOpenTimerSetter: () -> Unit = {}
+    /** Kurma panelindeki "Odak": odak zamanlayıcısını (çalışma / mola döngüsü) başlatır. */
+    @Volatile var onFocusStart: () -> Unit = {}
     /** Çalan alarm: ertele. */
     @Volatile var onAlarmSnooze: () -> Unit = {}
     /** Çalan alarm / dolan zamanlayıcı: kapat. */

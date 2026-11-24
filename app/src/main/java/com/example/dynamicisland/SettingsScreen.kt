@@ -1174,6 +1174,33 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
 
         // ---- Yeni ada özellikleri
         pendingGroup = "Yeni ada özellikleri"
+        sec("Ağ: VPN ve hız", "VPN kalkanı ve anlık internet hızı") {
+            SwitchRow("VPN göstergesi", "VPN bağlanınca adada yeşil kalkanlı \"VPN · Açık\" hapı çıkar. VPN beklenmedik şekilde koparsa (3 sn içinde geri gelmezse) telefon iki kez titrer ve kırmızı \"VPN · Koptu\" uyarısı görünür. VPN açıkken boştaki adanın solunda küçük yeşil kalkan durur (\"Boştayken de göster\" açıksa). İzin gerektirmez.",
+                draft.more.vpnIndicator) { draft = draft.copy(more = draft.more.copy(vpnIndicator = it)) }
+            SubHeader("Ağ hızı göstergesi")
+            Text("Boştaki adanın solunda ↓ indirme, sağında ↑ yükleme hızı görünür (saniyede bir ölçülür, ekran kapalıyken ölçmez). \"Boştayken de göster\" açık olmalı. K = KB/sn, M = MB/sn.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            RadioRow("Kapalı", "Hız gösterilmez", draft.more.netSpeedMode == 0) { draft = draft.copy(more = draft.more.copy(netSpeedMode = 0)) }
+            RadioRow("Yalnızca aktarım varken", "İndirme / yükleme 30 KB/sn'yi geçince görünür, bitince 3 sn sonra kaybolur", draft.more.netSpeedMode == 1) {
+                draft = draft.copy(more = draft.more.copy(netSpeedMode = 1))
+            }
+            RadioRow("Her zaman", "Ada boştayken hız hep görünür", draft.more.netSpeedMode == 2) { draft = draft.copy(more = draft.more.copy(netSpeedMode = 2)) }
+        }
+        sec("Odak zamanlayıcısı", "Çalışma / mola döngüsü, adada dolan halka") {
+            Text("Başlatmak için zamanlayıcı kurma panelini aç (\"Alarm ve zamanlayıcı\" sayfasında \"Adadan zamanlayıcı kur\": Dokununca ya da Basılı tutunca) ve \"Odak\" düğmesine dokun. Odakta halka turuncu, molada yeşil olur. Her aşama bitince telefon kısa titrer ve sıradaki kendiliğinden başlar; her 4 odakta bir uzun mola verilir. Durdurmak için zamanlayıcıdaki X.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SliderRow("Odak süresi", draft.more.focusWorkMin.toFloat(), 5f..90f, "${draft.more.focusWorkMin} dk") {
+                draft = draft.copy(more = draft.more.copy(focusWorkMin = it.roundToInt()))
+            }
+            SliderRow("Kısa mola", draft.more.focusBreakMin.toFloat(), 1f..30f, "${draft.more.focusBreakMin} dk") {
+                draft = draft.copy(more = draft.more.copy(focusBreakMin = it.roundToInt()))
+            }
+            SliderRow("Uzun mola (4 odakta bir)", draft.more.focusLongMin.toFloat(), 5f..60f, "${draft.more.focusLongMin} dk") {
+                draft = draft.copy(more = draft.more.copy(focusLongMin = it.roundToInt()))
+            }
+            SwitchRow("Odakta bildirimleri gizle", "Odak süresince adadaki bildirimler gizlenir (Gizlilik ayarlarındaki gizleme biçimiyle: uygulama adı, bulanık ya da yem metin). Molada normal görünür.",
+                draft.more.focusHide) { draft = draft.copy(more = draft.more.copy(focusHide = it)) }
+        }
         sec("Basılı tutarak aç", "Olay varken ada dokununca değil, basılı tutunca genişlesin") {
             SwitchRow("Basılı tutunca genişlesin", "Adada bir olay (müzik, arama, zamanlayıcı, bildirim...) varken kısa dokunuş adayı açmaz; parmağını basılı tutunca ada yavaşça büyür ve süre dolunca tamamen açılır",
                 draft.more.holdExpand) { draft = draft.copy(more = draft.more.copy(holdExpand = it)) }
@@ -1357,8 +1384,12 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             // Sağ üstteki üç çizgi: tüm ayar sayfalarını alt alta listeler
             var menuOpen by remember { mutableStateOf(false) }
             val cs0 = MaterialTheme.colorScheme
+            // ⓘ: bütün ayar ve özelliklerin ayrıntılı açıklamaları (SettingsInfo.kt)
+            var infoOpen by remember { mutableStateOf(false) }
+            if (infoOpen) SettingsInfoDialog { infoOpen = false }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 SearchField(query, { query = it; if (it.isNotEmpty()) menuOpen = false }, Modifier.weight(1f))
+                InfoButton { infoOpen = true }
                 // Önizlemeyi gizle / göster
                 Box(
                     Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))

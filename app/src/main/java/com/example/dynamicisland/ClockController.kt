@@ -111,7 +111,7 @@ class ClockController(private val host: IslandHost) {
             fb != null -> IslandContent.Status(StatusKind.Alarm, title = "Alarm", value = fb.first, phase = 2, extra = 3)
             done -> IslandContent.Status(StatusKind.Timer, title = "Zamanlayıcı", phase = 2, totalMs = totalMs)
             islandRunning -> IslandContent.Status(
-                StatusKind.Timer, title = "Zamanlayıcı",
+                StatusKind.Timer, title = focusTitle(),
                 endsAt = if (pausedLeft >= 0L) 0L else endsAt, totalMs = totalMs,
                 phase = if (pausedLeft >= 0L) 1 else 0, remainMs = pausedLeft.coerceAtLeast(0L),
             )
@@ -206,7 +206,64 @@ class ClockController(private val host: IslandHost) {
 
     // ================================================================ Düğmeler
 
+    // ================================================================ Odak zamanlayıcısı
+    /** 0 = yok, 1 = odak (çalışma), 2 = mola. Odak / mola bitince sıradaki kendiliğinden başlar. */
+    var focusPhase = 0
+        private set
+    private var focusRounds = 0
+
+    private fun focusTitle() = when (focusPhase) { 1 -> "Odak"; 2 -> "Mola"; else -> "Zamanlayıcı" }
+
+    private fun setFocusPhase(p: Int) {
+        focusPhase = p
+        NotifPrivacy.focusing.value = p == 1
+    }
+
+    /** Odak döngüsünü başlatır: çalışma -> kısa mola -> ... (her 4 odakta bir uzun mola). */
+    fun startFocus() {
+        focusRounds = 0
+        setFocusPhase(1)
+        startRaw(host.settings.more.focusWorkMin.coerceIn(1, 180) * 60_000L)
+    }
+
+    /** Odak / mola bitti: kısa titreşim ve sıradaki aşama (zil çalmaz, ada beklemez). */
+    private fun nextFocus() {
+        val m = host.settings.more
+        if (focusPhase == 1) {
+            focusRounds++
+            val long = focusRounds % 4 == 0
+            setFocusPhase(2)
+            startRaw((if (long) m.focusLongMin else m.focusBreakMin).coerceIn(1, 60) * 60_000L)
+            buzzFocus(longArrayOf(0, 120, 120, 120))
+        } else {
+            setFocusPhase(1)
+            startRaw(m.focusWorkMin.coerceIn(1, 180) * 60_000L)
+            buzzFocus(longArrayOf(0, 300))
+        }
+        refresh()
+        // Aşama değişimi kısa süre açık adada görünür
+        if (!host.busy && isClockView(host.content)) {
+            host.cancelCollapse(); host.update { it.copy(expanded = true) }; host.scheduleCollapse(3_000L)
+        }
+    }
+
+    private fun buzzFocus(p: LongArray) {
+        runCatching {
+            @Suppress("DEPRECATION")
+            val v: Vibrator? = if (Build.VERSION.SDK_INT >= 31)
+                host.context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+            else host.context.getSystemService(Vibrator::class.java)
+            v?.vibrate(VibrationEffect.createWaveform(p, -1))
+        }
+    }
+
     fun start(ms: Long) {
+        if (ms <= 0L) return
+        setFocusPhase(0)
+        startRaw(ms)
+    }
+
+    private fun startRaw(ms: Long) {
         if (ms <= 0L) return
         stopRing()
         doneJob?.cancel(); doneAutoJob?.cancel()
@@ -230,6 +287,7 @@ class ClockController(private val host: IslandHost) {
     }
 
     private fun onIslandDone() {
+        if (focusPhase != 0) { nextFocus(); return }
         done = true
         if (host.settings.more.timerSound) startRing()
         showRinging()
@@ -285,6 +343,7 @@ class ClockController(private val host: IslandHost) {
                 doneJob?.cancel(); doneAutoJob?.cancel()
                 stopRing()
                 done = false; endsAt = 0L; pausedLeft = -1L
+                setFocusPhase(0)
             }
             t != null -> {
                 if (t.cancel != null) host.send(t.cancel) else host.send(t.open)

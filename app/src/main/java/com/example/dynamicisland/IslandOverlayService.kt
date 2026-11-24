@@ -168,10 +168,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 NotifPrivacy.curtain, NotifPrivacy.recording, NotifPrivacy.casting,
                 NotifPrivacy.still, NotifPrivacy.locked,
             ) { c, r, k, st, lk -> booleanArrayOf(c, r || k, st, lk) }
-            combine(settings, triggers, NotifPrivacy.scheduled) { s, t, sc ->
+            combine(settings, triggers, NotifPrivacy.scheduled, NotifPrivacy.focusing) { s, t, sc, fo ->
                 val m = s.more
                 m.notifPrivate || ((m.notifTwist || m.privPanic) && t[0]) || (m.notifPrivRec && t[1]) || (m.privStill && t[2]) ||
-                    (m.privLocked && t[3]) || (m.privSched && sc)
+                    (m.privLocked && t[3]) || (m.privSched && sc) || (m.focusHide && fo)
             }.distinctUntilChanged().collect { NotifPrivacy.active.value = it; if (!it) NotifPrivacy.peek.value = false }
         }
         scope.launch {
@@ -194,6 +194,18 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch {
             settings.map { it.more.privPanic }.distinctUntilChanged().collect { on ->
                 runCatching { if (on) shakeWatch.start() else shakeWatch.stop() }
+            }
+        }
+        // VPN göstergesi (NetTools.kt)
+        scope.launch {
+            settings.map { it.more.vpnIndicator }.distinctUntilChanged().collect { on ->
+                runCatching { if (on) vpnWatch.start() else vpnWatch.stop() }
+            }
+        }
+        // Ağ hızı: ayar açıkken saniyede bir ölçülür (ekran kapalıyken ölçüm durur)
+        scope.launch {
+            settings.map { it.more.netSpeedMode != 0 }.distinctUntilChanged().collect { on ->
+                if (on) NetSpeed.start(this@IslandOverlayService, scope) else NetSpeed.stop()
             }
         }
         // Ekran görüntüsünde görünmeyen ada: bildirim (ya da kod) adadayken pencereler FLAG_SECURE olur
@@ -1033,6 +1045,28 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
     private val castWatch by lazy { CastWatch(this) }
     private val stillWatch by lazy { StillWatch(this) }
+    private var vpnArmedAt = 0L
+    private var vpnLostJob: Job? = null
+    private val vpnWatch by lazy {
+        vpnArmedAt = android.os.SystemClock.elapsedRealtime()
+        VpnWatch(this) { on -> scope.launch { runCatching { onVpn(on) } } }
+    }
+    /** VPN bağlandı: yeşil kalkan hapı. Koptu: 3 sn içinde geri gelmezse kırmızı uyarı + titreşim. */
+    private fun onVpn(on: Boolean) {
+        if (android.os.SystemClock.elapsedRealtime() - vpnArmedAt < 2_500L) return   // açılışta mevcut durum gösterilmez
+        vpnLostJob?.cancel()
+        if (on) {
+            if (canShowSys()) showTemporarily(IslandContent.Status(StatusKind.Network, title = "VPN", value = "Açık", extra = 4), 2_200L)
+        } else {
+            vpnLostJob = scope.launch {
+                delay(3_000L)                       // sunucu değiştirirken kısa kopmalar uyarı vermesin
+                if (VpnWatch.on.value) return@launch
+                twistBuzz(true); delay(150); twistBuzz(true)
+                if (canShowSys()) showTemporarily(IslandContent.Status(StatusKind.Network, title = "VPN", value = "Koptu", extra = 5), 4_000L)
+            }
+        }
+    }
+    private fun canShowSys(): Boolean = !host.busy && !host.blocked && !appHide.hidden && ui.value.content !is IslandContent.Translate
     private val shakeWatch by lazy { ShakeWatch(this) { runCatching { onPanic() } } }
 
     /** Panik sallaması: ada küçülür, bildirim kapanır, banner gizlenir, müzik durur ve gizleme açılır. */
@@ -1656,6 +1690,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandActions.onTimerRestart = { scope.launch { runCatching { clock.restart() } } }
         IslandActions.onTimerStart = { ms -> scope.launch { runCatching { clock.start(ms) } } }
         IslandActions.onOpenTimerSetter = { scope.launch { runCatching { clock.openSetter() } } }
+        IslandActions.onFocusStart = { scope.launch { runCatching { clock.startFocus() } } }
         IslandActions.onAlarmSnooze = { scope.launch { runCatching { clock.snooze() } } }
         IslandActions.onAlarmDismiss = { scope.launch { runCatching { clock.dismiss() } } }
         IslandActions.onFocusToggle = { scope.launch { runCatching { toggleFocus() } } }
@@ -3262,6 +3297,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { twist.stop() }
         runCatching { castWatch.stop() }
         runCatching { stillWatch.stop() }
+        runCatching { vpnWatch.stop() }
+        NetSpeed.stop()
         runCatching { shakeWatch.stop() }
         runCatching { lockWatch.stop() }
         NotifPrivacy.active.value = false; NotifPrivacy.peek.value = false

@@ -432,7 +432,7 @@ private fun SideWideGlyph(c: IslandContent, ch: Dp, cfg: IslandSettings) {
             val watch = c.extra == 2
             Canvas(Modifier.size(ch * 0.46f)) {
                 if (watch) drawTimerRing(1f, X_ORANGE)
-                else drawTimerRing(if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, X_ORANGE)
+                else drawTimerRing(if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, timerTint(c))
             }
             Text(
                 if (c.phase == 2) "0sn" else shortLeft(left), color = X_ORANGE, fontWeight = FontWeight.SemiBold,
@@ -512,7 +512,7 @@ internal fun SideGlyph(c: IslandContent, ch: Dp, cfg: IslandSettings? = null, wi
             StatusKind.Timer -> if (c.phase == 3) Text("⏱", fontSize = 13.sp) else {
                 val left = rememberRemaining(c)
                 Canvas(Modifier.size(ch * 0.46f)) {
-                    drawTimerRing(if (c.extra == 2) 1f else if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, X_ORANGE)
+                    drawTimerRing(if (c.extra == 2) 1f else if (c.phase == 2) 0f else if (c.totalMs > 0L) left.toFloat() / c.totalMs else 1f, timerTint(c))
                 }
             }
             else -> Text(
