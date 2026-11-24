@@ -299,11 +299,14 @@ class NotifBannerOverlay(
                 val privOn by NotifPrivacy.active.collectAsState()
                 val peekOn by NotifPrivacy.peek.collectAsState()
                 val privRule by NotifPrivacy.rule.collectAsState()
+                val raw = current.value
+                // Kurallar (gizleme açıldı / kapandı, basılı tutma) değişince banner yeniden hesaplanır
+                val shownN = remember(raw, privOn, peekOn, privRule) {
+                    raw?.let { NotifPrivacy.display(it, peekOn) { p -> NotifPrivacy.label(ctx, p) } }
+                }
                 NotifBannerRoot(
                     style = if (settings().bannerSlideAnim) 1 else 0,
-                    n = current.value?.let {
-                        if (privOn && !peekOn && privRule.covers(it.pkg)) NotifPrivacy.maskNotif(it, privRule.blur) { p -> NotifPrivacy.label(ctx, p) } else it
-                    },
+                    n = shownN,
                     shown = shown.value,
                     widthDp = widthDp,
                     mode = mode.value,
@@ -404,7 +407,7 @@ internal fun NotifBannerRoot(
     val onTapNow by rememberUpdatedState(onTap)
     val onLongNow by rememberUpdatedState(onLong)
     val onSwipeNow by rememberUpdatedState(onSwipeUp)
-    val pkgNow by rememberUpdatedState(cur.pkg)
+    val maskedNow by rememberUpdatedState(cur.privMasked)
     val view = LocalView.current
 
     // Klasik stilde boyut ve konum (giriş ve çıkış aynı yoldan); kayma stilinde banner hep tam boydadır
@@ -438,12 +441,12 @@ internal fun NotifBannerRoot(
                         onTap = { off -> onTapNow(off.x < ICON_ZONE_DP.dp.toPx()) },
                         onPress = {
                             // Gizli bildirim: basılı tutma bitince içerik yeniden gizlenir
-                            if (NotifPrivacy.hides(pkgNow)) { tryAwaitRelease(); NotifPrivacy.peek.value = false }
+                            if (maskedNow) { tryAwaitRelease(); NotifPrivacy.peek.value = false }
                         },
                         onLongPress = {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                             // Gizliyken basılı tutma menüyü değil içeriği açar
-                            if (NotifPrivacy.hides(pkgNow)) NotifPrivacy.peek.value = true else onLongNow()
+                            if (maskedNow) NotifPrivacy.peek.value = true else onLongNow()
                         },
                     )
                 }

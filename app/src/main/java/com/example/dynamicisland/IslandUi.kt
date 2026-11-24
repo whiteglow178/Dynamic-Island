@@ -858,7 +858,7 @@ fun IslandPill(
     val cfgNow by rememberUpdatedState(cfg)
     val isMediaNow by rememberUpdatedState(content is IslandContent.Media)
     val isNotifNow by rememberUpdatedState(content is IslandContent.Notif)
-    val notifPkgNow by rememberUpdatedState((content as? IslandContent.Notif)?.pkg)
+    val privMaskedNow by rememberUpdatedState(content.privMasked())
     val notifSideNow by rememberUpdatedState(onNotifSwipeSide)
     // Ada şekli: boştayken seçilen şekle (kalp / bulut / kedi / elmas) akarak dönüşür, bir şey gelince hapa döner
     val notch = cfg.more.notchMode && !assistant          // çentik modu: ada ekranın üstüne yapışık çentik şeklinde
@@ -993,7 +993,7 @@ fun IslandPill(
                     when (outcome) {
                         0 -> {
                             // Gizli bildirim: basılı tutunca içerik görünür, parmak kalkınca yeniden gizlenir (NotifPrivacy.kt)
-                            val peekMode = notifPkgNow?.let { NotifPrivacy.hides(it) } == true
+                            val peekMode = privMaskedNow
                             if (peekMode) {
                                 if (holdMode) { holding = false; IslandActions.onHoldPress(false) }
                                 NotifPrivacy.peek.value = true

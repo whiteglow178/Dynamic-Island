@@ -164,16 +164,24 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { ui.map { it.expanded }.distinctUntilChanged().collect { StatusIcons.paused = it } }
         // Bildirim gizliliği: gizli mod, bilek hareketiyle inen perde ya da ekran kaydı / yansıtma
         scope.launch {
-            combine(settings, NotifPrivacy.curtain, NotifPrivacy.recording, NotifPrivacy.casting) { s, c, r, k ->
+            val triggers = combine(
+                NotifPrivacy.curtain, NotifPrivacy.recording, NotifPrivacy.casting,
+                NotifPrivacy.still, NotifPrivacy.locked,
+            ) { c, r, k, st, lk -> booleanArrayOf(c, r || k, st, lk) }
+            combine(settings, triggers, NotifPrivacy.scheduled) { s, t, sc ->
                 val m = s.more
-                m.notifPrivate || (m.notifTwist && c) || (m.notifPrivRec && (r || k))
+                m.notifPrivate || (m.notifTwist && t[0]) || (m.notifPrivRec && t[1]) || (m.privStill && t[2]) ||
+                    (m.privLocked && t[3]) || (m.privSched && sc)
             }.distinctUntilChanged().collect { NotifPrivacy.active.value = it; if (!it) NotifPrivacy.peek.value = false }
         }
         scope.launch {
             settings.map {
+                fun list(v: String) = v.split(',').map { p -> p.trim() }.filter { p -> p.isNotEmpty() }
+                val m = it.more
                 NotifPrivacy.Rule(
-                    apps = it.more.notifPrivApps.split(',').map { p -> p.trim() }.filter { p -> p.isNotEmpty() }.toSet(),
-                    music = it.more.musicPrivate, blur = it.more.notifBlurPeek,
+                    apps = list(m.notifPrivApps).toSet(), music = m.musicPrivate, blur = m.notifBlurPeek,
+                    words = if (m.privWordsOn) list(m.privWords) else emptyList(),
+                    people = list(m.privPeople), otp = m.privOtp,
                 )
             }.distinctUntilChanged().collect { NotifPrivacy.rule.value = it }
         }
@@ -183,6 +191,26 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         scope.launch { NotifPrivacy.peek.collect { runCatching { onPeek(it) } } }
+        scope.launch {
+            settings.map { it.more.privStill }.distinctUntilChanged().collect { on ->
+                runCatching { if (on) stillWatch.start() else stillWatch.stop() }
+            }
+        }
+        scope.launch {
+            settings.map { it.more.privLocked }.distinctUntilChanged().collect { on ->
+                runCatching { if (on) lockWatch.start() else lockWatch.stop() }
+            }
+        }
+        // Saate göre gizleme: dakika başlarında kontrol edilir
+        scope.launch {
+            settings.map { Triple(it.more.privSched, it.more.privFromMin, it.more.privToMin) }.distinctUntilChanged().collectLatest { (on, from, to) ->
+                if (!on) { NotifPrivacy.scheduled.value = false; return@collectLatest }
+                while (true) {
+                    NotifPrivacy.scheduled.value = inPrivacyHours(from, to)
+                    delay(60_000L - System.currentTimeMillis() % 60_000L + 200L)
+                }
+            }
+        }
         scope.launch {
             settings.map { it.more.notifTwist }.distinctUntilChanged().collect { on ->
                 runCatching { if (on) twist.start() else twist.stop() }
@@ -354,7 +382,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 )
                 // Adadan akan bildirim: kelimeler adadan dökülür (efekt penceresi)
                 if (st.more.notifFlow) {
-                    val shown = if (NotifPrivacy.hides(n.pkg)) NotifPrivacy.maskNotif(n, NotifPrivacy.rule.value.blur, ::appLabel) else n
+                    val shown = NotifPrivacy.display(n, false, ::appLabel)
                     PlayFx.emit(PlayEvent.NotifText(shown.title, shown.text))
                 }
                 // Bildirim kuşları: bir kuş adanın yanına konar; adaya dokununca bu bildirim açılır
@@ -981,7 +1009,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     // Ekrana giden kopya: gizlilik açıkken bildirimler maskelenir. Servisin mantığı her zaman gerçek [ui] ile çalışır.
     private val uiShown: StateFlow<IslandUiState> by lazy {
         combine(ui, NotifPrivacy.active, NotifPrivacy.peek, NotifPrivacy.rule) { u, a, p, r ->
-            if (a) NotifPrivacy.mask(u, r, p, ::appLabel) else u
+            if (NotifPrivacy.anyRule(a, r)) NotifPrivacy.mask(u, a, r, p, ::appLabel) else u
         }.stateIn(scope, SharingStarted.Eagerly, ui.value)
     }
     // Gizli müzik: şarkı sözleri de ekrana gitmez
@@ -990,6 +1018,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             .stateIn(scope, SharingStarted.Eagerly, lyrics.value)
     }
     private val castWatch by lazy { CastWatch(this) }
+    private val stillWatch by lazy { StillWatch(this) }
+    private val lockWatch by lazy { LockWatch(this) }
     // Ekran kaydı takibi (gizlilik için; ada ekran kaydı ayarından bağımsız)
     private var privRecKey = ""
     private var privRecLive = false     // kayıt gerçekten başladı (geri sayım değil)
@@ -1015,14 +1045,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun onPeek(on: Boolean) {
         val cur = ui.value
         if (on) {
-            if (cur.content is IslandContent.Notif && !cur.expanded && cur.stack.isEmpty()) {
+            val c = cur.content
+            if ((c is IslandContent.Notif || (c is IslandContent.Live && c.kind == LiveKind.Code)) && !cur.expanded && cur.stack.isEmpty()) {
                 peekOpened = true
                 collapseJob?.cancel()
                 update { it.copy(expanded = true) }
             }
         } else if (peekOpened) {
             peekOpened = false
-            if (cur.content is IslandContent.Notif && cur.expanded) update { it.copy(expanded = false) }
+            val c = cur.content
+            if ((c is IslandContent.Notif || c is IslandContent.Live) && cur.expanded) update { it.copy(expanded = false) }
         }
     }
     private val twist by lazy {
@@ -3169,6 +3201,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     override fun onDestroy() {
         runCatching { twist.stop() }
         runCatching { castWatch.stop() }
+        runCatching { stillWatch.stop() }
+        runCatching { lockWatch.stop() }
         NotifPrivacy.active.value = false; NotifPrivacy.peek.value = false
         IslandAccessibilityService.onChanged = null
         DrawerBridge.onKey = null

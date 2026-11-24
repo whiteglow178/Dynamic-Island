@@ -666,6 +666,15 @@ data class MoreSettings(
     val notifPrivRec: Boolean = false,      // ekran kaydı / yansıtma sırasında gizleme kendiliğinden açılsın
     val musicPrivate: Boolean = false,      // gizleme devredeyken müzik de gizlensin (şarkı adı, sanatçı, kapak, sözler)
     val notifBlurPeek: Boolean = false,     // "Yeni bildirim" yerine bulanık önizleme
+    val privWordsOn: Boolean = false,       // hassas kelime geçen bildirimler hep gizlensin
+    val privWords: String = NotifPrivacy.DEFAULT_WORDS,   // hassas kelimeler (virgüllü)
+    val privPeople: String = "",            // bildirimleri hep gizlenecek kişiler (virgüllü; adın bir parçası yeter)
+    val privStill: Boolean = false,         // telefon masada hareketsizken gizle
+    val privSched: Boolean = false,         // belirli saatlerde gizle
+    val privFromMin: Int = 540,             // başlangıç (gün içindeki dakika) 09:00
+    val privToMin: Int = 1080,              // bitiş 18:00
+    val privLocked: Boolean = false,        // kilit ekranında gizle
+    val privOtp: Boolean = false,           // doğrulama kodları ●●●● olarak görünsün
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -811,6 +820,10 @@ class SettingsRepository(context: Context) {
         val X_NOTIFPRIV = booleanPreferencesKey("x_notifpriv"); val X_NOTIFTWIST = booleanPreferencesKey("x_notiftwist")
         val X_PRIVAPPS = stringPreferencesKey("x_privapps"); val X_PRIVREC = booleanPreferencesKey("x_privrec")
         val X_PRIVMUSIC = booleanPreferencesKey("x_privmusic"); val X_PRIVBLUR = booleanPreferencesKey("x_privblur")
+        val X_PWORDSON = booleanPreferencesKey("x_pwordson"); val X_PWORDS = stringPreferencesKey("x_pwords")
+        val X_PPEOPLE = stringPreferencesKey("x_ppeople"); val X_PSTILL = booleanPreferencesKey("x_pstill")
+        val X_PSCHED = booleanPreferencesKey("x_psched"); val X_PFROM = intPreferencesKey("x_pfrom"); val X_PTO = intPreferencesKey("x_pto")
+        val X_PLOCK = booleanPreferencesKey("x_plock"); val X_POTP = booleanPreferencesKey("x_potp")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1144,6 +1157,15 @@ class SettingsRepository(context: Context) {
                 notifPrivRec = p[K.X_PRIVREC] ?: d.more.notifPrivRec,
                 musicPrivate = p[K.X_PRIVMUSIC] ?: d.more.musicPrivate,
                 notifBlurPeek = p[K.X_PRIVBLUR] ?: d.more.notifBlurPeek,
+                privWordsOn = p[K.X_PWORDSON] ?: d.more.privWordsOn,
+                privWords = p[K.X_PWORDS] ?: d.more.privWords,
+                privPeople = p[K.X_PPEOPLE] ?: d.more.privPeople,
+                privStill = p[K.X_PSTILL] ?: d.more.privStill,
+                privSched = p[K.X_PSCHED] ?: d.more.privSched,
+                privFromMin = p[K.X_PFROM] ?: d.more.privFromMin,
+                privToMin = p[K.X_PTO] ?: d.more.privToMin,
+                privLocked = p[K.X_PLOCK] ?: d.more.privLocked,
+                privOtp = p[K.X_POTP] ?: d.more.privOtp,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1288,6 +1310,9 @@ class SettingsRepository(context: Context) {
             it[K.X_NOTIFPRIV] = m.notifPrivate; it[K.X_NOTIFTWIST] = m.notifTwist
             it[K.X_PRIVAPPS] = m.notifPrivApps; it[K.X_PRIVREC] = m.notifPrivRec
             it[K.X_PRIVMUSIC] = m.musicPrivate; it[K.X_PRIVBLUR] = m.notifBlurPeek
+            it[K.X_PWORDSON] = m.privWordsOn; it[K.X_PWORDS] = m.privWords; it[K.X_PPEOPLE] = m.privPeople
+            it[K.X_PSTILL] = m.privStill; it[K.X_PSCHED] = m.privSched; it[K.X_PFROM] = m.privFromMin; it[K.X_PTO] = m.privToMin
+            it[K.X_PLOCK] = m.privLocked; it[K.X_POTP] = m.privOtp
         }
     }
 

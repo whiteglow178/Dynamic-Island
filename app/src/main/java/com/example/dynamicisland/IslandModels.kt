@@ -85,6 +85,7 @@ sealed interface IslandContent {
         val minute: String = "",                          // "67'", "45+2'"
         val phase: Int = 0,                               // 0 oynanıyor, 1 devre arası, 2 maç sonu
         val goal: Boolean = false,                        // az önce gol oldu (servis işaretler)
+        val privMasked: Boolean = false,                  // gizlilik: kod ●●●● olarak gösteriliyor (NotifPrivacy.kt)
     ) : IslandContent
 
     /** Özel ada tasarımı (fotoğraf): boştaki adaya dokununca ada genişleyip fotoğrafı tamamen gösterir. */
@@ -104,6 +105,7 @@ sealed interface IslandContent {
         val translatedFrom: String = "",                 // bildirim çevirisi: kaynak dil kodu ("en"); boş = çevrilmedi
         val chips: List<NotifChip> = emptyList(),        // akıllı bildirim: ertele / kopyala / ara / harita / bağlantı (NotifSmart.kt)
         val blurText: Boolean = false,                   // gizlilik: yazı anlamsız harflerle değiştirildi, bulanık çizilsin (NotifPrivacy.kt)
+        val privMasked: Boolean = false,                 // gizlilik: ekranda gizlenmiş hali (basılı tutunca gerçeği görünür)
     ) : IslandContent
 
     /** Telefon araması: gelen (Cevapla / Reddet) ya da aktif (süre + Kapat). */

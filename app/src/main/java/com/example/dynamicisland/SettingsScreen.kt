@@ -378,9 +378,24 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 draft.more.notifTwist) { draft = draft.copy(more = draft.more.copy(notifTwist = it)) }
             SwitchRow("Ekran kaydında gizle", "Ekran kaydı sürerken ya da ekran başka bir ekrana yansıtılırken bildirimler kendiliğinden gizlenir; kayıt bitince yeniden görünür. Başka uygulamaların ekran paylaşımı (görüntülü görüşmede ekran paylaşma gibi) her telefonda algılanamayabilir.",
                 draft.more.notifPrivRec) { draft = draft.copy(more = draft.more.copy(notifPrivRec = it)) }
+            SwitchRow("Telefon masadayken gizle", "Telefon masada yatarken 15 saniye hiç kıpırdamazsa bildirimler gizlenir; eline aldığın an yeniden görünür. Masadaki telefona başkası göz atamaz. Ekran açıkken ivmeölçeri kullanır.",
+                draft.more.privStill) { draft = draft.copy(more = draft.more.copy(privStill = it)) }
+            SwitchRow("Kilit ekranında gizle", "Telefon kilitliyken adadaki bildirimler gizlenir, kilidi açınca normal görünür.",
+                draft.more.privLocked) { draft = draft.copy(more = draft.more.copy(privLocked = it)) }
+            SwitchRow("Belirli saatlerde gizle", "Seçtiğin saat aralığında gizleme kendiliğinden açılır (ör. iş saatleri). Gece yarısını aşan aralık da seçilebilir (22:00 – 07:00 gibi).",
+                draft.more.privSched) { draft = draft.copy(more = draft.more.copy(privSched = it)) }
+            if (draft.more.privSched) {
+                fun hm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
+                SliderRow("Başlangıç", draft.more.privFromMin.toFloat(), 0f..1425f, hm(draft.more.privFromMin)) {
+                    draft = draft.copy(more = draft.more.copy(privFromMin = ((it / 15f).roundToInt() * 15).coerceIn(0, 1425)))
+                }
+                SliderRow("Bitiş", draft.more.privToMin.toFloat(), 0f..1425f, hm(draft.more.privToMin)) {
+                    draft = draft.copy(more = draft.more.copy(privToMin = ((it / 15f).roundToInt() * 15).coerceIn(0, 1425)))
+                }
+            }
             SwitchRow("Bulanık önizleme", "Gizliyken \"Yeni bildirim\" yerine yazı bulanık görünür: mesajın uzunluğu belli olur ama okunmaz. Sohbet bildirimlerinde gönderenin adı görünür. Gerçek yazı ekrana hiç çizilmez.",
                 draft.more.notifBlurPeek) { draft = draft.copy(more = draft.more.copy(notifBlurPeek = it)) }
-            SwitchRow("Müziği de gizle", "Gizleme devredeyken (gizli mod, bilek hareketi ya da ekran kaydı) adada şarkı adı, sanatçı, kapak ve şarkı sözleri gizlenir; yalnızca ekolayzır ve süre görünür.",
+            SwitchRow("Müziği de gizle", "Gizleme devredeyken (gizli mod, bilek hareketi, ekran kaydı, masa, kilit ya da saat) adada şarkı adı, sanatçı, kapak ve şarkı sözleri gizlenir; yalnızca ekolayzır ve süre görünür.",
                 draft.more.musicPrivate) { draft = draft.copy(more = draft.more.copy(musicPrivate = it)) }
             Text("Gizlenecek uygulamalar: hiç seçmezsen bütün uygulamaların bildirimleri gizlenir, seçersen yalnızca seçtiklerin.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
@@ -388,6 +403,31 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 draft.more.notifPrivApps.split(',').map { it.trim() }.filter { it.isNotEmpty() },
                 title = "Bildirimi gizlenecek uygulamalar",
             ) { list -> draft = draft.copy(more = draft.more.copy(notifPrivApps = list.joinToString(","))) }
+            Text("Kısayol: bildirim panelindeki hızlı ayarları düzenle (kalem simgesi) ve \"Gizli bildirim\" kutucuğunu ekle. Tek dokunuşla gizli modu açıp kapatır.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SubHeader("Her zaman gizlenenler")
+            Text("Bunlar gizleme kapalıyken de geçerlidir. Basılı tutunca içerik görünür.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            SwitchRow("Doğrulama kodlarını gizle", "Bildirimdeki ve adadaki doğrulama kodu ●●●●●● olarak görünür. Basılı tutunca kod görünür; koda dokununca yine doğru kod kopyalanır.",
+                draft.more.privOtp) { draft = draft.copy(more = draft.more.copy(privOtp = it)) }
+            SwitchRow("Hassas kelime filtresi", "Aşağıdaki kelimelerden biri geçen bildirimler hep gizlenir. Büyük / küçük harf fark etmez, kelime tam eşleşmelidir (\"kod\" yazarsan \"kodlama\" gizlenmez).",
+                draft.more.privWordsOn) { draft = draft.copy(more = draft.more.copy(privWordsOn = it)) }
+            if (draft.more.privWordsOn) {
+                OutlinedTextField(
+                    value = draft.more.privWords,
+                    onValueChange = { if (it.length <= 600) draft = draft.copy(more = draft.more.copy(privWords = it)) },
+                    label = { Text("Kelimeler (virgülle ayır)") },
+                    minLines = 1, maxLines = 4, modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            OutlinedTextField(
+                value = draft.more.privPeople,
+                onValueChange = { if (it.length <= 400) draft = draft.copy(more = draft.more.copy(privPeople = it)) },
+                label = { Text("Mesajları gizlenecek kişiler (virgülle ayır)") }, placeholder = { Text("Ayşe, İş Grubu") },
+                minLines = 1, maxLines = 3, modifier = Modifier.fillMaxWidth(),
+            )
+            Text("Bildirimde görünen ad ya da grup adının bir parçası yeterli. Boş bırakırsan kapalıdır.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
             SubHeader("Bildirim türü")
             SwitchRow("iOS tarzı cam banner", "Bildirimler adada değil, iOS'taki gibi ekranın üstünde tam genişlikte cam banner olarak görünür (geliş / gidiş animasyonu aşağıdan seçilir). Dokununca uygulama açılır, yukarı kaydırınca kapanır. Süre: Genişletilmiş kalma süresi",
                 draft.notifBanner) { draft = draft.copy(notifBanner = it, notifInline = if (it) false else draft.notifInline) }
