@@ -87,6 +87,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val logicalBox = androidx.compose.runtime.mutableStateOf(LogicalBox(1, 0))
     private var touchDialog: Dialog? = null
     private var touchView: View? = null
+    /**
+     * Cam bulanıklığı penceresi: tam adanın gövdesi boyunda ve yerinde (pay, parıltı, yan baloncuk dahil değil),
+     * köşeleri adanınkiyle aynı. Böylece bulanıklık parıltı / neon / yan baloncuk / çentik açıkken de çalışır.
+     * En altta durur, dokunuş almaz.
+     */
+    private var blurDialog: Dialog? = null
+    private var blurCorner = -1f
     private val fxWindow by lazy { IslandFxWindow(this, this, this, wm) }   // adadan düşen efekt parçaları (tam ekran, dokunmatik olmayan)
     private var collapseJob: Job? = null
     private var mediaGraceJob: Job? = null     // şarkı geçişinde oynatıcı bir an "durdu" / boş bildirirse adayı hemen kapatma
@@ -1561,6 +1568,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val vis = if (mainHidden || thumbHidden || faceFlashHidden || faceLockHidden || chargeRingHidden) View.INVISIBLE else View.VISIBLE
         runCatching { dialog?.window?.decorView?.visibility = vis }
         runCatching { touchDialog?.window?.decorView?.visibility = vis }     // gizliyken dokunuşa tepki vermesin
+        runCatching { blurDialog?.window?.decorView?.visibility = vis }
         refreshDecor()
     }
 
@@ -2452,8 +2460,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         runCatching { dialog?.dismiss() }
         runCatching { touchDialog?.dismiss() }
+        runCatching { blurDialog?.dismiss() }
         dialog = null
         touchDialog = null
+        blurDialog = null
+        blurCorner = -1f
         touchView = null
         logicalBox.value = LogicalBox(1, 0)
         composeView = null
@@ -2534,6 +2545,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             attributes = lp
         }
         d.window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)   // görüntü penceresi dokunuş almaz (touchDialog alır)
+        buildBlurWindow(host, type)         // en altta: bulanıklık
         buildTouchWindow(host, type)        // görüntünün ALTINDA: önce eklenir
         d.window?.decorView?.let { stripInsets(it) }   // show'dan ÖNCE: ilk inset dağıtımı da yutulur
         d.show()
@@ -2541,6 +2553,38 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         dialog = d
         applyMainHidden()
         applyRefreshRate()
+    }
+
+    private fun buildBlurWindow(host: Context, type: Int) {
+        val bd = Dialog(ContextThemeWrapper(host, android.R.style.Theme_Translucent_NoTitleBar))
+        bd.setCancelable(false)
+        bd.setContentView(View(this), ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        bd.window?.apply {
+            setType(type)
+            setBackgroundDrawable(android.graphics.drawable.GradientDrawable().apply { setColor(Color.TRANSPARENT) })
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            addFlags(
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            )
+            setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+            setDecorFitsSystemWindows(false)
+            decorView.setPadding(0, 0, 0, 0)
+            val lp = WindowManager.LayoutParams().also { it.copyFrom(attributes) }
+            lp.width = 1; lp.height = 1; lp.x = 0; lp.y = 0
+            lp.format = PixelFormat.TRANSLUCENT
+            lp.fitInsetsTypes = 0
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            attributes = lp
+        }
+        bd.window?.decorView?.let { stripInsets(it) }
+        bd.show()
+        bd.window?.decorView?.let { stripInsets(it) }
+        blurDialog = bd
     }
 
     /**
@@ -2713,11 +2757,38 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
 
-    private fun setBlur(on: Boolean, s: IslandSettings) {
+    /**
+     * Cam bulanıklığı: [on] ise bulanıklık penceresi adanın gövdesine ([bw] x [bh] px, yatay kayma [bx],
+     * üst kenar [by]) oturtulur ve köşeleri adanınkiyle aynı olur. Çentikte üst kenar ekranın dışına uzatılır:
+     * yalnızca alt köşeler yuvarlak görünür. Kapalıyken pencere 1x1 ve bulanıklık 0.
+     */
+    private fun setBlur(on: Boolean, s: IslandSettings, bw: Int = 0, bh: Int = 0, bx: Int = 0, by: Int = 0) {
         if (Build.VERSION.SDK_INT < 31) return
-        val r = if (on && s.glassEnabled && s.blurRadiusPx > 0 && wm.isCrossWindowBlurEnabled) s.blurRadiusPx else 0
-        touchDialog?.window?.setBackgroundBlurRadius(r)      // bulanıklık ada bölgesinde (dokunma penceresi görüntünün altında)
+        val win = blurDialog?.window ?: return
+        val r = if (on && bw > 1 && bh > 1 && s.glassEnabled && s.blurRadiusPx > 0 && wm.isCrossWindowBlurEnabled) s.blurRadiusPx else 0
+        val lp = WindowManager.LayoutParams().also { it.copyFrom(win.attributes) }
+        if (r > 0) {
+            val notch = s.more.notchMode && screenHPx() > (runCatching { wm.currentWindowMetrics.bounds.width() }.getOrDefault(0))
+            val corner = if (notch) notchBottomRadius(bw.toFloat(), bh.toFloat(), density)
+                else islandCornerPx(bw.toFloat(), bh.toFloat(), density, -1f)
+            val up = if (notch) corner.toInt() + 2 else 0          // çentik: üst köşeler ekranın dışında kalsın
+            if (abs(blurCorner - corner) > 0.5f) {
+                // Bulanıklığın köşeleri pencere arka planının köşelerini izler: yarıçap değişince arka plan yenilenir
+                blurCorner = corner
+                win.setBackgroundDrawable(android.graphics.drawable.GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = corner })
+            }
+            lp.width = bw; lp.height = bh + up; lp.x = bx; lp.y = by - up - calibDy
+        } else {
+            lp.width = 1; lp.height = 1; lp.x = 0; lp.y = 0
+        }
+        val c = win.attributes
+        if (c.width != lp.width || c.height != lp.height || c.x != lp.x || c.y != lp.y) {
+            disableMoveAnimation(lp)
+            win.attributes = lp
+        }
+        win.setBackgroundBlurRadius(r)
     }
+
 
     /**
      * Pencereyi SABİT piksel boyutuna getirir (WRAP_CONTENT yok): konum kayması ve
@@ -2782,7 +2853,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Genişlemişken de baloncuk varsa pencere iki yanda pay ayırır (baloncuk genişleyen panelin yanında durur)
         // Üç nokta modunda yan noktalar her zaman görünür: pencere iki yanda her zaman pay ayırır (boştayken de)
         val sideExtra = if (persistSides || (k.side > 0 && k.kind != 0)) dp(sideExtraDp(s)) else 0
-        val blurOk = pad == 0 && sideExtra == 0   // pay / yan baloncuk varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
+        // Bulanıklık artık ayrı pencerede, adanın gövdesi boyunda: pay / parıltı / yan baloncuk / çentik engel değil
 
         // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
         // Çekiştirme / gizli oyun açıksa boştaki ada da dokunuş alır
@@ -2804,7 +2875,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 setBlur(false, s)
                 if (curW > cw + 2 * pad + 2 * sideExtra || curH > ch + 2 * pad) delay(settle)
                 setGeometry(cw + 2 * pad + 2 * sideExtra, ch + 2 * pad, baseX, y)
-                if (blurOk) setBlur(true, s)
+                setBlur(true, s, cw, ch, baseX, y + pad)
             }
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
             k.expanded && k.swallow && music -> {
@@ -2832,7 +2903,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (k.kind == 12 && eh + 2 * pad < curH - 2) delay(240)
                 setGeometry(winW, eh + 2 * pad, xWin, y)
                 winSide = sideExp
-                if (blurOk && !assistant && k.kind != 12) { delay(settle); setBlur(true, s) }
+                if (!assistant && k.kind != 12) { delay(settle); setBlur(true, s, ew, eh, xWin, y + pad) }
             }
             else -> {
                 setBlur(false, s)
@@ -2844,7 +2915,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (curW > wantW || curH > chWin + 2 * pad) delay(settle + hold)
                 setGeometry(wantW, chWin + 2 * pad, baseX, y)
                 winSide = sideExtra
-                if (blurOk) setBlur(true, s)
+                setBlur(true, s, cw, chWin, baseX, y + pad)
             }
         }
         if ((k.kind == 0 && !persistSides) || (k.expanded && sideExtra == 0)) winSide = 0

@@ -358,8 +358,8 @@ data class IslandSettings(
     /** iPhone modu açık ve yandaki siyah daire görünür mü? (Nokta modu açıkken iPhone modu çalışmaz.) */
     fun iphoneCircleOn(): Boolean = iphoneMode && !dotMode && iphoneCircle
 
-    /** Adadaki ses göstergesi: 0 çubuklu ekolayzır, 1 halka, 2 yörünge, 3 dalga, 4 piksel. */
-    fun eqStyleNow(): Int = if (more.eqStyleX == 3 || more.eqStyleX == 4) more.eqStyleX else if (more.eqOrbit) 2 else if (eqRing) 1 else 0
+    /** Adadaki ses göstergesi: 0 çubuk, 1 halka, 2 yörünge, 3 dalga, 4 piksel, 5 nabız, 6 güneş, 7 kabarcık, 8 ayna, 9 yankı. */
+    fun eqStyleNow(): Int = if (more.eqStyleX in 3..9) more.eqStyleX else if (more.eqOrbit) 2 else if (eqRing) 1 else 0
 
     /** Albüm kapağı küçük adada (kapalı ada, hap müzik, yan baloncuk) daire mi? */
     fun artCircleCompact(): Boolean = more.artCircle == 1 || more.artCircle == 2
@@ -642,7 +642,7 @@ data class MoreSettings(
     val sysPillPct: Float = 84f,            // Rahatsız Etmeyin / ağ / uçak / ince düşük pil hapı genişliği: ekranın yüzdesi
     val chargePillW: Float = 220f,          // şarj hapı genişliği (dp)
     val eqOrbit: Boolean = false,           // ekolayzır yerine "Yörünge" görünümü (eqRing'den önce gelir)
-    val eqStyleX: Int = 0,                  // 3 "Dalga", 4 "Piksel" (0: eqOrbit / eqRing / çubuklar geçerli)
+    val eqStyleX: Int = 0,                  // 3..9: Dalga, Piksel, Nabız, Güneş, Kabarcık, Ayna, Yankı (0: eqOrbit / eqRing / çubuklar)
     val artCircle: Int = 0,                 // daire albüm kapağı: 0 kapalı, 1 küçük + geniş ada, 2 yalnızca küçük, 3 yalnızca geniş
     val sideWide: Boolean = false,          // yan baloncuk hafif uzun kapsül: zamanlayıcıda süre, müzikte kapak + ekolayzır
     val avoidIcons: Boolean = false,        // durum çubuğunun solundaki bildirim simgelerine çarpmamak için ada sağa uzar
@@ -1108,7 +1108,7 @@ class SettingsRepository(context: Context) {
                 sysPillPct = (p[K.X_SYSW] ?: d.more.sysPillPct).coerceIn(30f, 98f),
                 chargePillW = (p[K.X_CHGW] ?: d.more.chargePillW).coerceIn(100f, 400f),
                 eqOrbit = p[K.X_ORBIT] ?: d.more.eqOrbit,
-                eqStyleX = (p[K.X_EQX] ?: d.more.eqStyleX).let { if (it == 3 || it == 4) it else 0 },
+                eqStyleX = (p[K.X_EQX] ?: d.more.eqStyleX).let { if (it in 3..9) it else 0 },
                 artCircle = (p[K.X_ARTC] ?: d.more.artCircle).coerceIn(0, 3),
                 sideWide = p[K.X_SIDEW] ?: d.more.sideWide,
                 avoidIcons = p[K.X_AVOID] ?: d.more.avoidIcons,
