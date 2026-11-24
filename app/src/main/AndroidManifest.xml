@@ -135,6 +135,18 @@
                 android:resource="@xml/accessibility_config" />
         </service>
 
+        <!-- Hızlı ayarlar kutucuğu: gizli bildirim modunu açar / kapatır -->
+        <service
+            android:name=".PrivacyTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_private"
+            android:label="Gizli bildirim"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".IslandNotificationListener"
             android:exported="true"
