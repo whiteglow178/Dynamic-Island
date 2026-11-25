@@ -1167,13 +1167,10 @@ fun IslandPill(
 
         // Gösterge noktaları (normal ada, kapalı hal): kamera deliğinin hemen sağında, adanın içinde.
         // Kamera (yeşil) / mikrofon (turuncu), ekran kaydı (kırmızı, Ayarlar > Ekran kaydı > iPhone gibi kırmızı nokta)
-        // ve konum (mavi, Ayarlar > Konum göstergesi) aynı boyutta ve aynı yerde çizilir; birlikte olurlarsa yan yana dizilir.
-        val locActive by LocationDot.active.collectAsState()
+        // aynı boyutta ve aynı yerde çizilir; birlikte olurlarsa yan yana dizilir.
         val camMicStatus = (content as? IslandContent.Status)?.takeIf { it.kind == StatusKind.Camera || it.kind == StatusKind.Mic }
         val recRedDot = cfg.more.recDotIos && content is IslandContent.ScreenRec && content.phase == RecPhase.Recording
-        val locBlueDot = cfg.more.locDot && locActive && !swallow &&
-            (content is IslandContent.Idle || camMicStatus != null || content is IslandContent.ScreenRec)
-        if ((camMicStatus != null || recRedDot || locBlueDot) && compactVisible && !cfg.dotMode) {
+        if ((camMicStatus != null || recRedDot) && compactVisible && !cfg.dotMode) {
             Box(
                 Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
@@ -1189,9 +1186,6 @@ fun IslandPill(
                 if (recRedDot) {
                     Box(Modifier.offset(x = firstX + 12.dp * slot).size(8.dp).background(Pal.c("rec_red"), RoundedCornerShape(50)))
                     slot++
-                }
-                if (locBlueDot) {
-                    Box(Modifier.offset(x = firstX + 12.dp * slot).size(8.dp).background(Pal.c("loc_blue"), RoundedCornerShape(50)))
                 }
             }
         }

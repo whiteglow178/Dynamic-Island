@@ -274,7 +274,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
-        runCatching { locCtl.start() }          // konum noktası (ayar kapalıysa sessiz kalır)
         runCatching { volume.start() }
         runCatching { sysStatus.start() }       // düşük pil, internet, uçak modu
         runCatching { chargeEta.start() }       // şarj süresi tahmini (ayar kapalıysa sessiz kalır)
@@ -305,7 +304,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
-        scope.launch { settings.collect { s -> appHide.update(); privacy.refresh(); locCtl.refresh(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); favorites.preload(s) } }
+        scope.launch { settings.collect { s -> appHide.update(); privacy.refresh(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); favorites.preload(s) } }
         scope.launch { lyrics.collect { update { it } } }
         // Kenar Cevapla / Reddet tuşları ayarı değişince (arama sürerken) güncelle
         scope.launch { SideCallStore.flow(applicationContext).collect { call.syncSideButtons() } }
@@ -1652,9 +1651,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val rec: ScreenRecController by lazy { ScreenRecController(host) }
     private val privacy: PrivacyController by lazy { PrivacyController(host) }
     private val ringer: RingerController by lazy { RingerController(host) }
-    private val locCtl: LocationController by lazy { LocationController(host) }
-    // Hızlı panel (adayı sağa / sola kaydırınca sağ altta açılır) -> QuickPanel.kt
-    private val quickPanel: QuickPanelOverlay by lazy { QuickPanelOverlay(this, this, this, wm) { id -> runQuickAction(id) } }
+    // Hızlı panel (adayı sağa / sola kaydırınca ekranın kenarında açılır) -> QuickPanel.kt
+    private val quickPanel: QuickPanelOverlay by lazy { QuickPanelOverlay(this, this, this, wm, { settings.value.more }) { id -> runQuickAction(id) } }
     private val volume: VolumeController by lazy { VolumeController(host) }
     private val sysStatus: SystemStatusController by lazy { SystemStatusController(host) }
     private val clock: ClockController by lazy { ClockController(host) }
@@ -1732,7 +1730,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandActions.onQuickPanel = { scope.launch { runCatching { openQuickPanel() } } }
     }
 
-    /** Kapalı adayı sağa / sola kaydırma: ayar açıksa sağ alttaki hızlı paneli açar (açıksa kapatır). */
+    /** Kapalı adayı sağa / sola kaydırma: ayar açıksa kenardaki hızlı paneli açar (açıksa kapatır). */
     private fun openQuickPanel() {
         if (!settings.value.more.quickPanel || assistantActive) return
         if (quickPanel.isShown) { quickPanel.dismiss(); return }
@@ -3370,7 +3368,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { TranslateSession.release() }
         runCatching { privacy.stop() }
         runCatching { ringer.stop() }
-        runCatching { locCtl.stop() }
         runCatching { quickPanel.dismiss() }
         runCatching { volume.stop() }
         runCatching { sysStatus.stop() }

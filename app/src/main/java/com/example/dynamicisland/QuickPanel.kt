@@ -1,16 +1,9 @@
 package com.example.dynamicisland
 
-import android.Manifest
-import android.app.AppOpsManager
 import android.app.NotificationManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.graphics.PixelFormat
-import android.location.GnssStatus
-import android.location.LocationManager
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
@@ -19,36 +12,33 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.Canvas
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,8 +54,11 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
@@ -74,149 +67,35 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /*
- * HIZLI PANEL + KONUM NOKTASI
+ * HIZLI PANEL
  *
- *  - Hızlı panel: kapalı adayı sağa ya da sola kaydırınca ekranın sağ altında küçük, dikey kaydırılabilir bir panel açılır
- *    (iPhone'daki Kamera Düğmesi şeridi gibi). Seçeneklere dokununca ilgili şey çalışır (üstüne gelince değil, basınca).
- *  - Konum noktası: konum açıkken ya da bir uygulama konumu kullanırken adanın içinde mavi nokta (IslandUi.kt çizer).
+ *  Kapalı adayı sağa ya da sola kaydırınca ekranın KENARINA yapışık, dikey kaydırılabilir bir panel açılır
+ *  (iPhone'daki Kamera Düğmesi şeridi gibi): kenara bitişik yarım hap, uçları solar, seçili seçeneğin adı
+ *  panelin yanında arka plansız turuncu yazıyla görünür. Seçeneklere dokununca ilgili şey çalışır.
+ *  Hangi kenarda (sol / sağ), ekranda ne kadar yukarıda, boyu ve genişliği Ayarlar > Hızlı panel'den ayarlanır.
  */
-
-// ================================================================ Konum noktası
-/** Mavi konum noktasının görünüp görünmeyeceği (ayar + algılama sonucu). */
-object LocationDot {
-    val active = MutableStateFlow(false)
-}
-
-/**
- * Konum durumunu izler.
- *  - "Konum açık": LocationManager.isLocationEnabled + MODE_CHANGED yayını (izin gerektirmez).
- *  - "Bir uygulama kullanıyor": GNSS başladı / durdu geri çağrısı (konum izni verildiyse) ve AppOps etkin işlem dinleyicisi
- *    (çoğu telefonda ayrıcalıklı izin ister; olmazsa sessizce atlanır).
- */
-class LocationController(private val host: IslandHost) {
-    private var receiver: BroadcastReceiver? = null
-    private var gnssCb: GnssStatus.Callback? = null
-    private var opsCb: AppOpsManager.OnOpActiveChangedListener? = null
-    private var opsTried = false
-    private var gnssOn = false
-    private var gpsBroadcastOn = false
-    private val opsActive = HashSet<String>()
-
-    fun start() {
-        if (receiver != null) return
-        val ctx = host.context
-        val r = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                if (intent.action == GPS_CHANGE) gpsBroadcastOn = intent.getBooleanExtra("enabled", false)
-                runCatching { refresh() }
-            }
-        }
-        receiver = r
-        runCatching {
-            val f = IntentFilter(LocationManager.MODE_CHANGED_ACTION)
-            f.addAction(GPS_CHANGE)
-            ContextCompat.registerReceiver(ctx, r, f, ContextCompat.RECEIVER_NOT_EXPORTED)
-        }
-        runCatching { refresh() }
-    }
-
-    fun stop() {
-        val ctx = host.context
-        receiver?.let { r -> runCatching { ctx.unregisterReceiver(r) } }
-        receiver = null
-        gnssCb?.let { cb -> runCatching { ctx.getSystemService(LocationManager::class.java).unregisterGnssStatusCallback(cb) } }
-        gnssCb = null
-        opsCb?.let { cb -> runCatching { ctx.getSystemService(AppOpsManager::class.java).stopWatchingActive(cb) } }
-        opsCb = null; opsTried = false
-        opsActive.clear(); gnssOn = false; gpsBroadcastOn = false
-        LocationDot.active.value = false
-    }
-
-    /** İzin sonradan verilmiş olabilir: eksik geri çağrılar burada (yeniden) kurulur. */
-    private fun ensureWatchers() {
-        val ctx = host.context
-        val main = ContextCompat.getMainExecutor(ctx)
-        if (gnssCb == null &&
-            ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        ) {
-            val cb = object : GnssStatus.Callback() {
-                override fun onStarted() { gnssOn = true; runCatching { refresh() } }
-                override fun onStopped() { gnssOn = false; runCatching { refresh() } }
-            }
-            val ok = runCatching { ctx.getSystemService(LocationManager::class.java).registerGnssStatusCallback(main, cb) }.getOrDefault(false)
-            if (ok) gnssCb = cb
-        }
-        if (!opsTried && android.os.Build.VERSION.SDK_INT >= 30) {
-            opsTried = true
-            val cb = object : AppOpsManager.OnOpActiveChangedListener {
-                override fun onOpActiveChanged(op: String, uid: Int, packageName: String, active: Boolean) {
-                    if (uid == android.os.Process.myUid()) return
-                    val k = "$op|$uid|$packageName"
-                    if (active) opsActive.add(k) else opsActive.remove(k)
-                    runCatching { refresh() }
-                }
-            }
-            val ok = runCatching {
-                ctx.getSystemService(AppOpsManager::class.java).startWatchingActive(
-                    arrayOf(AppOpsManager.OPSTR_FINE_LOCATION, AppOpsManager.OPSTR_COARSE_LOCATION), main, cb,
-                )
-            }.isSuccess
-            if (ok) opsCb = cb
-        }
-    }
-
-    /** Ayar ya da konum durumu değişince çağrılır: mavi noktanın görünüp görünmeyeceğini yeniden hesaplar. */
-    fun refresh() {
-        val m = host.settings.more
-        if (!m.locDot) { LocationDot.active.value = false; return }
-        runCatching { ensureWatchers() }
-        val enabled = runCatching { host.context.getSystemService(LocationManager::class.java).isLocationEnabled }.getOrDefault(false)
-        val using = enabled && (gnssOn || gpsBroadcastOn || opsActive.isNotEmpty())
-        LocationDot.active.value = if (m.locDotMode == 0) enabled else using
-    }
-
-    private companion object {
-        const val GPS_CHANGE = "android.location.GPS_ENABLED_CHANGE"
-    }
-}
-
-/** Ayarlarda: uygulamanın konumu kullandığını algılayabilmesi için konum izni satırı. */
-@Composable
-fun LocationPermissionRow() {
-    val ctx = LocalContext.current
-    var granted by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
-    }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> granted = ok }
-    if (granted) {
-        Text(
-            "Konum izni verildi: bir uygulama GPS'i kullandığında mavi nokta çıkar.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
-        )
-    } else {
-        Text(
-            "Bir uygulamanın konumu kullandığını algılamak için konum izni gerekir. Uygulama konumunu okumaz, kaydetmez ve hiçbir yere göndermez; izin yalnızca \"GPS başladı / durdu\" haberini almak içindir.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
-        )
-        IslandActionButton("Konum izni ver", { launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION) })
-    }
-}
 
 // ================================================================ Hızlı panel: seçenekler ve eylemleri
 object QuickItem {
@@ -311,14 +190,16 @@ object QuickItem {
 
 // ================================================================ Hızlı panel penceresi
 /**
- * Sağ altta açılan hızlı panel. Tam ekran, dokunuş alan şeffaf bir pencere: panelin dışına dokunmak kapatır.
+ * Kenarda açılan hızlı panel. Tam ekran, dokunuş alan şeffaf bir pencere: panelin dışına dokunmak kapatır.
  * Erişilebilirlik penceresi varsa o (durum çubuğunun üstünde), yoksa "üstte göster" penceresi kullanılır.
+ * [cfgProvider]: panel her açılışta güncel ayarları (kenar, konum, boy, genişlik) buradan okur.
  */
 class QuickPanelOverlay(
     private val ctx: Context,
     private val lifecycleOwner: LifecycleOwner,
     private val savedOwner: SavedStateRegistryOwner,
     private val wm: WindowManager,
+    private val cfgProvider: () -> MoreSettings,
     private val onAction: (Int) -> Unit,
 ) {
     private var view: ComposeView? = null
@@ -347,11 +228,13 @@ class QuickPanelOverlay(
     fun show() {
         if (view != null) return
         FlashToggle.warmUp(ctx)        // fener açık mı bilinsin
+        val cfg = cfgProvider()
         val v = ComposeView(ctx).apply {
             setViewTreeLifecycleOwner(lifecycleOwner)
             setViewTreeSavedStateRegistryOwner(savedOwner)
             setContent {
                 QuickPanelUi(
+                    cfg = cfg,
                     onAction = { id -> onAction(id) },
                     onClose = { handler.post { dismiss() } },
                 )
@@ -386,65 +269,133 @@ class QuickPanelOverlay(
 
 private val QuickOrange = Color(0xFFFF9F0A)
 
+/**
+ * Kenara yapışık panel gövdesi. Kenar tarafı düz (ekran kenarına oturur), iç tarafı yarım hap gibi yuvarlak;
+ * alt ve üstte kenara doğru küçük içbükey kavisler vardır (görseldeki gibi kenardan "büyümüş" görünür).
+ * Sağ kenar için çizilir, sol kenar için aynalanır.
+ */
+private class DockShape(val right: Boolean, val fillet: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val w = size.width
+        val h = size.height
+        val f = min(fillet, h / 4f)
+        val top = f
+        val bot = h - f
+        val bodyW = (w - f).coerceAtLeast(1f)
+        val r = min(bodyW / 2f, (bot - top) / 2f)
+        val k = 0.5523f * r
+        fun mx(x: Float) = if (right) x else w - x
+        val p = Path().apply {
+            moveTo(mx(w), 0f)
+            cubicTo(mx(w), top * 2f / 3f, mx(w - f / 3f), top, mx(w - f), top)
+            lineTo(mx(r), top)
+            cubicTo(mx(r - k), top, mx(0f), top + r - k, mx(0f), top + r)
+            lineTo(mx(0f), bot - r)
+            cubicTo(mx(0f), bot - r + k, mx(r - k), bot, mx(r), bot)
+            lineTo(mx(w - f), bot)
+            cubicTo(mx(w - f / 3f), bot, mx(w), h - (h - bot) * 2f / 3f, mx(w), h)
+            close()
+        }
+        return Outline.Generic(p)
+    }
+}
+
 @Composable
-private fun QuickPanelUi(onAction: (Int) -> Unit, onClose: () -> Unit) {
+private fun QuickPanelUi(cfg: MoreSettings, onAction: (Int) -> Unit, onClose: () -> Unit) {
+    // Sol / sağ aynalamayı kendimiz yapıyoruz: yerleşim yönü ne olursa olsun aynı sonuç çıksın
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        QuickPanelContent(cfg, onAction, onClose)
+    }
+}
+
+@Composable
+private fun QuickPanelContent(cfg: MoreSettings, onAction: (Int) -> Unit, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
     val scroll = rememberScrollState()
     var selected by remember { mutableIntStateOf(QuickItem.CAMERA) }
     var taps by remember { mutableIntStateOf(0) }
     var stateTick by remember { mutableIntStateOf(0) }
+    var labelH by remember { mutableIntStateOf(0) }
     val appear = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 320f)) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 320f)) }
     // Dokunulmazsa / kaydırılmazsa 7 sn sonra kapanır
     LaunchedEffect(scroll.value, selected, taps) { delay(7_000L); onClose() }
     // Aç / kapa durumları (fener, sessiz, RE) eylemden kısa süre sonra yeniden okunur
     LaunchedEffect(taps) { if (taps > 0) { delay(350L); stateTick++ } }
 
+    val right = cfg.qpRight
     val itemH = 46.dp
-    val stripW = 56.dp
-    val stripH = itemH * 3.6f          // dördüncü simge yarım görünür: kaydırılabildiği belli olur
+    val topPad = 8.dp
+    val fillet = 10.dp
+    val stripW = cfg.qpWidthDp.dp
+    val panelH = cfg.qpHeightDp.dp
+    val shape = remember(right, density) { DockShape(right, with(density) { fillet.toPx() }) }
     val none = remember { MutableInteractionSource() }
 
-    Box(
+    BoxWithConstraints(
         Modifier.fillMaxSize().clickable(interactionSource = none, indication = null) { onClose() },
-        contentAlignment = Alignment.BottomEnd,
     ) {
+        // Panelin ortası ekran yüksekliğinin qpYPct'inde; ekrandan taşmaz
+        val top = (maxHeight * (cfg.qpYPct / 100f) - panelH / 2).coerceIn(0.dp, maxOf(0.dp, maxHeight - panelH))
+
         Row(
             Modifier
-                .padding(end = 14.dp, bottom = 96.dp)
+                .align(if (right) Alignment.TopEnd else Alignment.TopStart)
+                .offset(y = top)
+                .height(panelH)
                 .graphicsLayer {
                     alpha = appear.value.coerceIn(0f, 1f)
-                    transformOrigin = TransformOrigin(1f, 1f)
-                    val k = 0.82f + 0.18f * appear.value
+                    transformOrigin = TransformOrigin(if (right) 1f else 0f, 0.5f)
+                    val k = 0.86f + 0.14f * appear.value
                     scaleX = k; scaleY = k
-                    translationX = (1f - appear.value) * 48.dp.toPx()
+                    translationX = (1f - appear.value) * 56.dp.toPx() * (if (right) 1f else -1f)
                 }
                 // Panelin üstüne dokunmak dışarıya dokunuş sayılmasın
                 .clickable(interactionSource = none, indication = null) { },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            // Seçili seçeneğin adı (iPhone'daki turuncu yazı gibi)
-            val on = remember(stateTick, selected) { QuickItem.isOn(ctx, selected) }
-            Text(
-                QuickItem.label(selected) + when (on) { true -> " · AÇIK"; false -> " · KAPALI"; null -> "" },
-                color = QuickOrange, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1,
-                modifier = Modifier
-                    .background(Color(0xCC000000), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            )
+            // ---- Seçili seçeneğin adı: panelin yanında, seçili simgeyle aynı hizada, arka plansız turuncu yazı
+            val label = @Composable {
+                Box(Modifier.fillMaxHeight()) {
+                    val on = remember(stateTick, selected) { QuickItem.isOn(ctx, selected) }
+                    val idx = QuickItem.ALL.indexOf(selected).coerceAtLeast(0)
+                    val panelPx = with(density) { panelH.toPx() }
+                    val itemPx = with(density) { itemH.toPx() }
+                    val fPx = with(density) { fillet.toPx() }
+                    val rawCenter = fPx + with(density) { topPad.toPx() } + idx * itemPx + itemPx / 2f - scroll.value
+                    val center = rawCenter.coerceIn(fPx + itemPx / 2f, (panelPx - fPx - itemPx / 2f).coerceAtLeast(fPx + itemPx / 2f))
+                    Text(
+                        QuickItem.label(selected) + when (on) { true -> " · AÇIK"; false -> " · KAPALI"; null -> "" },
+                        color = QuickOrange,
+                        style = TextStyle(
+                            fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                            shadow = Shadow(Color(0xB3000000), Offset(0f, 1f), 8f),
+                        ),
+                        maxLines = 1,
+                        modifier = Modifier
+                            .align(if (right) Alignment.TopEnd else Alignment.TopStart)
+                            .offset { IntOffset(0, (center - labelH / 2f).roundToInt()) }
+                            .onSizeChanged { labelH = it.height },
+                    )
+                }
+            }
+            if (right) label()
+
+            // ---- Panel gövdesi
             Box(
                 Modifier
-                    .width(stripW).height(stripH)
-                    .shadow(10.dp, RoundedCornerShape(stripW / 2), clip = false)
-                    .clip(RoundedCornerShape(stripW / 2))
-                    .background(Color(0xF2050505))
-                    .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(stripW / 2)),
+                    .width(stripW).height(panelH)
+                    .shadow(10.dp, shape, clip = false)
+                    .clip(shape)
+                    .background(Color(0xFA050505))
+                    .border(1.dp, Color(0x22FFFFFF), shape),
             ) {
                 Column(
                     Modifier
                         .fillMaxSize()
+                        .padding(top = fillet, bottom = fillet, start = if (right) 0.dp else fillet, end = if (right) fillet else 0.dp)
                         .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                         .drawWithContent {
                             drawContent()
@@ -458,12 +409,12 @@ private fun QuickPanelUi(onAction: (Int) -> Unit, onClose: () -> Unit) {
                         }
                         .verticalScroll(scroll),
                 ) {
-                    Box(Modifier.height(8.dp))
+                    Box(Modifier.height(topPad))
                     QuickItem.ALL.forEach { id ->
                         val sel = id == selected
                         Box(
                             Modifier
-                                .width(stripW).height(itemH)
+                                .width(stripW - fillet).height(itemH)
                                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                                     selected = id
                                     taps++
@@ -473,19 +424,20 @@ private fun QuickPanelUi(onAction: (Int) -> Unit, onClose: () -> Unit) {
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (sel) Box(Modifier.size(40.dp).background(Color(0x33FFFFFF), CircleShape))
                             val activeNow = remember(stateTick, id) { QuickItem.isOn(ctx, id) == true }
                             val tint = when {
                                 sel -> QuickOrange
                                 activeNow -> Color.White
-                                else -> Color(0xCCFFFFFF)
+                                else -> Color(0xB3FFFFFF)
                             }
-                            Canvas(Modifier.size(24.dp)) { drawQuickGlyph(id, tint) }
+                            Canvas(Modifier.size(if (sel) 26.dp else 24.dp)) { drawQuickGlyph(id, tint) }
                         }
                     }
-                    Box(Modifier.height(8.dp))
+                    Box(Modifier.height(topPad))
                 }
             }
+
+            if (!right) label()
         }
     }
 }

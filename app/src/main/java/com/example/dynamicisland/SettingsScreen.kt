@@ -286,30 +286,28 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 ) { draft = draft.copy(privacyExpand = it) }
             }
         }
-        sec("Konum göstergesi", "Konum açıkken ya da bir uygulama konumu kullanırken adanın içinde mavi nokta") {
-            SwitchRow(
-                "Mavi konum noktası",
-                "Kamera / mikrofon noktasıyla aynı boyutta ve yerde, adanın içinde sağda mavi bir nokta görünür. Normal adada çalışır (nokta modunda çizilmez). Açılıp kapatılabilir",
-                draft.more.locDot,
-            ) { draft = draft.copy(more = draft.more.copy(locDot = it)) }
-            if (draft.more.locDot) {
-                SubHeader("Ne zaman görünsün")
-                SegmentedTabs(listOf("Konum açıkken", "Uygulama kullanırken"), draft.more.locDotMode) {
-                    draft = draft.copy(more = draft.more.copy(locDotMode = it))
-                }
-                Text(
-                    "Konum açıkken: telefonun konum anahtarı açıksa (ya da bir uygulama kullanıyorsa) nokta durur. Uygulama kullanırken: nokta yalnızca bir uygulama GPS'i kullanırken çıkar.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
-                )
-                LocationPermissionRow()
-            }
-        }
-        sec("Hızlı panel", "Adayı sağa ya da sola kaydır: sağ altta kaydırılabilir bir panel açılır") {
+        sec("Hızlı panel", "Adayı sağa ya da sola kaydır: ekranın kenarında kaydırılabilir bir panel açılır") {
             SwitchRow(
                 "Kaydırınca hızlı panel",
-                "Kapalı adayı sağa ya da sola kaydırınca ekranın sağ altında küçük bir panel açılır. İçinde kamera, sessiz mod, fener, çeviri, Rahatsız Etme, ses kaydedici ve SoundCapsule var. Paneli aşağı yukarı kaydırarak gezin; bir seçeneğe basınca çalışır. Panelin dışına dokununca kapanır. Müzik çalarken (parça değiştirme açıksa) ve bildirimde kaydırma kendi işini yapar. Erişilebilirlik ya da 'üstte göster' izni gerekir",
+                "Kapalı adayı sağa ya da sola kaydırınca ekranın kenarında dikey bir panel açılır (iPhone'daki Kamera Düğmesi şeridi gibi). İçinde kamera, sessiz mod, fener, çeviri, Rahatsız Etme, ses kaydedici ve SoundCapsule var. Paneli aşağı yukarı kaydırarak gezin; bir seçeneğe basınca çalışır, seçili olanın adı turuncu yazıyla çıkar. Panelin dışına dokununca kapanır. Müzik çalarken (parça değiştirme açıksa) ve bildirimde kaydırma kendi işini yapar. Erişilebilirlik ya da 'üstte göster' izni gerekir",
                 draft.more.quickPanel,
             ) { draft = draft.copy(more = draft.more.copy(quickPanel = it)) }
+            if (draft.more.quickPanel) {
+                SubHeader("Hangi kenarda")
+                SegmentedTabs(listOf("Sol", "Sağ"), if (draft.more.qpRight) 1 else 0) {
+                    draft = draft.copy(more = draft.more.copy(qpRight = it == 1))
+                }
+                SubHeader("Boyut ve konum")
+                SliderRow("Yükseklik (ekranda ne kadar yukarıda)", draft.more.qpYPct.toFloat(), 5f..95f, "%${draft.more.qpYPct} (üstten)") {
+                    draft = draft.copy(more = draft.more.copy(qpYPct = kotlin.math.round(it).toInt()))
+                }
+                SliderRow("Panel boyu", draft.more.qpHeightDp.toFloat(), 120f..420f, "${draft.more.qpHeightDp} dp") {
+                    draft = draft.copy(more = draft.more.copy(qpHeightDp = kotlin.math.round(it).toInt()))
+                }
+                SliderRow("Panel genişliği", draft.more.qpWidthDp.toFloat(), 48f..110f, "${draft.more.qpWidthDp} dp") {
+                    draft = draft.copy(more = draft.more.copy(qpWidthDp = kotlin.math.round(it).toInt()))
+                }
+            }
         }
         sec("Nokta modu", "Ada yerine 3, 4 ya da 5 nokta; olaylar nokta (baloncuk) olarak görünür") {
             SwitchRow(

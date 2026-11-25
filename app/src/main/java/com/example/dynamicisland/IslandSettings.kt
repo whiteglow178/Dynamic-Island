@@ -696,9 +696,11 @@ data class MoreSettings(
     val battHotC: Int = 42,                 // sıcaklık eşiği (°C)
     val unreadBadge: Boolean = false,       // boştaki adada okunmamış bildirim sayacı
     val recDotIos: Boolean = false,         // ekran kaydı: kamera / mikrofon noktası gibi, adanın içinde sağda kırmızı nokta
-    val locDot: Boolean = false,            // konum göstergesi: adanın içinde sağda mavi nokta
-    val locDotMode: Int = 0,                // 0 = konum açıkken ya da bir uygulama kullanırken, 1 = yalnızca bir uygulama kullanırken
-    val quickPanel: Boolean = false,        // adayı sağa / sola kaydırınca sağ altta hızlı panel açılır
+    val quickPanel: Boolean = false,        // adayı sağa / sola kaydırınca kenara yapışık hızlı panel açılır
+    val qpRight: Boolean = true,            // hızlı panel hangi kenarda: true = sağ, false = sol
+    val qpYPct: Int = 62,                   // panelin dikey konumu: ekran yüksekliğinin yüzdesi (panelin ortası, 0 = üst, 100 = alt)
+    val qpHeightDp: Int = 210,              // panel yüksekliği (dp)
+    val qpWidthDp: Int = 64,                // panel genişliği (dp)
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -859,8 +861,9 @@ class SettingsRepository(context: Context) {
         val X_CHGWATT = booleanPreferencesKey("x_chgwatts"); val X_BFULL = booleanPreferencesKey("x_bfull")
         val X_BHOT = booleanPreferencesKey("x_bhot"); val X_BHOTC = intPreferencesKey("x_bhotc")
         val X_UNREAD = booleanPreferencesKey("x_unread")
-        val X_RECDOT = booleanPreferencesKey("x_recdot"); val X_LOCDOT = booleanPreferencesKey("x_locdot")
-        val X_LOCMODE = intPreferencesKey("x_locmode"); val X_QPANEL = booleanPreferencesKey("x_qpanel")
+        val X_RECDOT = booleanPreferencesKey("x_recdot")
+        val X_QPANEL = booleanPreferencesKey("x_qpanel"); val X_QPRIGHT = booleanPreferencesKey("x_qpright")
+        val X_QPY = intPreferencesKey("x_qpy"); val X_QPH = intPreferencesKey("x_qph"); val X_QPW = intPreferencesKey("x_qpw")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1224,9 +1227,11 @@ class SettingsRepository(context: Context) {
                 battHotC = (p[K.X_BHOTC] ?: d.more.battHotC).coerceIn(38, 50),
                 unreadBadge = p[K.X_UNREAD] ?: d.more.unreadBadge,
                 recDotIos = p[K.X_RECDOT] ?: d.more.recDotIos,
-                locDot = p[K.X_LOCDOT] ?: d.more.locDot,
-                locDotMode = (p[K.X_LOCMODE] ?: d.more.locDotMode).coerceIn(0, 1),
                 quickPanel = p[K.X_QPANEL] ?: d.more.quickPanel,
+                qpRight = p[K.X_QPRIGHT] ?: d.more.qpRight,
+                qpYPct = (p[K.X_QPY] ?: d.more.qpYPct).coerceIn(5, 95),
+                qpHeightDp = (p[K.X_QPH] ?: d.more.qpHeightDp).coerceIn(120, 420),
+                qpWidthDp = (p[K.X_QPW] ?: d.more.qpWidthDp).coerceIn(48, 110),
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1380,7 +1385,8 @@ class SettingsRepository(context: Context) {
             it[K.X_FWORK] = m.focusWorkMin; it[K.X_FBREAK] = m.focusBreakMin; it[K.X_FLONG] = m.focusLongMin; it[K.X_FHIDE] = m.focusHide
             it[K.X_NEWAPP] = m.newAppAlert; it[K.X_CHGWATT] = m.chargeWatts
             it[K.X_BFULL] = m.battFullAlert; it[K.X_BHOT] = m.battHotAlert; it[K.X_BHOTC] = m.battHotC; it[K.X_UNREAD] = m.unreadBadge
-            it[K.X_RECDOT] = m.recDotIos; it[K.X_LOCDOT] = m.locDot; it[K.X_LOCMODE] = m.locDotMode; it[K.X_QPANEL] = m.quickPanel
+            it[K.X_RECDOT] = m.recDotIos; it[K.X_QPANEL] = m.quickPanel
+            it[K.X_QPRIGHT] = m.qpRight; it[K.X_QPY] = m.qpYPct; it[K.X_QPH] = m.qpHeightDp; it[K.X_QPW] = m.qpWidthDp
         }
     }
 

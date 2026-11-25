@@ -210,7 +210,6 @@ object ColorGroups {
                 s("status_alarm", "Alarm", 0xFFFF9500),
                 s("status_camera", "Kamera noktası", 0xFF34C759),
                 s("status_mic", "Mikrofon noktası", 0xFFFF9F0A),
-                s("loc_blue", "Konum noktası (mavi)", 0xFF0A84FF),
                 s("status_icon", "Simge çizgileri", 0xFFFFFFFF),
                 s("status_text", "Ana yazı", 0xFFFFFFFF),
                 s("status_text_dim", "Alt yazı", 0xB3FFFFFF, true),
