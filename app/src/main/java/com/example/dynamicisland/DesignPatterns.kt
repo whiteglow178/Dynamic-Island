@@ -23,7 +23,7 @@ import kotlin.math.sin
  */
 
 /** Toplam tasarım sayısı (fotoğraf dahil). Yeni desen eklenince [DESIGN_NAMES] ile birlikte artırılır. */
-const val DESIGN_COUNT = 17
+const val DESIGN_COUNT = 18
 
 /** Ana Sayfa'da gösterim sırası: önce desenler, en sonda fotoğraf. */
 val DESIGN_ORDER: List<Int> = (0 until DESIGN_PHOTO) + (DESIGN_PHOTO + 1 until DESIGN_COUNT) + DESIGN_PHOTO
@@ -49,6 +49,7 @@ internal fun DrawScope.drawExtraDesign(style: Int, w: Float, h: Float) {
         14 -> drawHolo(w, h)
         15 -> drawLeopard(w, h)
         16 -> drawArtDeco(w, h)
+        17 -> drawRect(Color.Black)       // Mürekkep damlaları: ada içi düz siyah, damlalar adanın dışına InkDecor.kt çizer
         else -> drawRect(Color.Black)
     }
 }

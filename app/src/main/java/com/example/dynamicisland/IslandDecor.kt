@@ -484,6 +484,7 @@ private fun DrawScope.drawPet(kind: Int, s: Float) {
 data class DecorAnchor(
     val cx: Float, val top: Float, val w: Float, val h: Float,
     val inverted: Boolean, val visible: Boolean, val screenH: Float,
+    val ink: Boolean = false,      // özel tasarım "Mürekkep damlaları" (InkDecor.kt)
 )
 
 /** Adanın ALTINDA duran, dokunuş almayan tam ekran pencere: üstteki karakter, sarkan süsler, mürekkep damlası. */
@@ -501,7 +502,8 @@ class DecorOverlay(
     private var tries = 0
 
     /** Herhangi bir süs açık mı? Kapalıysa pencere hiç eklenmez. */
-    fun wanted(s: IslandSettings) = s.decorTop != 0 || s.decorHang != 0 || s.dripEnabled
+    fun wanted(s: IslandSettings) = s.decorTop != 0 || s.decorHang != 0 || s.dripEnabled ||
+        (s.more.designEnabled && s.more.designStyle == DESIGN_INK)
 
     fun sync() {
         val on = wanted(settings.value)
@@ -591,6 +593,7 @@ internal fun DecorLayer(settings: StateFlow<IslandSettings>, anchorFlow: StateFl
         if (s.decorTop != 0) TopDecor(s.decorTop, a, vis)
         if (s.decorHang != 0) HangDecor(s.decorHang, a, vis)
         if (s.dripEnabled) Drip(a, body, s.dripEverySec, cur?.visible == true)
+        if (a.ink) InkDecor(a, body, vis)
     }
 }
 

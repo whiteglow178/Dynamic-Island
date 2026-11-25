@@ -274,6 +274,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scope.launch { IslandBus.events.collect(::handle) }
         runCatching { privacy.start() }
         runCatching { ringer.start() }
+        runCatching { locCtl.start() }          // konum noktası (ayar kapalıysa sessiz kalır)
         runCatching { volume.start() }
         runCatching { sysStatus.start() }       // düşük pil, internet, uçak modu
         runCatching { chargeEta.start() }       // şarj süresi tahmini (ayar kapalıysa sessiz kalır)
@@ -304,7 +305,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
-        scope.launch { settings.collect { s -> appHide.update(); privacy.refresh(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); favorites.preload(s) } }
+        scope.launch { settings.collect { s -> appHide.update(); privacy.refresh(); locCtl.refresh(); updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); favorites.preload(s) } }
         scope.launch { lyrics.collect { update { it } } }
         // Kenar Cevapla / Reddet tuşları ayarı değişince (arama sürerken) güncelle
         scope.launch { SideCallStore.flow(applicationContext).collect { call.syncSideButtons() } }
@@ -1651,6 +1652,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val rec: ScreenRecController by lazy { ScreenRecController(host) }
     private val privacy: PrivacyController by lazy { PrivacyController(host) }
     private val ringer: RingerController by lazy { RingerController(host) }
+    private val locCtl: LocationController by lazy { LocationController(host) }
+    // Hızlı panel (adayı sağa / sola kaydırınca sağ altta açılır) -> QuickPanel.kt
+    private val quickPanel: QuickPanelOverlay by lazy { QuickPanelOverlay(this, this, this, wm) { id -> runQuickAction(id) } }
     private val volume: VolumeController by lazy { VolumeController(host) }
     private val sysStatus: SystemStatusController by lazy { SystemStatusController(host) }
     private val clock: ClockController by lazy { ClockController(host) }
@@ -1725,6 +1729,26 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandActions.onVoiceStop = { scope.launch { runCatching { voice.onStop() } } }
         IslandActions.onHoldExpand = { scope.launch { runCatching { onHoldExpand() } } }
         IslandActions.onHoldPress = { on -> scope.launch { runCatching { onHoldPress(on) } } }
+        IslandActions.onQuickPanel = { scope.launch { runCatching { openQuickPanel() } } }
+    }
+
+    /** Kapalı adayı sağa / sola kaydırma: ayar açıksa sağ alttaki hızlı paneli açar (açıksa kapatır). */
+    private fun openQuickPanel() {
+        if (!settings.value.more.quickPanel || assistantActive) return
+        if (quickPanel.isShown) { quickPanel.dismiss(); return }
+        if (!quickPanel.canShow()) {
+            android.widget.Toast.makeText(this, "Hızlı panel için erişilebilirlik ya da 'üstte göster' izni gerekli", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        quickPanel.show()
+    }
+
+    /** Panelde dokunulan seçenek: çeviri adanın kendisinde açılır, diğerleri [QuickItem.run] ile çalışır. */
+    private fun runQuickAction(id: Int) {
+        if (id == QuickItem.TRANSLATE) {
+            if (settings.value.translateReady()) openTranslate()
+            else android.widget.Toast.makeText(this, "Önce ayarlardan Çeviri'yi aç", android.widget.Toast.LENGTH_SHORT).show()
+        } else QuickItem.run(this, id)
     }
 
     /** Düşük pil kartındaki pil kapsülü: düşük güç modunu açar (açıksa kapatır). */
@@ -1894,6 +1918,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             w = dp(wDp).toFloat(), h = hPx.toFloat(),
             inverted = s.invertedIsland, visible = visible,
             screenH = screenHPx().toFloat(),
+            ink = s.more.designEnabled && s.more.designStyle == DESIGN_INK && (c is IslandContent.Idle || s.more.designAlways),
         )
         decorAnchor.value = if (dOn) anchor else null
         playAnchor.value = if (!pOn) null else PlayAnchor(
@@ -3345,6 +3370,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { TranslateSession.release() }
         runCatching { privacy.stop() }
         runCatching { ringer.stop() }
+        runCatching { locCtl.stop() }
+        runCatching { quickPanel.dismiss() }
         runCatching { volume.stop() }
         runCatching { sysStatus.stop() }
         runCatching { chargeEta.stop() }

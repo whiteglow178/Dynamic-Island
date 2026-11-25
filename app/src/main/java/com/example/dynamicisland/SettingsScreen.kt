@@ -285,10 +285,31 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                     draft.privacyExpand,
                 ) { draft = draft.copy(privacyExpand = it) }
             }
-            SubHeader("Geçmiş")
-            SwitchRow("Kamera / mikrofon geçmişi", "Kamera ya da mikrofon ne zaman, ne kadar süre kullanıldı ve (tahminen) hangi uygulamayla: aşağıda listelenir. Göstergeden bağımsız çalışır. Yalnızca bellekte tutulur (en çok 40 kayıt): diske yazılmaz, hiçbir yere gönderilmez, uygulama kapanınca ya da telefon yeniden başlayınca silinir. Uygulama adını Android vermez; kullanım başladığında ön planda olan uygulama gösterilir",
-                draft.more.privHistory) { draft = draft.copy(more = draft.more.copy(privHistory = it)) }
-            if (draft.more.privHistory) PrivacyHistoryList()
+        }
+        sec("Konum göstergesi", "Konum açıkken ya da bir uygulama konumu kullanırken adanın içinde mavi nokta") {
+            SwitchRow(
+                "Mavi konum noktası",
+                "Kamera / mikrofon noktasıyla aynı boyutta ve yerde, adanın içinde sağda mavi bir nokta görünür. Normal adada çalışır (nokta modunda çizilmez). Açılıp kapatılabilir",
+                draft.more.locDot,
+            ) { draft = draft.copy(more = draft.more.copy(locDot = it)) }
+            if (draft.more.locDot) {
+                SubHeader("Ne zaman görünsün")
+                SegmentedTabs(listOf("Konum açıkken", "Uygulama kullanırken"), draft.more.locDotMode) {
+                    draft = draft.copy(more = draft.more.copy(locDotMode = it))
+                }
+                Text(
+                    "Konum açıkken: telefonun konum anahtarı açıksa (ya da bir uygulama kullanıyorsa) nokta durur. Uygulama kullanırken: nokta yalnızca bir uygulama GPS'i kullanırken çıkar.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+                )
+                LocationPermissionRow()
+            }
+        }
+        sec("Hızlı panel", "Adayı sağa ya da sola kaydır: sağ altta kaydırılabilir bir panel açılır") {
+            SwitchRow(
+                "Kaydırınca hızlı panel",
+                "Kapalı adayı sağa ya da sola kaydırınca ekranın sağ altında küçük bir panel açılır. İçinde kamera, sessiz mod, fener, çeviri, Rahatsız Etme, ses kaydedici ve SoundCapsule var. Paneli aşağı yukarı kaydırarak gezin; bir seçeneğe basınca çalışır. Panelin dışına dokununca kapanır. Müzik çalarken (parça değiştirme açıksa) ve bildirimde kaydırma kendi işini yapar. Erişilebilirlik ya da 'üstte göster' izni gerekir",
+                draft.more.quickPanel,
+            ) { draft = draft.copy(more = draft.more.copy(quickPanel = it)) }
         }
         sec("Nokta modu", "Ada yerine 3, 4 ya da 5 nokta; olaylar nokta (baloncuk) olarak görünür") {
             SwitchRow(
@@ -552,6 +573,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Ekran kaydı", "Telefonun kendi ekran kaydı adada görünür (ek izin istemez)", PreviewKind.ScreenRec) {
             SwitchRow("Ekran kaydı adası", "Bildirim erişimi açık olmalı. Kayıt sırasında kırmızı nokta, dokununca süre ve durdur düğmesi", draft.screenRecEnabled) { draft = draft.copy(screenRecEnabled = it) }
             if (draft.screenRecEnabled) {
+                SwitchRow(
+                    "Kırmızı nokta (iPhone gibi)",
+                    "Kayıt başlayınca kapalı adanın içinde, kamera deliğinin biraz sağında kırmızı bir nokta görünür. Boyutu ve yeri kamera / mikrofon noktasıyla aynıdır; soldaki yanıp sönen nokta yerine çıkar",
+                    draft.more.recDotIos,
+                ) { draft = draft.copy(more = draft.more.copy(recDotIos = it)) }
                 SubHeader("Açık ada genişliği")
                 SegmentedTabs(listOf("Normal", "Tam genişlik"), if (draft.screenRecWide) 1 else 0) {
                     draft = draft.copy(screenRecWide = it == 1)

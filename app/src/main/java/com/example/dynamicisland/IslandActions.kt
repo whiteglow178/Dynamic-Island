@@ -34,4 +34,6 @@ object IslandActions {
     @Volatile var onHoldExpand: () -> Unit = {}
     /** Basılı tutarak açma: parmak değdi (true) / kalktı (false). Pencere önceden büyütülür. */
     @Volatile var onHoldPress: (Boolean) -> Unit = {}
+    /** Kapalı adayı sağa / sola kaydırma: sağ alttaki hızlı paneli aç / kapat (Ayarlar > Hızlı panel). */
+    @Volatile var onQuickPanel: () -> Unit = {}
 }

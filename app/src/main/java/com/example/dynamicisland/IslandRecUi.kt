@@ -140,10 +140,11 @@ private fun RecCountRing(count: Int, size: Dp, modifier: Modifier = Modifier) {
 }
 
 @Composable
-internal fun ScreenRecCompact(c: IslandContent.ScreenRec, modifier: Modifier = Modifier) {
+internal fun ScreenRecCompact(c: IslandContent.ScreenRec, modifier: Modifier = Modifier, iosDot: Boolean = false) {
     Box(modifier) {
         when (c.phase) {
-            RecPhase.Recording -> RecDot(true, 9.dp, Modifier.align(Alignment.CenterStart).padding(start = 14.dp))
+            // iPhone gibi kırmızı nokta açıksa nokta adanın içinde sağda çizilir (IslandUi.kt), burada çizilmez
+            RecPhase.Recording -> if (!iosDot) RecDot(true, 9.dp, Modifier.align(Alignment.CenterStart).padding(start = 14.dp))
             RecPhase.Saved -> RecDot(false, 9.dp, Modifier.align(Alignment.CenterStart).padding(start = 14.dp))
             RecPhase.Countdown -> {
                 RecCountRing(c.count, 17.dp, Modifier.align(Alignment.CenterStart).padding(start = 12.dp))

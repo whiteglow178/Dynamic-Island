@@ -101,16 +101,19 @@ fun CustomDesignSection() {
         val photo = rememberCustomImage(CustomImages.Slot.DESIGN, cur.designPhotoUri)
 
         // Önizleme: koyu ekranın üstünde ada (ekran görüntüsündeki gibi)
+        val inkOn = cur.designEnabled && cur.designStyle == DESIGN_INK     // açık zeminde gösterilir: siyah damlalar koyu zeminde seçilmez
         Box(
-            Modifier.fillMaxWidth().height(86.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF101114)),
+            Modifier.fillMaxWidth().height(104.dp).clip(RoundedCornerShape(22.dp)).background(if (inkOn) Color(0xFFC9C9C9) else Color(0xFF101114)),
             contentAlignment = Alignment.TopCenter,
         ) {
             val shape = RoundedCornerShape(50)
-            val pillMod = Modifier.padding(top = 14.dp).size(width = 150.dp, height = 42.dp).clip(shape)
+            val pillMod = Modifier.padding(top = 28.dp).size(width = 150.dp, height = 42.dp).clip(shape)
+            // Mürekkep damlaları adanın dışına taşar: önce damlalar (adanın altında), sonra ada
+            if (inkOn) InkPreviewDrips(Modifier.padding(top = 28.dp).size(width = 150.dp, height = 42.dp))
             if (cur.designEnabled) DesignFill(cur.designStyle, photo, pillMod)
             else Box(pillMod.background(Color.Black))
-            Text("11:27", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.align(Alignment.TopStart).padding(start = 22.dp, top = 24.dp))
+            Text("11:27", color = if (inkOn) Color.Black else Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.TopStart).padding(start = 22.dp, top = 38.dp))
         }
 
         SwitchRow("Özel tasarım", "Boştaki ada seçtiğin desenle ya da fotoğrafla dolar", cur.designEnabled) { set(cur.copy(designEnabled = it)) }
@@ -141,7 +144,7 @@ fun CustomDesignSection() {
                                         drawLine(plusColor, Offset(0f, w / 2f), Offset(w, w / 2f), strokeWidth = 2.4.dp.toPx(), cap = StrokeCap.Round)
                                     }
                                 } else {
-                                    DesignFill(i, photo, Modifier.size(44.dp).clip(CircleShape))
+                                    DesignFill(i, photo, Modifier.size(44.dp).clip(CircleShape), preview = true)
                                 }
                             }
                         }

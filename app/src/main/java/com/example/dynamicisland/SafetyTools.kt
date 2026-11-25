@@ -43,7 +43,6 @@ import kotlin.math.roundToInt
  * GÜVENLİK VE PİL UYARILARI
  *  - Yeni uygulama yüklendi uyarısı ([AppInstallWatch])
  *  - Pil %100 / telefon çok sıcak uyarıları ([BatteryCare])
- *  - Kamera / mikrofon geçmişi ([PrivacyLog], yalnızca bellekte)
  *  - Okunmamış bildirim sayacı ([UnreadBadge])
  * Hiçbiri kayıt dosyası yazmaz, internete veri göndermez ve ek izin istemez.
  */
@@ -192,75 +191,6 @@ internal fun chargeWatts(ctx: Context, voltageMv: Int): String? {
 }
 
 // ================================================================ Kamera / mikrofon geçmişi
-/**
- * Kamera ve mikrofon kullanım geçmişi: yalnızca bellekte tutulur (en çok 40 kayıt), diske yazılmaz, servis kapanınca
- * ya da telefon yeniden başlayınca silinir. Android hangi uygulamanın kullandığını vermediği için uygulama adı
- * "kullanım başladığında ön planda olan uygulama"dır (tahmin).
- */
-object PrivacyLog {
-    class Entry(val at: Long, val kind: Int, val pkg: String, end: Long = 0L) {   // kind: 0 kamera, 1 mikrofon
-        var endAt by mutableLongStateOf(end)
-    }
-
-    /** En yeni başta. */
-    val items = mutableStateListOf<Entry>()
-    @Volatile var fgPkg: String = ""
-    private var camOn = false
-    private var micOn = false
-
-    /** Kamera / mikrofon durumu değiştikçe PrivacyController çağırır. [enabled] kapalıysa hiçbir şey kaydedilmez. */
-    fun update(enabled: Boolean, cam: Boolean, mic: Boolean) {
-        if (!enabled) { camOn = false; micOn = false; return }
-        step(0, cam, camOn); step(1, mic, micOn)
-        camOn = cam; micOn = mic
-    }
-
-    private fun step(kind: Int, now: Boolean, was: Boolean) {
-        if (now == was) return
-        val t = System.currentTimeMillis()
-        if (now) {
-            items.add(0, Entry(t, kind, fgPkg))
-            while (items.size > 40) items.removeAt(items.size - 1)
-        } else items.firstOrNull { it.kind == kind && it.endAt == 0L }?.endAt = t
-    }
-
-    fun clear() { items.clear(); camOn = false; micOn = false }
-}
-
-/** Ayarlardaki geçmiş listesi (son 12 kayıt) ve "Temizle" düğmesi. */
-@Composable
-internal fun PrivacyHistoryList() {
-    val ctx = LocalContext.current
-    val cs = MaterialTheme.colorScheme
-    val pm = remember { ctx.packageManager }
-    val fmt = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
-    val items = PrivacyLog.items
-    if (items.isEmpty()) {
-        Text("Henüz kayıt yok. Kamera ya da mikrofon kullanılınca burada görünür.", color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-        return
-    }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items.take(12).forEach { e ->
-            val app = if (e.pkg.isBlank()) "bilinmiyor" else
-                runCatching { pm.getApplicationLabel(pm.getApplicationInfo(e.pkg, 0)).toString() }.getOrDefault(e.pkg)
-            val dur = if (e.endAt == 0L) "sürüyor" else {
-                val s = ((e.endAt - e.at) / 1000L).coerceAtLeast(1L)
-                if (s < 60) "$s sn" else "${s / 60} dk ${s % 60} sn"
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(fmt.format(java.util.Date(e.at)), color = cs.onSurfaceVariant, fontSize = 13.sp)
-                Text(if (e.kind == 0) "Kamera" else "Mikrofon", color = if (e.kind == 0) Color(0xFF34C759) else Color(0xFFFF9F0A),
-                    fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                Text("$app · $dur", color = cs.onSurface, fontSize = 13.sp, maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            }
-        }
-        Text("Uygulama adı tahmindir: kullanım başladığında ön planda olan uygulama. Kayıtlar yalnızca bellekte tutulur.",
-            color = cs.onSurfaceVariant, fontSize = 11.5.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 4.dp))
-        IslandActionButton("Geçmişi temizle", { PrivacyLog.clear() })
-    }
-}
-
 // ================================================================ Okunmamış bildirim sayacı
 /** Boştaki adanın köşesindeki rozet için bekleyen (silinmemiş) bildirim sayısı. Dinleyici hesaplar. */
 object UnreadBadge {

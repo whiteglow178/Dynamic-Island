@@ -996,6 +996,9 @@ fun IslandPill(
                             if (isNotifNow && abs(delta.x) > swipeMin && abs(delta.x) > abs(delta.y) * 1.2f) {
                                 outcome = 5; break      // bildirim: sağa / sola kaydırma
                             }
+                            if (cfgNow.more.quickPanel && progress.mean < 0.5f && abs(delta.x) > swipeMin && abs(delta.x) > abs(delta.y) * 1.2f) {
+                                outcome = 6; break      // kapalı adayı sağa / sola kaydırma: sağ altta hızlı panel
+                            }
                             if (delta.getDistance() > slop) { outcome = 2; break }
                         }
                     }
@@ -1028,6 +1031,12 @@ fun IslandPill(
                         4 -> {
                             // Sağdan sola = sonraki şarkı, soldan sağa = önceki şarkı
                             commandNow(if (swipeDirX < 0) MediaCommand.Next else MediaCommand.Previous)
+                            do {
+                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            } while (c != null && c.pressed)
+                        }
+                        6 -> {
+                            IslandActions.onQuickPanel()
                             do {
                                 val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
                             } while (c != null && c.pressed)
@@ -1156,16 +1165,34 @@ fun IslandPill(
             ) { SideGlyph(content, geo.ch) }
         }
 
-        if (content is IslandContent.Status && (content.kind == StatusKind.Camera || content.kind == StatusKind.Mic) && compactVisible && !cfg.dotMode) {
-            // Normal ada: kapalı halde kamera deliğinin sağında yeşil (kamera) / turuncu (mikrofon) nokta
+        // Gösterge noktaları (normal ada, kapalı hal): kamera deliğinin hemen sağında, adanın içinde.
+        // Kamera (yeşil) / mikrofon (turuncu), ekran kaydı (kırmızı, Ayarlar > Ekran kaydı > iPhone gibi kırmızı nokta)
+        // ve konum (mavi, Ayarlar > Konum göstergesi) aynı boyutta ve aynı yerde çizilir; birlikte olurlarsa yan yana dizilir.
+        val locActive by LocationDot.active.collectAsState()
+        val camMicStatus = (content as? IslandContent.Status)?.takeIf { it.kind == StatusKind.Camera || it.kind == StatusKind.Mic }
+        val recRedDot = cfg.more.recDotIos && content is IslandContent.ScreenRec && content.phase == RecPhase.Recording
+        val locBlueDot = cfg.more.locDot && locActive && !swallow &&
+            (content is IslandContent.Idle || camMicStatus != null || content is IslandContent.ScreenRec)
+        if ((camMicStatus != null || recRedDot || locBlueDot) && compactVisible && !cfg.dotMode) {
             Box(
                 Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)
                     .graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) },
                 contentAlignment = Alignment.Center,
             ) {
                 // iOS gibi: adanın sağ ucunda değil, ortadaki kamera deliğinin hemen sağında (adanın içinde, biraz sağda)
-                val dotX = (geo.ch * 0.85f).coerceAtMost(geo.cw / 2f - geo.ch * 0.35f)
-                Box(Modifier.offset(x = dotX).size(8.dp).background(statusColor(content), RoundedCornerShape(50)))
+                val firstX = (geo.ch * 0.85f).coerceAtMost(geo.cw / 2f - geo.ch * 0.35f)
+                var slot = 0
+                if (camMicStatus != null) {
+                    Box(Modifier.offset(x = firstX).size(8.dp).background(statusColor(camMicStatus), RoundedCornerShape(50)))
+                    slot++
+                }
+                if (recRedDot) {
+                    Box(Modifier.offset(x = firstX + 12.dp * slot).size(8.dp).background(Pal.c("rec_red"), RoundedCornerShape(50)))
+                    slot++
+                }
+                if (locBlueDot) {
+                    Box(Modifier.offset(x = firstX + 12.dp * slot).size(8.dp).background(Pal.c("loc_blue"), RoundedCornerShape(50)))
+                }
             }
         }
 
@@ -1282,7 +1309,7 @@ fun IslandPill(
             // Kapalı ada: kayıtta solda yavaşça yanıp sönen kırmızı nokta; geri sayımda halka + rakam; işlenirken dönen halka
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).then(holdScaleMod)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
-                ScreenRecCompact(content, Modifier.fillMaxSize().then(fade))
+                ScreenRecCompact(content, Modifier.fillMaxSize().then(fade), iosDot = cfg.more.recDotIos)
             }
         }
 

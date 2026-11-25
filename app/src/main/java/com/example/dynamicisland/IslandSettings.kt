@@ -690,12 +690,15 @@ data class MoreSettings(
     val focusLongMin: Int = 15,             // her 4 odaktan sonra uzun mola (dk)
     val focusHide: Boolean = false,         // odak sırasında bildirimler gizlensin
     val newAppAlert: Boolean = false,       // yeni uygulama yüklenince ada uyarır
-    val privHistory: Boolean = false,       // kamera / mikrofon geçmişi (yalnızca bellekte)
     val chargeWatts: Boolean = false,       // şarj süresi tahmininin yanında şarj hızı (watt)
     val battFullAlert: Boolean = false,     // şarjda pil %100 olunca uyarı
     val battHotAlert: Boolean = false,      // telefon çok sıcak olunca uyarı
     val battHotC: Int = 42,                 // sıcaklık eşiği (°C)
     val unreadBadge: Boolean = false,       // boştaki adada okunmamış bildirim sayacı
+    val recDotIos: Boolean = false,         // ekran kaydı: kamera / mikrofon noktası gibi, adanın içinde sağda kırmızı nokta
+    val locDot: Boolean = false,            // konum göstergesi: adanın içinde sağda mavi nokta
+    val locDotMode: Int = 0,                // 0 = konum açıkken ya da bir uygulama kullanırken, 1 = yalnızca bir uygulama kullanırken
+    val quickPanel: Boolean = false,        // adayı sağa / sola kaydırınca sağ altta hızlı panel açılır
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -852,10 +855,12 @@ class SettingsRepository(context: Context) {
         val X_VPN = booleanPreferencesKey("x_vpn"); val X_NETSPD = intPreferencesKey("x_netspd")
         val X_FWORK = intPreferencesKey("x_fwork"); val X_FBREAK = intPreferencesKey("x_fbreak")
         val X_FLONG = intPreferencesKey("x_flong"); val X_FHIDE = booleanPreferencesKey("x_fhide")
-        val X_NEWAPP = booleanPreferencesKey("x_newapp"); val X_PHIST = booleanPreferencesKey("x_phist")
+        val X_NEWAPP = booleanPreferencesKey("x_newapp")
         val X_CHGWATT = booleanPreferencesKey("x_chgwatts"); val X_BFULL = booleanPreferencesKey("x_bfull")
         val X_BHOT = booleanPreferencesKey("x_bhot"); val X_BHOTC = intPreferencesKey("x_bhotc")
         val X_UNREAD = booleanPreferencesKey("x_unread")
+        val X_RECDOT = booleanPreferencesKey("x_recdot"); val X_LOCDOT = booleanPreferencesKey("x_locdot")
+        val X_LOCMODE = intPreferencesKey("x_locmode"); val X_QPANEL = booleanPreferencesKey("x_qpanel")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1213,12 +1218,15 @@ class SettingsRepository(context: Context) {
                 focusLongMin = p[K.X_FLONG] ?: d.more.focusLongMin,
                 focusHide = p[K.X_FHIDE] ?: d.more.focusHide,
                 newAppAlert = p[K.X_NEWAPP] ?: d.more.newAppAlert,
-                privHistory = p[K.X_PHIST] ?: d.more.privHistory,
                 chargeWatts = p[K.X_CHGWATT] ?: d.more.chargeWatts,
                 battFullAlert = p[K.X_BFULL] ?: d.more.battFullAlert,
                 battHotAlert = p[K.X_BHOT] ?: d.more.battHotAlert,
                 battHotC = (p[K.X_BHOTC] ?: d.more.battHotC).coerceIn(38, 50),
                 unreadBadge = p[K.X_UNREAD] ?: d.more.unreadBadge,
+                recDotIos = p[K.X_RECDOT] ?: d.more.recDotIos,
+                locDot = p[K.X_LOCDOT] ?: d.more.locDot,
+                locDotMode = (p[K.X_LOCMODE] ?: d.more.locDotMode).coerceIn(0, 1),
+                quickPanel = p[K.X_QPANEL] ?: d.more.quickPanel,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1370,8 +1378,9 @@ class SettingsRepository(context: Context) {
             it[K.X_PBUZZ1] = m.privBuzz1; it[K.X_PBUZZ2] = m.privBuzz2; it[K.X_PBUZZ3] = m.privBuzz3; it[K.X_PBUZZ4] = m.privBuzz4
             it[K.X_VPN] = m.vpnIndicator; it[K.X_NETSPD] = m.netSpeedMode
             it[K.X_FWORK] = m.focusWorkMin; it[K.X_FBREAK] = m.focusBreakMin; it[K.X_FLONG] = m.focusLongMin; it[K.X_FHIDE] = m.focusHide
-            it[K.X_NEWAPP] = m.newAppAlert; it[K.X_PHIST] = m.privHistory; it[K.X_CHGWATT] = m.chargeWatts
+            it[K.X_NEWAPP] = m.newAppAlert; it[K.X_CHGWATT] = m.chargeWatts
             it[K.X_BFULL] = m.battFullAlert; it[K.X_BHOT] = m.battHotAlert; it[K.X_BHOTC] = m.battHotC; it[K.X_UNREAD] = m.unreadBadge
+            it[K.X_RECDOT] = m.recDotIos; it[K.X_LOCDOT] = m.locDot; it[K.X_LOCMODE] = m.locDotMode; it[K.X_QPANEL] = m.quickPanel
         }
     }
 

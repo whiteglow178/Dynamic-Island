@@ -296,14 +296,16 @@ internal fun LowBatteryCardContent(c: IslandContent.Status, rb: RainbowStyle?) {
 val DESIGN_NAMES = listOf(
     "Siyah", "Yıldızlı gece", "Zebra dalga", "Turkuaz mandala", "Gün batımı", "Sarı mozaik", "Fotoğraf",
     "Kuzey ışıkları", "Okyanus", "Neon ızgara", "Mermer", "Karbon fiber", "Kiraz çiçeği", "Galaksi", "Holografik", "Leopar", "Art deco",
+    "Mürekkep damlaları",
 )
 
 /**
  * Seçilen deseni (ya da fotoğrafı) verilen alanı kaplayacak şekilde çizer. Desenler kodla çizilir (görsel dosyası yoktur),
  * her boyutta keskin kalır. Fotoğraf seçili ama henüz yüklenmediyse siyah çizilir.
  */
+/** [preview]: Ana Sayfa'daki küçük örnek; adanın dışına taşan tasarımlar (mürekkep damlaları) örnekte kendi zemininde çizilir. */
 @Composable
-fun DesignFill(style: Int, photo: ImageBitmap?, modifier: Modifier = Modifier) {
+fun DesignFill(style: Int, photo: ImageBitmap?, modifier: Modifier = Modifier, preview: Boolean = false) {
     if (style == DESIGN_PHOTO) {
         Box(modifier.background(Color.Black)) {
             if (photo != null) Image(
@@ -313,7 +315,7 @@ fun DesignFill(style: Int, photo: ImageBitmap?, modifier: Modifier = Modifier) {
         }
         return
     }
-    Canvas(modifier) { drawDesign(style) }
+    Canvas(modifier) { if (preview && style == DESIGN_INK) drawInkSwatch(size.width, size.height) else drawDesign(style) }
 }
 
 private fun DrawScope.drawDesign(style: Int) {
