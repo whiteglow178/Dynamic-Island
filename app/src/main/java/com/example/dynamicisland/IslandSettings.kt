@@ -195,14 +195,6 @@ data class IslandSettings(
     val favoriteLaunchAnim: Boolean = true,  // uygulamaya dokununca adadan siyah ekran çıkıp ekranı kaplasın
 
     // Google Asistan / Gemini animasyonu
-    // Müzik görünümü: hangi öğeler görünsün (varsayılan hepsi açık)
-    val musicShowEq: Boolean = true,
-    val musicShowArt: Boolean = true,
-    val musicShowTitle: Boolean = true,
-    val musicShowArtist: Boolean = true,
-    val musicShowTime: Boolean = true,
-    val musicShowLike: Boolean = true,
-    val musicShowCast: Boolean = true,
     val screenRecEnabled: Boolean = true,    // sistem ekran kaydı adada gösterilsin (ek izin istemez)
     val screenRecWide: Boolean = true,       // ekran kaydı açık adası: true = durum çubuğu genişliği (köşelere değmez), false = normal boy
     val assistantEnabled: Boolean = true,
@@ -713,6 +705,14 @@ data class MoreSettings(
     val qpHeightDp: Int = 210,              // panel yüksekliği (dp)
     val qpWidthDp: Int = 64,                // panel genişliği (dp)
     val qpLabel: Boolean = true,            // seçili seçeneğin adı panelin yanında yazsın mı
+    // Müzik görünümü: hangi öğeler görünsün (varsayılan hepsi açık)
+    val musicShowEq: Boolean = true,
+    val musicShowArt: Boolean = true,
+    val musicShowTitle: Boolean = true,
+    val musicShowArtist: Boolean = true,
+    val musicShowTime: Boolean = true,
+    val musicShowLike: Boolean = true,
+    val musicShowCast: Boolean = true,
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -1044,13 +1044,6 @@ class SettingsRepository(context: Context) {
             musicExitAtomic = p[K.MX_ATOMIC] ?: d.musicExitAtomic,
             musicExitAtomicFull = p[K.MX_ATOMIC_FULL] ?: d.musicExitAtomicFull,
             hideInMusicApp = p[K.HIDE_MUSIC] ?: d.hideInMusicApp,
-            musicShowEq = p[K.MUS_EQ] ?: d.musicShowEq,
-            musicShowArt = p[K.MUS_ART] ?: d.musicShowArt,
-            musicShowTitle = p[K.MUS_TITLE] ?: d.musicShowTitle,
-            musicShowArtist = p[K.MUS_ARTIST] ?: d.musicShowArtist,
-            musicShowTime = p[K.MUS_TIME] ?: d.musicShowTime,
-            musicShowLike = p[K.MUS_LIKE] ?: d.musicShowLike,
-            musicShowCast = p[K.MUS_CAST] ?: d.musicShowCast,
             screenRecEnabled = p[K.REC_ON] ?: d.screenRecEnabled,
             screenRecWide = p[K.REC_WIDE] ?: d.screenRecWide,
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
@@ -1213,6 +1206,13 @@ class SettingsRepository(context: Context) {
                 notchMode = p[K.X_NOTCH] ?: d.more.notchMode,
                 notchWidthDp = (p[K.X_NOTCHW] ?: d.more.notchWidthDp).coerceIn(80f, 320f),
                 notchDepthDp = (p[K.X_NOTCHD] ?: d.more.notchDepthDp).coerceIn(-10f, 30f),
+                musicShowEq = p[K.MUS_EQ] ?: d.more.musicShowEq,
+                musicShowArt = p[K.MUS_ART] ?: d.more.musicShowArt,
+                musicShowTitle = p[K.MUS_TITLE] ?: d.more.musicShowTitle,
+                musicShowArtist = p[K.MUS_ARTIST] ?: d.more.musicShowArtist,
+                musicShowTime = p[K.MUS_TIME] ?: d.more.musicShowTime,
+                musicShowLike = p[K.MUS_LIKE] ?: d.more.musicShowLike,
+                musicShowCast = p[K.MUS_CAST] ?: d.more.musicShowCast,
                 neonParts = p[K.X_NEONPARTS] ?: d.more.neonParts,
                 neonTheme = p[K.X_NEONTHEME] ?: d.more.neonTheme,
                 notifPrivate = p[K.X_NOTIFPRIV] ?: d.more.notifPrivate,
@@ -1321,7 +1321,7 @@ class SettingsRepository(context: Context) {
             it[K.DEC_TOP] = s.decorTop; it[K.DEC_HANG] = s.decorHang; it[K.PET] = s.islandPet
             it[K.DRIP] = s.dripEnabled; it[K.DRIP_S] = s.dripEverySec; it[K.EDGE_ALW] = s.edgeGlowAlways
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
-            it[K.MUS_EQ] = s.musicShowEq; it[K.MUS_ART] = s.musicShowArt; it[K.MUS_TITLE] = s.musicShowTitle; it[K.MUS_ARTIST] = s.musicShowArtist; it[K.MUS_TIME] = s.musicShowTime; it[K.MUS_LIKE] = s.musicShowLike; it[K.MUS_CAST] = s.musicShowCast
+            it[K.MUS_EQ] = s.more.musicShowEq; it[K.MUS_ART] = s.more.musicShowArt; it[K.MUS_TITLE] = s.more.musicShowTitle; it[K.MUS_ARTIST] = s.more.musicShowArtist; it[K.MUS_TIME] = s.more.musicShowTime; it[K.MUS_LIKE] = s.more.musicShowLike; it[K.MUS_CAST] = s.more.musicShowCast
             it[K.REC_ON] = s.screenRecEnabled; it[K.REC_WIDE] = s.screenRecWide
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
             it[K.AS_FULL] = s.assistantFullWidth; it[K.AS_STYLE] = s.assistantStyle

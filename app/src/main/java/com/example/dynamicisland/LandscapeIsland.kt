@@ -911,12 +911,12 @@ private fun LandscapeWindowContent(
                             .size(thickDp, dpOf(slotH)).graphicsLayer { alpha = a.value },
                         contentAlignment = Alignment.Center,
                     ) {
-                        LandBubbleContent(occContent, g.thick, showArt = s.musicShowArt)
+                        LandBubbleContent(occContent, g.thick, showArt = s.more.musicShowArt)
                     }
                 }
             }
             // Yan kenar modunda adadaki müzik: ekolayzır adanın diğer ucunda (ayarlardan kapatılabilir)
-            if (occContent is IslandContent.Media && !panelShowing && wideDp == null && s.musicShowEq) {
+            if (occContent is IslandContent.Media && !panelShowing && wideDp == null && s.more.musicShowEq) {
                 key(occKey, "eq") {
                     val eqCol = if (s.eqDynamicColor && occContent.artColor != 0) brightTone(Color(occContent.artColor)) else Color(s.eqColorArgb)
                     val eqRb = rememberRainbowStyle(s)
