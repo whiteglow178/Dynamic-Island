@@ -306,7 +306,14 @@ private fun RootScene(cfg: IslandSettings, script: suspend (MutableStateFlow<Isl
 // ---------------------------------------------------------------- Ekran kaydı
 @Composable
 private fun ScreenRecScene(cfg: IslandSettings) {
-    if (!cfg.screenRecEnabled) return
+    // Ekran kaydı adası kapalıyken önizleme boş kalmaz: kullanıcının ada ayarı (boştaki ada) görünmeye devam eder
+    if (!cfg.screenRecEnabled) {
+        RootScene(cfg) { ui ->
+            ui.value = IslandUiState()
+            kotlinx.coroutines.awaitCancellation()
+        }
+        return
+    }
     RootScene(cfg) { ui ->
         for (n in 3 downTo 1) {
             ui.value = IslandUiState(content = IslandContent.ScreenRec(RecPhase.Countdown, count = n), expanded = false)

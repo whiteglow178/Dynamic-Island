@@ -116,11 +116,13 @@ private const val LAND_MAX_BUBBLES_IN_ISLAND = 2     // "Olaylar adada da görü
 private const val LAND_FAV_COLS = 2
 
 /**
- * Olay adanın içinde de gösterilsin mi? Kullanıcı ayarı ya da adanın İÇİNDE çizilen özellikler
+ * Olay adanın içinde de gösterilsin mi? Yan kenar modunda ilk olay HER ZAMAN adadadır (yeni gelen olaylar baloncuk olur);
+ * "Olaylar adada da görünsün" ayarı yalnızca yatay mod bölümünde olduğundan yan kenar kullanıcısı onu açamazdı.
+ * Kullanıcı ayarı ya da adanın İÇİNDE çizilen özellikler
  * (bildirim yazısı, şarkı sözü, arama / müzik hapı, iPhone dairesi) açıkken olay hep adaya yerleşir.
  */
 private fun landInIsland(s: IslandSettings): Boolean =
-    s.landscapeEventsInIsland || s.iphoneCircleOn() || (!s.dotMode && (s.notifInline || s.pillCallStyle || s.pillMusicStyle ||
+    s.landscapeEventsInIsland || s.sideDock != 0 || s.iphoneCircleOn() || (!s.dotMode && (s.notifInline || s.pillCallStyle || s.pillMusicStyle ||
         (s.lyricsEnabled && s.lyricsCompact)))
 
 /** Aynı anda en çok kaç baloncuk: iPhone modunda 1 daire, nokta modunda nokta sayısı - 1, ada doluyken 2, değilse 3. */
