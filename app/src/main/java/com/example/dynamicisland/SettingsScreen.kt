@@ -246,6 +246,12 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SwitchRow("Baloncuklar adanın altında", "Açıkken baloncuklar adanın altına, kapalıyken üstüne dizilir", draft.landscapeBubbleBelow) { draft = draft.copy(landscapeBubbleBelow = it) }
                 SwitchRow("Olaylar adada da görünsün", "Açıkken olay (bildirim, şarj, müzik...) adanın içinde de gösterilir. Adada zaten bir olay varsa gelen yeni olaylar baloncuk olur; aynı anda en çok 2 baloncuk çıkar. Kapalıyken olaylar yalnızca baloncukta görünür. Adanın içinde çizilen özellikler (adada bildirim yazısı, kapalı adada şarkı sözü, arama / müzik hapı, hap + daire modu dairesi) açıksa bu ayar kendiliğinden açık sayılır", draft.landscapeEventsInIsland) { draft = draft.copy(landscapeEventsInIsland = it) }
             }
+            SubHeader("Yan kenar modu (telefon dik tutulurken)")
+            SegmentedTabs(listOf("Üstte (normal)", "Sol kenar", "Sağ kenar"), draft.sideDock.coerceIn(0, 2)) { draft = draft.copy(sideDock = it) }
+            if (draft.sideDock != 0) {
+                SliderRow("Kenardaki yüksekliği", draft.sideDockYPct * 100f, 8f..92f, "%${(draft.sideDockYPct * 100f).toInt()}") { draft = draft.copy(sideDockYPct = it / 100f) }
+            }
+            SwitchRow("Basılı tutup sürükleyerek yerleştir", "Yan kenar modu açıkken ada boştayken üstüne basılı tutup istediğin yere sürükle; bırakınca en yakın kenara (sol / sağ) yapışır ve yeri kaydedilir. Ayarlardan da aynı konumu elle seçebilirsin. Yan kenarda ada dikey durur; olay açılınca ekranın ortasına doğru genişler", draft.sideDockDrag) { draft = draft.copy(sideDockDrag = it) }
         }
         sec("Görünürlük", "Ada ne zaman görünsün") {
             SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }

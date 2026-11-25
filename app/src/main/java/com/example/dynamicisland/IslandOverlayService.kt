@@ -1815,6 +1815,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             ),
             onActive = { on -> setMainIslandHidden(on) },
             onZoneChanged = { syncSideMusic(); call.syncSideButtons() },      // dönüş / ada bölgesi değişti: kenar çubukları yeniden kurulur
+            onDockMoved = { edge, yPct, done ->      // yan kenar modu: sürükleyip bırakılan konum ayarlara yazılır
+                scope.launch {
+                    runCatching { SettingsRepository(applicationContext).update { it.copy(sideDock = edge, sideDockYPct = yPct) } }
+                    done()
+                }
+            },
         )
     }
 

@@ -187,6 +187,9 @@ data class IslandSettings(
     val landscapeMode: Boolean = false,      // yatay mod: telefon yan çevrilince ada kenarda DİKEY hap olur; olaylar (bildirim, şarj...) simgesi düz duran yan baloncuk olarak animasyonla çıkar
     val landscapeBubbleBelow: Boolean = false, // yatay mod: baloncuklar adanın altında (false: üstünde) sıralansın
     val landscapeEventsInIsland: Boolean = false, // yatay mod: olay adanın içinde de görünsün; ada doluysa gelen yeni olaylar baloncuk olur (en çok 2 baloncuk)
+    val sideDock: Int = 0,                   // yan kenar modu: 0 = kapalı (ada üstte), 1 = sol kenar, 2 = sağ kenar. Telefon dik tutulurken ada kenarda DİKEY hap olarak durur
+    val sideDockYPct: Float = 0.35f,         // yan kenar modu: adanın dikey merkezi (ekran yüksekliğinin oranı, 0..1)
+    val sideDockDrag: Boolean = false,       // yan kenar modu: ada boştayken basılı tutup sürükleyerek yerleştir (bırakınca en yakın kenara yapışır)
     val hideStatusBar: Boolean = false,      // şarj / zil modu gibi durum görünümleri açıkken durum çubuğunu gizle
     val notifLaunchAnim: Boolean = true,     // ... ve açılırken adadan siyah ekran animasyonu oynasın
     val favoriteLaunchAnim: Boolean = true,  // uygulamaya dokununca adadan siyah ekran çıkıp ekranı kaplasın
@@ -764,6 +767,7 @@ class SettingsRepository(context: Context) {
         val INV_C = booleanPreferencesKey("inv_custom"); val INV_W = floatPreferencesKey("inv_w"); val INV_H = floatPreferencesKey("inv_h")
         val INV_X = floatPreferencesKey("inv_x"); val INV_Y = floatPreferencesKey("inv_y")
         val LAND_ON = booleanPreferencesKey("land_on"); val LAND_BELOW = booleanPreferencesKey("land_below"); val LAND_IN_ISLAND = booleanPreferencesKey("land_in_island")
+        val DOCK_SIDE = intPreferencesKey("dock_side"); val DOCK_Y = floatPreferencesKey("dock_y"); val DOCK_DRAG = booleanPreferencesKey("dock_drag")
         val NEON_ST = intPreferencesKey("neon_st"); val NEON_C1 = intPreferencesKey("neon_c1"); val NEON_C2 = intPreferencesKey("neon_c2")
         val NEON_W = floatPreferencesKey("neon_w"); val NEON_G = floatPreferencesKey("neon_g"); val NEON_SP = floatPreferencesKey("neon_sp")
         val DEC_TOP = intPreferencesKey("dec_top"); val DEC_HANG = intPreferencesKey("dec_hang"); val PET = intPreferencesKey("isl_pet")
@@ -986,6 +990,9 @@ class SettingsRepository(context: Context) {
             landscapeMode = p[K.LAND_ON] ?: d.landscapeMode,
             landscapeBubbleBelow = p[K.LAND_BELOW] ?: d.landscapeBubbleBelow,
             landscapeEventsInIsland = p[K.LAND_IN_ISLAND] ?: d.landscapeEventsInIsland,
+            sideDock = p[K.DOCK_SIDE] ?: d.sideDock,
+            sideDockYPct = p[K.DOCK_Y] ?: d.sideDockYPct,
+            sideDockDrag = p[K.DOCK_DRAG] ?: d.sideDockDrag,
             neonStyle = p[K.NEON_ST] ?: d.neonStyle, neonColor1Argb = p[K.NEON_C1] ?: d.neonColor1Argb,
             neonColor2Argb = p[K.NEON_C2] ?: d.neonColor2Argb, neonWidthDp = p[K.NEON_W] ?: d.neonWidthDp,
             neonGlow = p[K.NEON_G] ?: d.neonGlow, neonSpeed = p[K.NEON_SP] ?: d.neonSpeed,
@@ -1292,6 +1299,7 @@ class SettingsRepository(context: Context) {
             it[K.INV_C] = s.invCustom; it[K.INV_W] = s.invWidthDp; it[K.INV_H] = s.invHeightDp
             it[K.INV_X] = s.invOffsetXDp; it[K.INV_Y] = s.invOffsetYDp
             it[K.LAND_ON] = s.landscapeMode; it[K.LAND_BELOW] = s.landscapeBubbleBelow; it[K.LAND_IN_ISLAND] = s.landscapeEventsInIsland
+            it[K.DOCK_SIDE] = s.sideDock; it[K.DOCK_Y] = s.sideDockYPct; it[K.DOCK_DRAG] = s.sideDockDrag
             it[K.NEON_ST] = s.neonStyle; it[K.NEON_C1] = s.neonColor1Argb; it[K.NEON_C2] = s.neonColor2Argb
             it[K.NEON_W] = s.neonWidthDp; it[K.NEON_G] = s.neonGlow; it[K.NEON_SP] = s.neonSpeed
             it[K.DEC_TOP] = s.decorTop; it[K.DEC_HANG] = s.decorHang; it[K.PET] = s.islandPet

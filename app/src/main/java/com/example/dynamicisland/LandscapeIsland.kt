@@ -1,5 +1,8 @@
 package com.example.dynamicisland
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -8,6 +11,10 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.Display
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
+import android.view.ViewConfiguration
+import android.widget.FrameLayout
 import android.view.Surface
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -83,6 +90,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -179,7 +187,7 @@ object LandscapeZone {
 
     /** Değişti mi? (true ise kenar çubukları yeniden kurulmalı) */
     fun set(rotation: Int, active: Boolean, camLeft: Boolean, top: Int, bottom: Int): Boolean {
-        val st = (rotation + 1) * 1_000_003 + (if (active) 17 else 0) + top * 31 + bottom * 7
+        val st = (rotation + 1) * 1_000_003 + (if (active) 17 else 0) + (if (camLeft) 101 else 0) + top * 31 + bottom * 7
         if (st == stamp) return false
         this.active = active; this.camLeft = camLeft; this.top = top; this.bottom = bottom; stamp = st
         return true
@@ -305,13 +313,16 @@ class LandscapeController internal constructor(
     private val onActive: (Boolean) -> Unit,
     /** Ada bölgesi / dönüş değişti: servis kenar çubuklarını (ses, müzik, arama tuşları) yeniden kurar. */
     private val onZoneChanged: () -> Unit = {},
+    /** Yan kenar modu: ada sürüklenip bırakıldı (kenar: 1 sol / 2 sağ, dikey konum oranı). Kayıt bitince [done] çağrılır. */
+    private val onDockMoved: (Int, Float, () -> Unit) -> Unit = { _, _, done -> done() },
 ) {
     private val dm = ctx.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
     private val handler = Handler(Looper.getMainLooper())
     private var job: Job? = null
     private var displayListener: DisplayManager.DisplayListener? = null
 
-    private var view: ComposeView? = null
+    private var view: DockFrame? = null
+    private var composeView: ComposeView? = null
     private var host: WindowManager? = null
     private var lp: WindowManager.LayoutParams? = null
     private val geoState = mutableStateOf<LandGeo?>(null)
@@ -367,10 +378,15 @@ class LandscapeController internal constructor(
         val s = settings.value
         val rot = runCatching { dm.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: Surface.ROTATION_0 }.getOrDefault(Surface.ROTATION_0)
         val land = rot == Surface.ROTATION_90 || rot == Surface.ROTATION_270
-        val on = s.landscapeMode && land
+        // Yan kenar modu: telefon dik tutulurken de ada seçilen kenarda dikey hap olarak durur
+        val dock = s.sideDock != 0 && !land
+        dockNow = dock
+        val on = (s.landscapeMode && land) || dock
+        val camLeft = if (dock) s.sideDock == 1 else rot == Surface.ROTATION_90
+        if (on && dragLock) return        // sürükleme sürerken pencere parmağı izler; ayar / olay güncellemesi konumu bozmasın
         if (on != lastActive) { lastActive = on; active = on; onActive(on) }
-        val span = if (on) islandSpan(s, rot == Surface.ROTATION_90) else null
-        if (LandscapeZone.set(rot, on, rot == Surface.ROTATION_90, span?.first ?: 0, span?.second ?: 0)) runCatching { onZoneChanged() }
+        val span = if (on) islandSpan(s, camLeft) else null
+        if (LandscapeZone.set(rot, on, camLeft, span?.first ?: 0, span?.second ?: 0)) runCatching { onZoneChanged() }
         if (!on) { handler.removeCallbacks(refreshRunnable); hide(); return }
 
         val d = ctx.resources.displayMetrics.density
@@ -396,7 +412,7 @@ class LandscapeController internal constructor(
         }
         if (!s.showIdle && !useStrip) { hide(); return }
 
-        val g = geometry(s, rot == Surface.ROTATION_90, useStrip, usePanelPx)
+        val g = geometry(s, camLeft, useStrip, usePanelPx)
         geoState.value = g
         val cur = view
         if (cur == null) { show(g); return }
@@ -421,7 +437,11 @@ class LandscapeController internal constructor(
         val display = dm.getDisplay(Display.DEFAULT_DISPLAY)
         val cut = wm.currentWindowMetrics.windowInsets.displayCutout ?: display?.cutout
         val rect = if (camLeft) cut?.boundingRectLeft else cut?.boundingRectRight
-        val cy = if (rect != null && !rect.isEmpty) rect.centerY() else sh / 2
+        val cy = if (dockNow) {
+            // Yan kenar modu: dikey konum ayardan gelir (kamera deliğine bağlı değil); ada ekrana sığacak şekilde sınırlanır
+            val len = (s.compactWidthDp * d).roundToInt().coerceAtLeast(thick)
+            (s.sideDockYPct.coerceIn(0f, 1f) * sh).roundToInt().coerceIn(len / 2, (sh - len / 2).coerceAtLeast(len / 2))
+        } else if (rect != null && !rect.isEmpty) rect.centerY() else sh / 2
         // iPhone modu "ortala": ada + daire ikilisi kameranın ortasında durur
         val shift = if (s.iphoneCircleOn() && s.iphoneCenterGroup) {
             val sp = ((s.iphoneCircleSizeDp() + s.iphoneGapDp) / 2f * d).roundToInt()
@@ -446,7 +466,8 @@ class LandscapeController internal constructor(
         val display = dm.getDisplay(Display.DEFAULT_DISPLAY)
         val cut = m.windowInsets.displayCutout ?: display?.cutout
         val rect = if (camLeft) cut?.boundingRectLeft else cut?.boundingRectRight
-        val cx = if (rect != null && !rect.isEmpty) rect.centerX() else if (camLeft) thick / 2 else sw - thick / 2
+        val cx = if (dockNow) { if (camLeft) thick / 2 else sw - thick / 2 }
+            else if (rect != null && !rect.isEmpty) rect.centerX() else if (camLeft) thick / 2 else sw - thick / 2
         val cy = anchorCy(s, camLeft, sh, thick)
         val below = if (circle) landIphoneBelow(s, camLeft) else s.landscapeBubbleBelow
         val isX = (cx - thick / 2).coerceIn(0, max(sw - thick, 0))
@@ -458,7 +479,7 @@ class LandscapeController internal constructor(
         // Geniş ada (hap tasarımları, bildirim yazısı, şarkı sözü): kameradan ekranın içine doğru uzanır
         val wide = landWideMaxDp(s)
         if (useStrip && wide != null) {
-            val ww = max((wide.first * d).roundToInt(), thick); val wh = (wide.second * d).roundToInt()
+            val ww = max((wide.first * d).roundToInt(), thick).coerceAtMost(max(sw, thick)); val wh = (wide.second * d).roundToInt()
             if (camLeft) r = max(r, isX + ww) else l = min(l, isX + thick - ww)
             t = min(t, cy - wh / 2); b = max(b, cy + wh / 2)
         }
@@ -477,10 +498,16 @@ class LandscapeController internal constructor(
     }
 
     private fun show(g: LandGeo) {
-        val v = ComposeView(ctx).apply {
+        val cv = ComposeView(ctx).apply {
             setViewTreeLifecycleOwner(lifecycleOwner)
             setViewTreeSavedStateRegistryOwner(savedOwner)
-            setContent { LandscapeWindowContent(geoState, settings, ui, lyrics, actions) }
+            setContent { LandscapeWindowContent(geoState, settings, ui, lyrics, guarded, dragging) }
+        }
+        val v = DockFrame(ctx).apply {
+            setViewTreeLifecycleOwner(lifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(savedOwner)
+            addView(cv, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            touchHook = { e -> dockHook(e) }
         }
         fun params(type: Int) = WindowManager.LayoutParams(
             g.winW, g.winH, type,
@@ -510,15 +537,168 @@ class LandscapeController internal constructor(
             val p3 = params(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
             added = runCatching { wm.addView(v, p3); host = wm; lp = p3 }.isSuccess
         }
-        if (added) { view = v; v.visibility = if (userHidden) android.view.View.INVISIBLE else android.view.View.VISIBLE } else v.disposeComposition()
+        if (added) { view = v; composeView = cv; v.visibility = if (userHidden) android.view.View.INVISIBLE else android.view.View.VISIBLE } else cv.disposeComposition()
     }
 
     private fun hide() {
         val v = view ?: return
         runCatching { (host ?: wm).removeView(v) }
-        v.disposeComposition()
+        composeView?.disposeComposition()
         // Sahipler kaldırılmaz: pencere eklenip hemen kaldırılırsa bekleyen ilk çizim sahibi bulamayıp çöker
-        view = null; host = null; lp = null
+        view = null; composeView = null; host = null; lp = null
+        handler.removeCallbacks(dragArm)
+        dragState = 0; dragLock = false; dragging.value = false
+    }
+
+    // ---------------------------------------------------------------- Yan kenar modu: boştaki adayı basılı tutup sürükleme
+
+    /** Yan kenar modu şu an uygulanıyor mu (telefon dik + ayar açık). */
+    private var dockNow = false
+    private val dragging = mutableStateOf(false)
+    private var dragState = 0            // 0 = yok, 1 = basılı tutma bekleniyor, 2 = sürükleniyor
+    private var dragLock = false
+    private var dDownRawX = 0f
+    private var dDownRawY = 0f
+    private var dDownTime = 0L
+    private var dLocalX = 0f
+    private var dLocalY = 0f
+    private var dWinX0 = 0
+    private var dWinY0 = 0
+    private var suppressUntil = 0L
+    private val dragArm = Runnable { startDrag() }
+
+    /** Sürükleme başlarken Compose'un yakaladığı "dokunma / basılı tutma" işlemi (favori paneli vb.) çalışmasın. */
+    private val guarded: LandActions by lazy {
+        LandActions(
+            onTap = { if (SystemClock.uptimeMillis() >= suppressUntil) actions.onTap() },
+            onLongPress = { if (dragState != 2 && SystemClock.uptimeMillis() >= suppressUntil) actions.onLongPress() },
+            onSwipe = actions.onSwipe, onCommand = actions.onCommand, onOutput = actions.onOutput,
+            onLaunch = actions.onLaunch, onOpenMusic = actions.onOpenMusic, onSideTap = actions.onSideTap,
+            onNotifSwipeSide = actions.onNotifSwipeSide, onAnswer = actions.onAnswer, onDecline = actions.onDecline,
+            onSpeaker = actions.onSpeaker, onRecStop = actions.onRecStop, onSoundCapsuleStop = actions.onSoundCapsuleStop,
+        )
+    }
+
+    /** Dokunuş adaya inmeden önce görülür; sürükleme başlamışsa olayı kendisi alır (ekran koordinatlarıyla, titremesin diye). */
+    private fun dockHook(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                handler.removeCallbacks(dragArm)
+                dragState = 0
+                if (dragEligible(e.x, e.y)) {
+                    dragState = 1
+                    dDownRawX = e.rawX; dDownRawY = e.rawY; dDownTime = e.downTime
+                    dLocalX = e.x; dLocalY = e.y
+                    // Normal basılı tutmadan biraz önce başlar; böylece favori paneli açılmaz
+                    val wait = (settings.value.longPressMs - 80).coerceAtLeast(250).toLong()
+                    handler.postDelayed(dragArm, wait)
+                }
+                return false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (dragState == 1) {
+                    dLocalX = e.x; dLocalY = e.y
+                    if (hypot(e.rawX - dDownRawX, e.rawY - dDownRawY) > ViewConfiguration.get(ctx).scaledTouchSlop) {
+                        handler.removeCallbacks(dragArm); dragState = 0
+                    }
+                    return false
+                }
+                if (dragState == 2) { moveDrag(e); return true }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (dragState == 1) { handler.removeCallbacks(dragArm); dragState = 0; return false }
+                if (dragState == 2) { endDrag(); return true }
+            }
+        }
+        return dragState == 2
+    }
+
+    /** Sürükleme yalnızca yan kenar modunda, seçenek açıkken, ada BOŞTAYKEN ve adanın üstüne basılınca başlar. */
+    private fun dragEligible(x: Float, y: Float): Boolean {
+        if (!dockNow || dragLock || !settings.value.sideDockDrag) return false
+        val u = ui.value
+        if (u.expanded || landEventsAll(u).isNotEmpty() || u.content !is IslandContent.Idle) return false
+        val g = geoState.value ?: return false
+        if (g.panelW > 0) return false
+        val m = ViewConfiguration.get(ctx).scaledTouchSlop
+        return x >= g.islandX - m && x <= g.islandX + g.thick + m && y >= g.islandY - m && y <= g.islandY + g.islandLen + m
+    }
+
+    private fun startDrag() {
+        val f = view ?: return
+        val p = lp ?: return
+        if (dragState != 1) return
+        dragState = 2
+        dragLock = true
+        dWinX0 = p.x; dWinY0 = p.y
+        suppressUntil = SystemClock.uptimeMillis() + 900L
+        dragging.value = true
+        f.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        f.cancelChildren(dDownTime, dLocalX, dLocalY)
+    }
+
+    private fun moveDrag(e: MotionEvent) {
+        val f = view ?: return
+        val p = lp ?: return
+        val g = geoState.value ?: return
+        val b = wm.currentWindowMetrics.bounds
+        val nx = (dWinX0 + (e.rawX - dDownRawX)).roundToInt()
+        val ny = (dWinY0 + (e.rawY - dDownRawY)).roundToInt()
+        p.x = nx.coerceIn(-g.islandX, (b.width() - g.thick - g.islandX).coerceAtLeast(-g.islandX))
+        p.y = ny.coerceIn(-g.islandY, (b.height() - g.islandLen - g.islandY).coerceAtLeast(-g.islandY))
+        runCatching { (host ?: wm).updateViewLayout(f, p) }
+    }
+
+    /** Bırakınca ada en yakın kenara yapışır; kenar ve dikey konum ayarlara yazılır. */
+    private fun endDrag() {
+        dragState = 0
+        val f = view
+        val p = lp
+        val g = geoState.value
+        if (f == null || p == null || g == null) { finishDrag(); return }
+        val b = wm.currentWindowMetrics.bounds
+        val centerX = p.x + g.islandX + g.thick / 2f
+        val centerY = p.y + g.islandY + g.islandLen / 2f
+        val left = centerX < b.width() / 2f
+        val toX = (if (left) 0 else b.width() - g.thick) - g.islandX
+        val yPct = (centerY / b.height()).coerceIn(0.04f, 0.96f)
+        val anim = ValueAnimator.ofInt(p.x, toX)
+        anim.duration = 200L
+        anim.addUpdateListener { a ->
+            p.x = a.animatedValue as Int
+            runCatching { (host ?: wm).updateViewLayout(f, p) }
+        }
+        anim.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                dragging.value = false
+                onDockMoved(if (left) 1 else 2, yPct) { handler.postDelayed({ finishDrag() }, 250L) }
+            }
+        })
+        anim.start()
+    }
+
+    private fun finishDrag() {
+        dragLock = false
+        dragging.value = false
+        refresh()
+    }
+}
+
+/** Pencerenin kök görünümü: dokunuşu önce [touchHook]'a gösterir (yan kenar modunda sürükleme için); gerekirse çocuklara iptal gönderir. */
+internal class DockFrame(ctx: Context) : FrameLayout(ctx) {
+    var touchHook: ((MotionEvent) -> Boolean)? = null
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        val h = touchHook
+        if (h != null && h(ev)) return true
+        return super.dispatchTouchEvent(ev)
+    }
+
+    /** Çocuk görünümlerdeki (Compose) süren dokunuşu iptal eder. */
+    fun cancelChildren(downTime: Long, x: Float, y: Float) {
+        val c = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_CANCEL, x, y, 0)
+        super.dispatchTouchEvent(c)
+        c.recycle()
     }
 }
 
@@ -614,6 +794,7 @@ private fun LandscapeWindowContent(
     ui: StateFlow<IslandUiState>,
     lyricsFlow: StateFlow<LyricsState>,
     actions: LandActions,
+    dragging: State<Boolean>,
 ) {
     val g = geoState.value ?: return
     val s by settings.collectAsState()
@@ -674,6 +855,8 @@ private fun LandscapeWindowContent(
     val islandGlowColor = animateColorAsState(islandArt ?: accent, if (s.animEnabled) tween(450) else snap(), label = "landGlow")
     val islandBorderTint = if (s.borderArtColor && islandArt != null) brightTone(islandArt) else null
     val islandShape = RoundedCornerShape(50)
+    // Yan kenar modunda sürüklerken ada hafifçe büyür (tutuldu geri bildirimi)
+    val dragScale by animateFloatAsState(if (dragging.value) 1.12f else 1f, spring(dampingRatio = 0.55f, stiffness = 400f), label = "dockDrag")
     val isMedia = u.content is IslandContent.Media
     val isNotif = u.content is IslandContent.Notif
 
@@ -709,6 +892,7 @@ private fun LandscapeWindowContent(
             Modifier
                 .offset { IntOffset(ix.roundToInt(), iy.roundToInt()) }
                 .size(dpOf(iw.roundToInt()), dpOf(ih.roundToInt()))
+                .graphicsLayer { scaleX = dragScale; scaleY = dragScale }
                 .islandGlow(s.glowEnabled, islandGlowColor, s.glowIntensity)
                 .islandNeon(s)
                 .islandSurface(s, islandBody, islandShape, -1f, islandBorderTint)
