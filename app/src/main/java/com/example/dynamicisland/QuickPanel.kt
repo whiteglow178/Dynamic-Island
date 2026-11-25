@@ -12,6 +12,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -37,7 +38,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -85,6 +89,8 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -118,6 +124,17 @@ object QuickItem {
         DND -> "RAHATSIZ ETME"
         RECORDER -> "SES KAYDEDİCİ"
         else -> "SOUNDCAPSULE"
+    }
+
+    /** Panelin ortasına gelince (seçilince) simgenin ve yazının rengi: her seçeneğin kendine ait rengi var. */
+    fun color(id: Int): Color = when (id) {
+        CAMERA -> Color(0xFF64D2FF)      // açık mavi / camgöbeği
+        SILENT -> Color(0xFFFF9F0A)      // turuncu
+        TORCH -> Color(0xFFFFD60A)       // sarı
+        TRANSLATE -> Color(0xFF30D158)   // yeşil
+        DND -> Color(0xFF8E7BFF)         // mor
+        RECORDER -> Color(0xFFFF453A)    // kırmızı
+        else -> Color(0xFF0A84FF)        // SoundCapsule: mavi
     }
 
     /** Aç / kapa türü seçeneklerde şu anki durum; diğerlerinde null. */
@@ -267,8 +284,6 @@ class QuickPanelOverlay(
     }
 }
 
-private val QuickOrange = Color(0xFFFF9F0A)
-
 /**
  * Kenara yapışık panel gövdesi. Kenar tarafı düz (ekran kenarına oturur), iç tarafı yarım hap gibi yuvarlak;
  * alt ve üstte kenara doğru küçük içbükey kavisler vardır (görseldeki gibi kenardan "büyümüş" görünür).
@@ -278,22 +293,15 @@ private class DockShape(val right: Boolean, val fillet: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val w = size.width
         val h = size.height
-        val f = min(fillet, h / 4f)
-        val top = f
-        val bot = h - f
-        val bodyW = (w - f).coerceAtLeast(1f)
-        val r = min(bodyW / 2f, (bot - top) / 2f)
-        val k = 0.5523f * r
+        val f = min(fillet, h / 3f)
         fun mx(x: Float) = if (right) x else w - x
+        // Kenardan ince bir dilim olarak çıkar, uzun ve yumuşak bir S eğrisiyle gövdeye genişler (kenar tarafında içbükey,
+        // gövde tarafında dışbükey); gövdenin yan yüzü düz iner, aşağıda aynı eğriyle kenara geri döner.
         val p = Path().apply {
             moveTo(mx(w), 0f)
-            cubicTo(mx(w), top * 2f / 3f, mx(w - f / 3f), top, mx(w - f), top)
-            lineTo(mx(r), top)
-            cubicTo(mx(r - k), top, mx(0f), top + r - k, mx(0f), top + r)
-            lineTo(mx(0f), bot - r)
-            cubicTo(mx(0f), bot - r + k, mx(r - k), bot, mx(r), bot)
-            lineTo(mx(w - f), bot)
-            cubicTo(mx(w - f / 3f), bot, mx(w), h - (h - bot) * 2f / 3f, mx(w), h)
+            cubicTo(mx(w), f * 0.62f, mx(0f), f * 0.38f, mx(0f), f)
+            lineTo(mx(0f), h - f)
+            cubicTo(mx(0f), h - f * 0.38f, mx(w), h - f * 0.62f, mx(w), h)
             close()
         }
         return Outline.Generic(p)
@@ -313,26 +321,46 @@ private fun QuickPanelContent(cfg: MoreSettings, onAction: (Int) -> Unit, onClos
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
-    var selected by remember { mutableIntStateOf(QuickItem.CAMERA) }
     var taps by remember { mutableIntStateOf(0) }
     var stateTick by remember { mutableIntStateOf(0) }
-    var labelH by remember { mutableIntStateOf(0) }
     val appear = remember { Animatable(0f) }
     LaunchedEffect(Unit) { appear.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 320f)) }
-    // Dokunulmazsa / kaydırılmazsa 7 sn sonra kapanır
-    LaunchedEffect(scroll.value, selected, taps) { delay(7_000L); onClose() }
-    // Aç / kapa durumları (fener, sessiz, RE) eylemden kısa süre sonra yeniden okunur
-    LaunchedEffect(taps) { if (taps > 0) { delay(350L); stateTick++ } }
 
     val right = cfg.qpRight
     val itemH = 46.dp
-    val topPad = 8.dp
-    val fillet = 10.dp
+    val fillet = 44.dp                 // üst / alt S eğrisinin boyu
+    val padV = fillet / 2              // simge alanının üst / alt payı
+    val edgePad = 6.dp                 // kenara değen tarafta boşluk
     val stripW = cfg.qpWidthDp.dp
     val panelH = cfg.qpHeightDp.dp
     val shape = remember(right, density) { DockShape(right, with(density) { fillet.toPx() }) }
     val none = remember { MutableInteractionSource() }
+
+    val itemPx = with(density) { itemH.toPx() }
+    val viewPx = with(density) { (panelH - padV * 2).toPx() }
+    val spacerDp = with(density) { ((viewPx - itemPx) / 2f).coerceAtLeast(0f).toDp() }
+    val count = QuickItem.ALL.size
+
+    // Panelin tam ortasında duran seçenek seçilidir (kaydırdıkça değişir). Başta ve sonda boşluk olduğu için ilk ve son
+    // seçenek de ortaya gelebilir; kaydırma bitince en yakın seçeneğe oturur.
+    val selIdx by remember { derivedStateOf { (scroll.value / itemPx).roundToInt().coerceIn(0, count - 1) } }
+    val selected = QuickItem.ALL[selIdx]
+
+    // Dokunulmazsa / kaydırılmazsa 7 sn sonra kapanır
+    LaunchedEffect(scroll.value, selected, taps) { delay(7_000L); onClose() }
+    // Aç / kapa durumları (fener, sessiz, RE) eylemden kısa süre sonra yeniden okunur
+    LaunchedEffect(taps) { if (taps > 0) { delay(350L); stateTick++ } }
+    // Parmak çekilince / kaydırma bitince en yakın seçeneği ortaya oturt
+    LaunchedEffect(itemPx) {
+        snapshotFlow { scroll.isScrollInProgress }.collect { moving ->
+            if (!moving) {
+                val target = ((scroll.value / itemPx).roundToInt() * itemPx).roundToInt().coerceIn(0, scroll.maxValue)
+                if (abs(scroll.value - target) > 1) scroll.animateScrollTo(target, spring(dampingRatio = 0.85f, stiffness = 500f))
+            }
+        }
+    }
 
     BoxWithConstraints(
         Modifier.fillMaxSize().clickable(interactionSource = none, indication = null) { onClose() },
@@ -356,29 +384,24 @@ private fun QuickPanelContent(cfg: MoreSettings, onAction: (Int) -> Unit, onClos
                 .clickable(interactionSource = none, indication = null) { },
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            // ---- Seçili seçeneğin adı: panelin yanında, seçili simgeyle aynı hizada, arka plansız turuncu yazı
+            // ---- Seçili seçeneğin adı: panelin ortasında, seçili simgeyle aynı hizada, arka plansız, simgenin renginde yazı.
+            //      Ayarlardan kapatılabilir.
             val label = @Composable {
-                Box(Modifier.fillMaxHeight()) {
-                    val on = remember(stateTick, selected) { QuickItem.isOn(ctx, selected) }
-                    val idx = QuickItem.ALL.indexOf(selected).coerceAtLeast(0)
-                    val panelPx = with(density) { panelH.toPx() }
-                    val itemPx = with(density) { itemH.toPx() }
-                    val fPx = with(density) { fillet.toPx() }
-                    val rawCenter = fPx + with(density) { topPad.toPx() } + idx * itemPx + itemPx / 2f - scroll.value
-                    val center = rawCenter.coerceIn(fPx + itemPx / 2f, (panelPx - fPx - itemPx / 2f).coerceAtLeast(fPx + itemPx / 2f))
-                    Text(
-                        QuickItem.label(selected) + when (on) { true -> " · AÇIK"; false -> " · KAPALI"; null -> "" },
-                        color = QuickOrange,
-                        style = TextStyle(
-                            fontWeight = FontWeight.Bold, fontSize = 13.sp,
-                            shadow = Shadow(Color(0xB3000000), Offset(0f, 1f), 8f),
-                        ),
-                        maxLines = 1,
-                        modifier = Modifier
-                            .align(if (right) Alignment.TopEnd else Alignment.TopStart)
-                            .offset { IntOffset(0, (center - labelH / 2f).roundToInt()) }
-                            .onSizeChanged { labelH = it.height },
-                    )
+                if (cfg.qpLabel) {
+                    Box(Modifier.fillMaxHeight()) {
+                        val on = remember(stateTick, selected) { QuickItem.isOn(ctx, selected) }
+                        val labelColor by animateColorAsState(QuickItem.color(selected), label = "qpLabelColor")
+                        Text(
+                            QuickItem.label(selected) + when (on) { true -> " · AÇIK"; false -> " · KAPALI"; null -> "" },
+                            color = labelColor,
+                            style = TextStyle(
+                                fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                                shadow = Shadow(Color(0xB3000000), Offset(0f, 1f), 8f),
+                            ),
+                            maxLines = 1,
+                            modifier = Modifier.align(if (right) Alignment.CenterEnd else Alignment.CenterStart),
+                        )
+                    }
                 }
             }
             if (right) label()
@@ -395,7 +418,7 @@ private fun QuickPanelContent(cfg: MoreSettings, onAction: (Int) -> Unit, onClos
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .padding(top = fillet, bottom = fillet, start = if (right) 0.dp else fillet, end = if (right) fillet else 0.dp)
+                        .padding(top = padV, bottom = padV, start = if (right) 0.dp else edgePad, end = if (right) edgePad else 0.dp)
                         .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                         .drawWithContent {
                             drawContent()
@@ -409,31 +432,33 @@ private fun QuickPanelContent(cfg: MoreSettings, onAction: (Int) -> Unit, onClos
                         }
                         .verticalScroll(scroll),
                 ) {
-                    Box(Modifier.height(topPad))
-                    QuickItem.ALL.forEach { id ->
+                    Box(Modifier.height(spacerDp))
+                    QuickItem.ALL.forEachIndexed { index, id ->
                         val sel = id == selected
                         Box(
                             Modifier
-                                .width(stripW - fillet).height(itemH)
+                                .width(stripW - edgePad).height(itemH)
                                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                    selected = id
                                     taps++
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    // Dokunulan seçenek ortaya gelir (kendi rengiyle yanar) ve çalışır
+                                    scope.launch { scroll.animateScrollTo((index * itemPx).roundToInt().coerceIn(0, scroll.maxValue)) }
                                     onAction(id)
                                     if (QuickItem.closesPanel(id)) onClose()
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
                             val activeNow = remember(stateTick, id) { QuickItem.isOn(ctx, id) == true }
-                            val tint = when {
-                                sel -> QuickOrange
+                            val target = when {
+                                sel -> QuickItem.color(id)
                                 activeNow -> Color.White
                                 else -> Color(0xB3FFFFFF)
                             }
-                            Canvas(Modifier.size(if (sel) 26.dp else 24.dp)) { drawQuickGlyph(id, tint) }
+                            val tint by animateColorAsState(target, label = "qpTint")
+                            Canvas(Modifier.size(if (sel) 28.dp else 24.dp)) { drawQuickGlyph(id, tint) }
                         }
                     }
-                    Box(Modifier.height(topPad))
+                    Box(Modifier.height(spacerDp))
                 }
             }
 
@@ -490,15 +515,8 @@ private fun DrawScope.drawQuickGlyph(id: Int, c: Color) {
                 drawArc(c, 0f, 180f, false, Offset(5.5f, 6f), Size(13f, 12f), style = st)
                 drawLine(c, Offset(12f, 18f), Offset(12f, 21.5f), 1.8f, StrokeCap.Round)
             }
-            else -> { // SoundCapsule: mavi daire içinde S
-                drawCircle(Color(0xFF0A84FF), 10f, Offset(12f, 12f))
-                val s = Path().apply {
-                    moveTo(15.4f, 8.4f)
-                    cubicTo(14.6f, 6.8f, 9f, 6.6f, 9f, 9.6f)
-                    cubicTo(9f, 12.2f, 15f, 11.6f, 15f, 14.6f)
-                    cubicTo(15f, 17.6f, 9.4f, 17.4f, 8.6f, 15.6f)
-                }
-                drawPath(s, Color.White, style = Stroke(1.9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            else -> { // SoundCapsule simgesi: eğik kapsül + üç ses çubuğu (adadaki logoyla aynı), seçilince mavi
+                drawPath(soundCapsuleGlyphPath(Offset.Zero, 24f), c, style = Stroke(2.3f, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
         }
     }

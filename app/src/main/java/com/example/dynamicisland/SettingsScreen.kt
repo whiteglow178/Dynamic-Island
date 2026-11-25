@@ -289,7 +289,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
         sec("Hızlı panel", "Adayı sağa ya da sola kaydır: ekranın kenarında kaydırılabilir bir panel açılır") {
             SwitchRow(
                 "Kaydırınca hızlı panel",
-                "Kapalı adayı sağa ya da sola kaydırınca ekranın kenarında dikey bir panel açılır (iPhone'daki Kamera Düğmesi şeridi gibi). İçinde kamera, sessiz mod, fener, çeviri, Rahatsız Etme, ses kaydedici ve SoundCapsule var. Paneli aşağı yukarı kaydırarak gezin; bir seçeneğe basınca çalışır, seçili olanın adı turuncu yazıyla çıkar. Panelin dışına dokununca kapanır. Müzik çalarken (parça değiştirme açıksa) ve bildirimde kaydırma kendi işini yapar. Erişilebilirlik ya da 'üstte göster' izni gerekir",
+                "Kapalı adayı sağa ya da sola kaydırınca ekranın kenarında dikey bir panel açılır (iPhone'daki Kamera Düğmesi şeridi gibi). İçinde kamera, sessiz mod, fener, çeviri, Rahatsız Etme, ses kaydedici ve SoundCapsule var. Paneli aşağı yukarı kaydırarak gezin; bir seçeneğe basınca çalışır; panelin ortasında duran seçenek kendi rengiyle yanar ve adı yazıyla çıkar. Panelin dışına dokununca kapanır. Müzik çalarken (parça değiştirme açıksa) ve bildirimde kaydırma kendi işini yapar. Erişilebilirlik ya da 'üstte göster' izni gerekir",
                 draft.more.quickPanel,
             ) { draft = draft.copy(more = draft.more.copy(quickPanel = it)) }
             if (draft.more.quickPanel) {
@@ -297,6 +297,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
                 SegmentedTabs(listOf("Sol", "Sağ"), if (draft.more.qpRight) 1 else 0) {
                     draft = draft.copy(more = draft.more.copy(qpRight = it == 1))
                 }
+                SwitchRow(
+                    "Seçeneğin adını göster",
+                    "Panelin ortasındaki (seçili) seçeneğin adı panelin yanında yazıyla görünür. Kapatırsan yalnızca simgeler görünür",
+                    draft.more.qpLabel,
+                ) { draft = draft.copy(more = draft.more.copy(qpLabel = it)) }
                 SubHeader("Boyut ve konum")
                 SliderRow("Yükseklik (ekranda ne kadar yukarıda)", draft.more.qpYPct.toFloat(), 5f..95f, "%${draft.more.qpYPct} (üstten)") {
                     draft = draft.copy(more = draft.more.copy(qpYPct = kotlin.math.round(it).toInt()))

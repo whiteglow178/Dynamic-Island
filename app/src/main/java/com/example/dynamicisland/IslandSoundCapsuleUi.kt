@@ -109,7 +109,7 @@ private val SoundCapsuleBlue: Color get() = Pal.c("sndcap_blue")
  * Sound Capsule simgesi (uygulamaya özgü): 45° eğik duran bir kapsül (hap) ve içinde üç ses çubuğu.
  * Çizgi (stroke) olarak çizilir; dönen ışık süpürmesi de aynı yolu kullanır.
  */
-private fun soundCapsuleGlyphPath(topLeft: Offset, side: Float): Path {
+internal fun soundCapsuleGlyphPath(topLeft: Offset, side: Float): Path {
     val cx = topLeft.x + side / 2f
     val cy = topLeft.y + side / 2f
     val path = Path()

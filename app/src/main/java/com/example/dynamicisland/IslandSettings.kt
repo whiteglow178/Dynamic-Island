@@ -701,6 +701,7 @@ data class MoreSettings(
     val qpYPct: Int = 62,                   // panelin dikey konumu: ekran yüksekliğinin yüzdesi (panelin ortası, 0 = üst, 100 = alt)
     val qpHeightDp: Int = 210,              // panel yüksekliği (dp)
     val qpWidthDp: Int = 64,                // panel genişliği (dp)
+    val qpLabel: Boolean = true,            // seçili seçeneğin adı panelin yanında yazsın mı
 )
 
 /** Özel tasarımda fotoğraf seçili ve dokununca genişleme açık mı? */
@@ -863,7 +864,7 @@ class SettingsRepository(context: Context) {
         val X_UNREAD = booleanPreferencesKey("x_unread")
         val X_RECDOT = booleanPreferencesKey("x_recdot")
         val X_QPANEL = booleanPreferencesKey("x_qpanel"); val X_QPRIGHT = booleanPreferencesKey("x_qpright")
-        val X_QPY = intPreferencesKey("x_qpy"); val X_QPH = intPreferencesKey("x_qph"); val X_QPW = intPreferencesKey("x_qpw")
+        val X_QPY = intPreferencesKey("x_qpy"); val X_QPH = intPreferencesKey("x_qph"); val X_QPW = intPreferencesKey("x_qpw"); val X_QPLABEL = booleanPreferencesKey("x_qplabel")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -1232,6 +1233,7 @@ class SettingsRepository(context: Context) {
                 qpYPct = (p[K.X_QPY] ?: d.more.qpYPct).coerceIn(5, 95),
                 qpHeightDp = (p[K.X_QPH] ?: d.more.qpHeightDp).coerceIn(120, 420),
                 qpWidthDp = (p[K.X_QPW] ?: d.more.qpWidthDp).coerceIn(48, 110),
+                qpLabel = p[K.X_QPLABEL] ?: d.more.qpLabel,
             ),
         ).also { Pal.sync(it.colorEditorEnabled, it.colorOverrides) }   // özel renkleri tüm arayüze (ada, bildirim, ayarlar) yay
     }.distinctUntilChanged()
@@ -1386,7 +1388,7 @@ class SettingsRepository(context: Context) {
             it[K.X_NEWAPP] = m.newAppAlert; it[K.X_CHGWATT] = m.chargeWatts
             it[K.X_BFULL] = m.battFullAlert; it[K.X_BHOT] = m.battHotAlert; it[K.X_BHOTC] = m.battHotC; it[K.X_UNREAD] = m.unreadBadge
             it[K.X_RECDOT] = m.recDotIos; it[K.X_QPANEL] = m.quickPanel
-            it[K.X_QPRIGHT] = m.qpRight; it[K.X_QPY] = m.qpYPct; it[K.X_QPH] = m.qpHeightDp; it[K.X_QPW] = m.qpWidthDp
+            it[K.X_QPRIGHT] = m.qpRight; it[K.X_QPY] = m.qpYPct; it[K.X_QPH] = m.qpHeightDp; it[K.X_QPW] = m.qpWidthDp; it[K.X_QPLABEL] = m.qpLabel
         }
     }
 
