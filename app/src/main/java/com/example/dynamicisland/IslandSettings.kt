@@ -195,6 +195,14 @@ data class IslandSettings(
     val favoriteLaunchAnim: Boolean = true,  // uygulamaya dokununca adadan siyah ekran çıkıp ekranı kaplasın
 
     // Google Asistan / Gemini animasyonu
+    // Müzik görünümü: hangi öğeler görünsün (varsayılan hepsi açık)
+    val musicShowEq: Boolean = true,
+    val musicShowArt: Boolean = true,
+    val musicShowTitle: Boolean = true,
+    val musicShowArtist: Boolean = true,
+    val musicShowTime: Boolean = true,
+    val musicShowLike: Boolean = true,
+    val musicShowCast: Boolean = true,
     val screenRecEnabled: Boolean = true,    // sistem ekran kaydı adada gösterilsin (ek izin istemez)
     val screenRecWide: Boolean = true,       // ekran kaydı açık adası: true = durum çubuğu genişliği (köşelere değmez), false = normal boy
     val assistantEnabled: Boolean = true,
@@ -773,6 +781,7 @@ class SettingsRepository(context: Context) {
         val DEC_TOP = intPreferencesKey("dec_top"); val DEC_HANG = intPreferencesKey("dec_hang"); val PET = intPreferencesKey("isl_pet")
         val DRIP = booleanPreferencesKey("drip"); val DRIP_S = floatPreferencesKey("drip_s"); val EDGE_ALW = booleanPreferencesKey("edge_alw")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
+        val MUS_EQ = booleanPreferencesKey("mus_show_eq"); val MUS_ART = booleanPreferencesKey("mus_show_art"); val MUS_TITLE = booleanPreferencesKey("mus_show_title"); val MUS_ARTIST = booleanPreferencesKey("mus_show_artist"); val MUS_TIME = booleanPreferencesKey("mus_show_time"); val MUS_LIKE = booleanPreferencesKey("mus_show_like"); val MUS_CAST = booleanPreferencesKey("mus_show_cast")
         val REC_ON = booleanPreferencesKey("rec_on"); val REC_WIDE = booleanPreferencesKey("rec_wide_v2")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full"); val AS_STYLE = intPreferencesKey("as_style")
         val RB_ON = booleanPreferencesKey("rb_on"); val RB_A = floatPreferencesKey("rb_a")
@@ -1035,6 +1044,13 @@ class SettingsRepository(context: Context) {
             musicExitAtomic = p[K.MX_ATOMIC] ?: d.musicExitAtomic,
             musicExitAtomicFull = p[K.MX_ATOMIC_FULL] ?: d.musicExitAtomicFull,
             hideInMusicApp = p[K.HIDE_MUSIC] ?: d.hideInMusicApp,
+            musicShowEq = p[K.MUS_EQ] ?: d.musicShowEq,
+            musicShowArt = p[K.MUS_ART] ?: d.musicShowArt,
+            musicShowTitle = p[K.MUS_TITLE] ?: d.musicShowTitle,
+            musicShowArtist = p[K.MUS_ARTIST] ?: d.musicShowArtist,
+            musicShowTime = p[K.MUS_TIME] ?: d.musicShowTime,
+            musicShowLike = p[K.MUS_LIKE] ?: d.musicShowLike,
+            musicShowCast = p[K.MUS_CAST] ?: d.musicShowCast,
             screenRecEnabled = p[K.REC_ON] ?: d.screenRecEnabled,
             screenRecWide = p[K.REC_WIDE] ?: d.screenRecWide,
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
@@ -1305,6 +1321,7 @@ class SettingsRepository(context: Context) {
             it[K.DEC_TOP] = s.decorTop; it[K.DEC_HANG] = s.decorHang; it[K.PET] = s.islandPet
             it[K.DRIP] = s.dripEnabled; it[K.DRIP_S] = s.dripEverySec; it[K.EDGE_ALW] = s.edgeGlowAlways
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
+            it[K.MUS_EQ] = s.musicShowEq; it[K.MUS_ART] = s.musicShowArt; it[K.MUS_TITLE] = s.musicShowTitle; it[K.MUS_ARTIST] = s.musicShowArtist; it[K.MUS_TIME] = s.musicShowTime; it[K.MUS_LIKE] = s.musicShowLike; it[K.MUS_CAST] = s.musicShowCast
             it[K.REC_ON] = s.screenRecEnabled; it[K.REC_WIDE] = s.screenRecWide
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
             it[K.AS_FULL] = s.assistantFullWidth; it[K.AS_STYLE] = s.assistantStyle

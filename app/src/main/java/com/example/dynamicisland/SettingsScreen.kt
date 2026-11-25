@@ -669,6 +669,15 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, repo: Set
             key(version) { ColorPicker(draft.eqColorArgb) { draft = draft.copy(eqColorArgb = it) } }
         }
 
+        sec("Müzik görünümü", "Müzik adasında hangi öğeler görünsün") {
+            SwitchRow("Ekolayzır", "Müzik çalarken ses çubukları (yan kenar adasında ve açık panelde)", draft.musicShowEq) { draft = draft.copy(musicShowEq = it) }
+            SwitchRow("Albüm kapağı", "Yan kenar adasında ve açık panelde kapak", draft.musicShowArt) { draft = draft.copy(musicShowArt = it) }
+            SwitchRow("Şarkı adı", "Açık panelde şarkı adı", draft.musicShowTitle) { draft = draft.copy(musicShowTitle = it) }
+            SwitchRow("Sanatçı adı", "Açık panelde sanatçı adı", draft.musicShowArtist) { draft = draft.copy(musicShowArtist = it) }
+            SwitchRow("Şarkı süresi", "Çubuğun iki yanındaki geçen / kalan süre yazısı", draft.musicShowTime) { draft = draft.copy(musicShowTime = it) }
+            SwitchRow("Beğenme tuşu", "Açık paneldeki kalp", draft.musicShowLike) { draft = draft.copy(musicShowLike = it) }
+            SwitchRow("Çıkış tuşu", "Sonraki şarkı tuşunun yanındaki çıkış / yayın tuşu", draft.musicShowCast) { draft = draft.copy(musicShowCast = it) }
+        }
         sec("Albüm kapağı şekli", "Müzik çalarken adadaki kapak kare ya da daire") {
             SwitchRow("Daire albüm kapağı", "Kapak köşeli kare yerine tam daire olur. Dokunma alanı da daireye göre ayarlanır; ada sakinleri dairenin üstünde yürür",
                 draft.more.artCircle != 0) { on -> draft = draft.copy(more = draft.more.copy(artCircle = if (on) 1 else 0)) }

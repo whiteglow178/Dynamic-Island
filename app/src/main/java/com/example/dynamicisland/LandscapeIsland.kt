@@ -911,7 +911,20 @@ private fun LandscapeWindowContent(
                             .size(thickDp, dpOf(slotH)).graphicsLayer { alpha = a.value },
                         contentAlignment = Alignment.Center,
                     ) {
-                        LandBubbleContent(occContent, g.thick)
+                        LandBubbleContent(occContent, g.thick, showArt = s.musicShowArt)
+                    }
+                }
+            }
+            // Yan kenar modunda adadaki müzik: ekolayzır adanın diğer ucunda (ayarlardan kapatılabilir)
+            if (occContent is IslandContent.Media && !panelShowing && wideDp == null && s.musicShowEq) {
+                key(occKey, "eq") {
+                    val eqCol = if (s.eqDynamicColor && occContent.artColor != 0) brightTone(Color(occContent.artColor)) else Color(s.eqColorArgb)
+                    val eqRb = rememberRainbowStyle(s)
+                    Box(
+                        Modifier.align(if (g.below) Alignment.TopCenter else Alignment.BottomCenter).size(thickDp, thickDp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MusicMeter(eqCol, s.eqStyleNow(), height = thickDp * 0.4f, barWidth = 2.dp, animate = occContent.playing, rainbow = eqRb)
                     }
                 }
             }
@@ -1202,7 +1215,7 @@ private fun LandBubble(e: LandEntry, index: Int, g: LandGeo, s: IslandSettings, 
 }
 
 @Composable
-private fun LandBubbleContent(c: IslandContent, thickPx: Int) {
+private fun LandBubbleContent(c: IslandContent, thickPx: Int, showArt: Boolean = true) {
     val d = LocalDensity.current
     val t = with(d) { thickPx.toDp() }
     val ic = t * 0.62f
@@ -1222,7 +1235,8 @@ private fun LandBubbleContent(c: IslandContent, thickPx: Int) {
         }
         is IslandContent.Media -> {
             val art = c.art
-            if (art != null) Image(art, null, Modifier.size(ic).clip(RoundedCornerShape(30)), contentScale = ContentScale.Crop)
+            if (!showArt) Unit
+            else if (art != null) Image(art, null, Modifier.size(ic).clip(RoundedCornerShape(30)), contentScale = ContentScale.Crop)
             else Text("♪", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
         is IslandContent.Call -> Box(
