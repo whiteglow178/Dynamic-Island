@@ -112,7 +112,7 @@ object LocationDot {
 class LocationController(private val host: IslandHost) {
     private var receiver: BroadcastReceiver? = null
     private var gnssCb: GnssStatus.Callback? = null
-    private var opsCb: AppOpsManager.OnOpActiveListener? = null
+    private var opsCb: AppOpsManager.OnOpActiveChangedListener? = null
     private var opsTried = false
     private var gnssOn = false
     private var gpsBroadcastOn = false
@@ -162,9 +162,9 @@ class LocationController(private val host: IslandHost) {
             val ok = runCatching { ctx.getSystemService(LocationManager::class.java).registerGnssStatusCallback(main, cb) }.getOrDefault(false)
             if (ok) gnssCb = cb
         }
-        if (!opsTried) {
+        if (!opsTried && android.os.Build.VERSION.SDK_INT >= 30) {
             opsTried = true
-            val cb = object : AppOpsManager.OnOpActiveListener {
+            val cb = object : AppOpsManager.OnOpActiveChangedListener {
                 override fun onOpActiveChanged(op: String, uid: Int, packageName: String, active: Boolean) {
                     if (uid == android.os.Process.myUid()) return
                     val k = "$op|$uid|$packageName"
